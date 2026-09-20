@@ -1,0 +1,4504 @@
+<!DOCTYPE html>
+<!--
+  NE_HWSIM —— 华为 VRP 网络实训模拟器（单文件版）
+
+  Copyright (c) 2026 新易科技工作室 NewE
+  作者：Liuyi  <yimr@sohu.com>
+  协议：MIT License
+
+  本项目为独立的非官方教学演示工具，与华为技术有限公司无任何关联。
+  "Huawei"、"HUAWEI"、"VRP" 等为其各自权利人的商标。
+
+  单个 HTML 文件，双击即用，无需安装任何环境，完全离线可用。
+-->
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>NE_HWSIM · 华为 VRP 网络实训模拟器</title>
+<style>
+  :root{
+    --bg:#0d1117; --bg2:#161b22; --bg3:#1c2128; --line:#30363d;
+    --tx:#e6edf3; --tx2:#8b949e; --tx3:#6e7681;
+    --cy:#2f81f7; --gr:#3fb950; --or:#d29922; --rd:#f85149; --pu:#a371f7;
+    --mono:"Consolas","Cascadia Mono","JetBrains Mono",Menlo,monospace;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  html,body{height:100%}
+  body{
+    background:var(--bg);color:var(--tx);
+    font-family:"Microsoft YaHei","PingFang SC","Segoe UI",sans-serif;
+    font-size:13px;overflow:hidden;
+    -webkit-font-smoothing:antialiased;
+  }
+  button{font-family:inherit;font-size:13px;cursor:pointer;border:none;background:none;color:inherit}
+  input,select{font-family:inherit;font-size:13px}
+
+  /* ---------- 布局 ---------- */
+  .app{display:flex;flex-direction:column;height:100vh}
+  .topbar{
+    height:48px;flex:0 0 48px;display:flex;align-items:center;gap:14px;
+    padding:0 14px;background:var(--bg2);border-bottom:1px solid var(--line);
+  }
+  .brand{display:flex;align-items:center;gap:9px;font-weight:700;letter-spacing:.3px}
+  .brand .dot{width:9px;height:9px;border-radius:50%;background:var(--gr);box-shadow:0 0 8px var(--gr)}
+  .brand small{font-weight:400;color:var(--tx3);font-size:11px;margin-left:2px}
+  .tb-actions{margin-left:auto;display:flex;gap:8px;align-items:center}
+  .btn{
+    padding:6px 12px;border-radius:6px;border:1px solid var(--line);
+    background:var(--bg3);color:var(--tx);transition:.15s;white-space:nowrap;
+  }
+  .btn:hover{border-color:#4b5563;background:#22272e}
+  .btn.primary{background:var(--cy);border-color:var(--cy);color:#fff;font-weight:600}
+  .btn.primary:hover{background:#4a95f8}
+  .btn.ghost{background:transparent}
+  .btn.sm{padding:4px 9px;font-size:12px}
+
+  .main{flex:1;display:flex;min-height:0}
+
+  /* ---------- 左栏 ---------- */
+  .side{
+    width:190px;flex:0 0 190px;background:var(--bg2);
+    border-right:1px solid var(--line);display:flex;flex-direction:column;
+  }
+  .side h3{
+    font-size:11px;font-weight:600;color:var(--tx3);letter-spacing:.9px;
+    padding:13px 14px 8px;text-transform:uppercase;
+  }
+  .palette{padding:0 10px 6px;display:flex;flex-direction:column;gap:6px}
+  .pal{
+    display:flex;align-items:center;gap:9px;padding:9px 10px;border-radius:7px;
+    border:1px solid var(--line);background:var(--bg3);transition:.15s;text-align:left;
+  }
+  .pal:hover{border-color:var(--cy);background:#1f2733}
+  .pal .ic{
+    width:26px;height:26px;border-radius:6px;display:flex;align-items:center;
+    justify-content:center;font-size:14px;background:#0d1117;border:1px solid var(--line);flex:0 0 26px;
+  }
+  .pal .tx b{display:block;font-size:12px;font-weight:600;line-height:1.35}
+  .pal .tx span{font-size:10.5px;color:var(--tx3)}
+  .side .hint{
+    margin:auto 10px 12px;padding:9px 10px;border-radius:7px;
+    background:#0d1117;border:1px solid var(--line);font-size:11px;
+    line-height:1.75;color:var(--tx2);
+  }
+  .side .hint b{color:var(--tx)}
+
+  /* ---------- 画布 ---------- */
+  .stage{flex:1;position:relative;overflow:hidden;background:
+    radial-gradient(circle at 1px 1px,#22282f 1px,transparent 0) 0 0/22px 22px;
+  }
+  .stage-inner{position:absolute;inset:0;transform-origin:0 0}
+  svg.wires{position:absolute;inset:0;width:100%;height:100%;pointer-events:none;overflow:visible}
+
+  .card{
+    position:absolute;background:var(--bg2);border:1px solid var(--line);
+    border-radius:10px;user-select:none;box-shadow:0 6px 22px rgba(0,0,0,.45);
+    transition:border-color .15s, box-shadow .15s;
+  }
+  .card:hover{border-color:#4b5563}
+  .card.sel{border-color:var(--cy);box-shadow:0 0 0 2px rgba(47,129,247,.28),0 6px 22px rgba(0,0,0,.5)}
+  .card .head{
+    height:46px;padding:7px 11px 0;cursor:move;display:flex;align-items:flex-start;gap:8px;
+  }
+  .card .head .nm{font-size:12.5px;font-weight:600;line-height:1.3;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .card .head .md{font-size:10px;color:var(--tx3);line-height:1.5;margin-top:1px}
+  .card .head .tag{
+    font-size:10px;padding:1px 6px;border-radius:9px;background:#21262d;
+    border:1px solid var(--line);color:var(--tx2);white-space:nowrap;
+  }
+  .card .head .x{
+    margin-left:auto;color:var(--tx3);font-size:15px;line-height:1;padding:2px 4px;border-radius:4px;
+  }
+  .card .head .x:hover{color:var(--rd);background:#2d1618}
+  .ports{display:grid;gap:3px;padding:6px 13px 12px}
+  .port{
+    height:14px;border-radius:3px;background:#30363d;border:1px solid #3d444d;
+    cursor:crosshair;position:relative;transition:.12s;
+  }
+  .port:hover{background:var(--cy);border-color:#79b8ff;transform:scale(1.16);z-index:3}
+  .port.up{background:#1f6f36;border-color:#2ea043}
+  .port.shut{background:#6e2c2c;border-color:#8b3a3a}
+  .port.pend{background:var(--or);border-color:#f0c674;transform:scale(1.2);box-shadow:0 0 8px rgba(210,153,34,.7)}
+  .port.trunk{background:#3b2d5e;border-color:var(--pu)}
+  .port .lab{
+    position:absolute;left:50%;top:-15px;transform:translateX(-50%);
+    font-size:9px;color:var(--tx2);background:var(--bg);padding:0 3px;border-radius:3px;
+    white-space:nowrap;pointer-events:none;opacity:0;transition:.12s;z-index:5;
+  }
+  .port:hover .lab{opacity:1}
+
+  .empty{
+    position:absolute;inset:0;display:flex;flex-direction:column;
+    align-items:center;justify-content:center;gap:10px;color:var(--tx3);pointer-events:none;
+  }
+  .empty b{font-size:15px;color:var(--tx2);font-weight:600}
+  .empty p{font-size:12px;line-height:1.9}
+
+  /* ---------- 终端 ---------- */
+  .term{
+    flex:0 0 0;height:0;background:var(--bg2);border-top:1px solid var(--line);
+    display:flex;flex-direction:column;overflow:hidden;transition:height .18s ease;
+  }
+  .term.open{flex:0 0 336px;height:336px}
+  .term.max{flex:0 0 62vh;height:62vh}
+  .tabs{display:flex;align-items:center;background:var(--bg3);border-bottom:1px solid var(--line);min-height:35px;padding-right:8px}
+  .tab{
+    display:flex;align-items:center;gap:7px;padding:8px 11px;font-size:12px;
+    border-right:1px solid var(--line);color:var(--tx2);cursor:pointer;white-space:nowrap;
+  }
+  .tab:hover{background:#22272e;color:var(--tx)}
+  .tab.on{background:var(--bg2);color:var(--tx);box-shadow:inset 0 2px 0 var(--cy)}
+  .tab .cl{opacity:.4;font-size:13px}
+  .tab .cl:hover{opacity:1;color:var(--rd)}
+  .tabs .sp{margin-left:auto;display:flex;gap:4px}
+  .tabs .sp .btn{padding:3px 8px;font-size:11px}
+
+  .screen{
+    flex:1;overflow-y:auto;padding:10px 14px 14px;font-family:var(--mono);
+    font-size:12.5px;line-height:1.62;white-space:pre-wrap;word-break:break-all;
+  }
+  .screen::-webkit-scrollbar,.left::-webkit-scrollbar{width:9px}
+  .screen::-webkit-scrollbar-thumb{background:#30363d;border-radius:5px}
+  .ln{color:#c9d1d9}
+  .ln.cmd{color:#e6edf3;font-weight:600}
+  .ln.err{color:var(--rd)}
+  .ln.warn{color:var(--or)}
+  .ln.ok{color:var(--gr)}
+  .ln.dim{color:var(--tx3)}
+  .ln.hl{color:#79b8ff}
+  .inrow{display:flex;align-items:center;gap:8px;padding:8px 14px;border-top:1px solid var(--line);background:var(--bg2)}
+  .inrow .pr{font-family:var(--mono);font-size:13px;color:var(--gr);font-weight:700;white-space:nowrap}
+  .inrow input{
+    flex:1;background:transparent;border:none;outline:none;color:var(--tx);
+    font-family:var(--mono);font-size:13px;padding:3px 0;
+  }
+  .inrow input::placeholder{color:#484f58}
+
+  /* ---------- 弹窗 ---------- */
+  .mask{position:fixed;inset:0;background:rgba(1,4,9,.72);display:none;align-items:center;justify-content:center;z-index:99;padding:24px}
+  .mask.on{display:flex}
+  .modal{
+    background:var(--bg2);border:1px solid var(--line);border-radius:12px;
+    width:100%;max-width:720px;max-height:84vh;display:flex;flex-direction:column;overflow:hidden;
+    box-shadow:0 14px 44px rgba(0,0,0,.6);
+  }
+  .modal .mh{padding:15px 18px;border-bottom:1px solid var(--line);display:flex;align-items:center;gap:10px}
+  .modal .mh h2{font-size:15px;font-weight:600}
+  .modal .mh .btn{margin-left:auto}
+  .modal .mb{padding:16px 18px;overflow-y:auto}
+  .labgrid{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+  .labcard{
+    border:1px solid var(--line);border-radius:9px;padding:12px;background:var(--bg3);
+    cursor:pointer;transition:.15s;
+  }
+  .labcard:hover{border-color:var(--cy);background:#1f2733;transform:translateY(-1px)}
+  .labcard b{display:block;font-size:13px;margin-bottom:5px}
+  .labcard span{font-size:11.5px;color:var(--tx2);line-height:1.65;display:block}
+  .labcard .lv{display:inline-block;font-size:10px;padding:1px 7px;border-radius:9px;margin-top:7px;border:1px solid var(--line);color:var(--tx3)}
+  .steps{list-style:none;display:flex;flex-direction:column;gap:9px}
+  .steps li{
+    display:flex;gap:10px;padding:10px 12px;border:1px solid var(--line);
+    border-radius:8px;background:var(--bg3);font-size:12.5px;line-height:1.7;
+  }
+  .steps li .n{
+    flex:0 0 20px;height:20px;border-radius:50%;background:#0d1117;border:1px solid var(--line);
+    display:flex;align-items:center;justify-content:center;font-size:11px;color:var(--cy);
+  }
+  .steps li code{font-family:var(--mono);background:#0d1117;border:1px solid var(--line);padding:0 5px;border-radius:4px;color:#79b8ff}
+  .kv{display:flex;flex-direction:column;gap:8px}
+  .kv .r{display:flex;gap:10px;font-size:12.5px;line-height:1.7}
+  .kv .r b{flex:0 0 92px;color:var(--tx2);font-weight:500}
+  h4.sec{font-size:12px;color:var(--tx3);letter-spacing:.7px;margin:16px 0 9px;text-transform:uppercase}
+  h4.sec:first-child{margin-top:0}
+  .mb .hint{font-size:12.5px;line-height:1.7;color:var(--tx2);margin:0 0 10px}
+  .tree{display:flex;flex-direction:column;gap:5px;font-size:12px;
+        border-left:2px solid var(--line);padding:6px 0 6px 12px;margin-bottom:4px}
+  .tree>div{display:flex;align-items:baseline;gap:10px}
+  .tree code{font-family:var(--mono);color:#79b8ff;background:#0d1117;border:1px solid var(--line);
+             padding:0 5px;border-radius:4px;white-space:nowrap}
+  .tree span{color:var(--tx3);font-size:11.5px}
+  .tree .lv2{margin-left:14px}
+  .tree .lv3{margin-left:28px}
+  .tree .lv4{margin-left:42px}
+  .toast{
+    position:fixed;bottom:22px;left:50%;transform:translateX(-50%) translateY(14px);
+    background:var(--bg3);border:1px solid var(--line);color:var(--tx);padding:9px 16px;
+    border-radius:8px;font-size:12.5px;opacity:0;transition:.22s;z-index:200;pointer-events:none;
+    box-shadow:0 8px 24px rgba(0,0,0,.5);max-width:70vw;
+  }
+  .toast.on{opacity:1;transform:translateX(-50%) translateY(0)}
+  .toast.bad{border-color:#8b3a3a;color:#ffb3ae}
+  .toast.good{border-color:#2ea043;color:#8ee99b}
+  @media(max-width:900px){
+    .side{width:154px;flex-basis:154px}
+    .labgrid{grid-template-columns:1fr}
+  }
+</style>
+</head>
+<body>
+<div class="app">
+  <div class="topbar">
+    <div class="brand">
+      <span class="dot"></span>
+      NE_HWSIM
+      <small>华为 VRP 交换机 / 路由器实训模拟器</small>
+    </div>
+    <div class="tb-actions">
+      <button class="btn" id="btnLab">实训实验</button>
+      <button class="btn" id="btnHelp">帮助</button>
+      <button class="btn" id="btnSave">导出配置</button>
+      <button class="btn" id="btnClear">清空</button>
+    </div>
+  </div>
+
+  <div class="main">
+    <aside class="side">
+      <h3>设备库</h3>
+      <div class="palette" id="palette"></div>
+      <div class="hint">
+        <b>怎么用：</b><br />
+        1. 点左侧设备加入拓扑<br />
+        2. 拖动图标摆放位置<br />
+        3. 点一个灰口，再点另一个灰口 → 连线<br />
+        4. 双击设备打开命令行<br />
+        5. 右键设备可删除
+      </div>
+    </aside>
+
+    <div class="stage" id="stage">
+      <div class="stage-inner" id="stageInner">
+        <svg class="wires" id="wires"></svg>
+        <div id="cards"></div>
+        <div class="empty" id="empty">
+          <b>画布是空的</b>
+          <p>从左侧点选设备加入拓扑，或打开「实训实验」直接加载一套现成的实验环境。</p>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="term" id="term">
+    <div class="tabs" id="tabs"></div>
+    <div class="screen" id="screen"></div>
+    <div class="inrow" id="inrow">
+      <span class="pr" id="prompt">&lt;Huawei&gt;</span>
+      <input id="cmd" autocomplete="off" spellcheck="false" placeholder="输入命令，? 查看帮助，Tab 补全" />
+    </div>
+  </div>
+</div>
+
+<div class="mask" id="mask"><div class="modal" id="modal"></div></div>
+<div class="toast" id="toast"></div>
+
+<script>
+/* =========================================================================
+ * NE_HWSIM —— 华为 VRP 网络实训模拟器
+ * 模块：数据模型 + 转发仿真引擎
+ *
+ * 纯 JavaScript，无任何外部依赖。
+ *
+ * Copyright (c) 2026 新易科技工作室 NewE
+ * 作者：Liuyi  <yimr@sohu.com>
+ * 协议：MIT License
+ *
+ * 本项目为独立的非官方教学演示工具，与华为技术有限公司无任何关联。
+ * ========================================================================= */
+(function (global) {
+  'use strict';
+
+  /* ------------------------------ 工具函数 ------------------------------ */
+
+  let _seq = 0;
+  const uid = (p) => `${p || 'id'}-${(++_seq).toString(36)}${Math.random().toString(36).slice(2, 5)}`;
+
+  const HEX = '0123456789ABCDEF';
+  function randomMac() {
+    let mac = '50:50:00';
+    for (let i = 0; i < 3; i++) mac += ':' + HEX[(Math.random() * 16) | 0] + HEX[(Math.random() * 16) | 0];
+    return mac;
+  }
+
+  const clone = (o) => JSON.parse(JSON.stringify(o));
+
+  /** "255.255.255.0" -> 24 ; "24" -> 24 ; 支持 /24 形式 */
+  function maskToPrefix(mask) {
+    if (mask == null) return null;
+    if (typeof mask === 'number') return mask;
+    const s = String(mask).trim();
+    if (s.includes('.')) {
+      let n = 0;
+      for (const oct of s.split('.')) {
+        const v = parseInt(oct, 10);
+        if (isNaN(v)) return null;
+        n += v.toString(2).split('').filter((c) => c === '1').length;
+      }
+      return n;
+    }
+    const p = parseInt(s, 10);
+    return isNaN(p) ? null : p;
+  }
+
+  function prefixToMask(prefix) {
+    if (prefix === 0) return '0.0.0.0';
+    const n = prefix == null ? 24 : prefix;
+    const bits = '1'.repeat(n) + '0'.repeat(32 - n);
+    return [0, 8, 16, 24].map((i) => parseInt(bits.slice(i, i + 8), 2)).join('.');
+  }
+
+  function isValidIp(ip) {
+    if (typeof ip !== 'string') return false;
+    const parts = ip.split('.');
+    if (parts.length !== 4) return false;
+    return parts.every((p) => /^\d{1,3}$/.test(p) && +p >= 0 && +p <= 255);
+  }
+
+  function ipToInt(ip) {
+    const p = ip.split('.').map(Number);
+    return ((p[0] << 24) | (p[1] << 16) | (p[2] << 8) | p[3]) >>> 0;
+  }
+
+  function intToIp(v) {
+    return [(v >>> 24) & 255, (v >>> 16) & 255, (v >>> 8) & 255, v & 255].join('.');
+  }
+
+  /** 两个 IP 是否在同一网段 */
+  function sameSubnet(ipA, prefix, ipB) {
+    if (!isValidIp(ipA) || !isValidIp(ipB) || prefix == null) return false;
+    if (prefix === 0) return true;
+    const m = prefix === 32 ? 0xffffffff : (~((1 << (32 - prefix)) - 1) >>> 0);
+    return ((ipToInt(ipA) & m) >>> 0) === ((ipToInt(ipB) & m) >>> 0);
+  }
+
+  function networkOf(ip, prefix) {
+    if (!isValidIp(ip)) return null;
+    if (prefix === 0) return '0.0.0.0';
+    const m = prefix === 32 ? 0xffffffff : (~((1 << (32 - prefix)) - 1) >>> 0);
+    return intToIp((ipToInt(ip) & m) >>> 0);
+  }
+
+  /** 通配符掩码反查前缀长度：0.0.0.255 -> 24 */
+  function wildcardToPrefix(wc) {
+    if (!isValidIp(wc)) return null;
+    const inv = ipToInt(wc);
+    const mask = (~inv) >>> 0;
+    const bits = mask.toString(2).padStart(32, '0');
+    if (!/^1*0*$/.test(bits)) return null;
+    return bits.split('').filter((c) => c === '1').length;
+  }
+
+  /* ------------------------------ 设备模板 ------------------------------ */
+
+  const TEMPLATES = {
+    'S5700': {
+      key: 'S5700',
+      model: 'S5700-28TP-EI',
+      type: 'switch',
+      label: '三层交换机',
+      vendor: 'Huawei',
+      desc: '24×GE 电口 + 4×GE 光口',
+      ports: [
+        ...Array.from({ length: 24 }, (_, i) => ({ name: `GigabitEthernet0/0/${i + 1}`, kind: 'RJ45' })),
+        ...Array.from({ length: 4 }, (_, i) => ({ name: `GigabitEthernet0/0/${i + 25}`, kind: 'SFP' }))
+      ]
+    },
+    'S3700': {
+      key: 'S3700',
+      model: 'S3700-28TP-EI',
+      type: 'switch',
+      label: '二层交换机',
+      vendor: 'Huawei',
+      desc: '24×GE 电口（纯二层）',
+      l2only: true,
+      ports: Array.from({ length: 24 }, (_, i) => ({ name: `GigabitEthernet0/0/${i + 1}`, kind: 'RJ45' }))
+    },
+    'AR6121': {
+      key: 'AR6121',
+      model: 'AR6121',
+      type: 'router',
+      label: '企业路由器',
+      vendor: 'Huawei',
+      desc: '4×GE 路由口',
+      ports: Array.from({ length: 4 }, (_, i) => ({ name: `GigabitEthernet0/0/${i}`, kind: 'RJ45' }))
+    },
+    'PC': {
+      key: 'PC',
+      model: 'PC',
+      type: 'pc',
+      label: 'PC 终端',
+      vendor: 'PC',
+      desc: '1×以太网口',
+      ports: [{ name: 'Ethernet0/0/0', kind: 'RJ45' }]
+    }
+  };
+
+  /** 创建端口对象 */
+  function makePort(name, kind, mode) {
+    return {
+      id: uid('p'),
+      name,
+      kind, // RJ45 | SFP
+      mode, // access | trunk | hybrid | routed
+      shutdown: false,
+      vlan: 1, // access / hybrid 缺省 VLAN
+      allowedVlans: 'all', // trunk 允许的 VLAN：'all' 或 number[]
+      ip: null,
+      mask: null, // 前缀长度
+      desc: '',
+      trunkId: null, // 加入的 Eth-Trunk 编号
+      stpEdged: false,
+      bpduProtect: false,
+      portSec: { enabled: false, maxMac: 1 },
+      dhcpSelect: false,
+      cableId: null
+    };
+  }
+
+  /** 创建一台设备 */
+  function createDevice(key, x, y) {
+    const t = TEMPLATES[key];
+    if (!t) throw new Error('未知设备型号: ' + key);
+    const isRouted = t.type === 'router' || t.type === 'pc';
+    const dev = {
+      id: uid('d'),
+      key: t.key,
+      model: t.model,
+      type: t.type,
+      vendor: t.vendor,
+      l2only: !!t.l2only,
+      hostname: t.type === 'pc' ? 'PC' : t.type === 'router' ? 'Router' : 'Huawei',
+      x: x == null ? 120 : x,
+      y: y == null ? 120 : y,
+      ports: t.ports.map((p) => makePort(p.name, p.kind, isRouted ? 'routed' : 'access')),
+      vlans: [1],
+      vlanifs: [],
+      routes: [],
+      acl: [],
+      aclBindings: [], // { portId, direction, aclId }
+      dhcp: { enabled: false, pools: [] },
+      ospf: { enabled: false, pid: null, routerId: null, areas: [], ifaces: [] },
+      stp: { mode: 'rstp', priority: 32768 },
+      staticMac: [],
+      netconf: { enabled: false },
+      savedConfig: null,
+      lastSaved: 0,
+      logs: [],
+      // VLAN 附加信息：{ [vlanId]: { desc, name } }。VLAN 号本身仍存在 vlans 数组里，这里只放可选属性，
+      // 避免改动既有引擎逻辑。
+      vlanMeta: {},
+      // 命令行视图状态。stack 是视图栈，quit 逐级弹栈返回上一级视图，
+      // 与真实 VRP 的「一级一级进入、quit 一级一级退出」保持一致。
+      cli: {
+        view: 'user-view',
+        stack: [],
+        ifaceId: null,
+        vlanifId: null,
+        vlanId: null,
+        trunkId: null,
+        poolName: null,
+        aclId: null,
+        ospfPid: null,
+        areaId: null,
+        // 交互式命令的等待状态，例如 save 的 y/n 确认、文件名输入。
+        pending: null
+      }
+    };
+    return dev;
+  }
+
+  /**
+   * 兼容性修复：把从 localStorage 恢复出来的旧版设备对象补齐到当前结构。
+   * 旧存档缺 vlanMeta / cli.stack 等字段，直接使用会报错。
+   * 特别注意：pending（交互式等待状态）一律清空 —— 存档不能停在"等待输入 y/n"这种中间态。
+   */
+  function normalizeDevice(dev) {
+    if (!dev || typeof dev !== 'object') return dev;
+    if (!dev.vlanMeta) dev.vlanMeta = {};
+    if (!Array.isArray(dev.vlans)) dev.vlans = [1];
+    if (!dev.vlans.includes(1)) dev.vlans.unshift(1);
+    for (const k of ['vlanifs', 'routes', 'acl', 'aclBindings', 'staticMac', 'logs']) {
+      if (!Array.isArray(dev[k])) dev[k] = [];
+    }
+    if (!dev.dhcp) dev.dhcp = { enabled: false, pools: [], leases: [] };
+    if (!Array.isArray(dev.dhcp.pools)) dev.dhcp.pools = [];
+    if (!dev.ospf) dev.ospf = { enabled: false, pid: null, routerId: null, areas: [], ifaces: [] };
+    if (!Array.isArray(dev.ospf.areas)) dev.ospf.areas = [];
+    if (!Array.isArray(dev.ospf.ifaces)) dev.ospf.ifaces = [];
+    if (!dev.stp) dev.stp = { mode: 'rstp', priority: 32768 };
+    if (!dev.cli || typeof dev.cli !== 'object') dev.cli = {};
+    const c = dev.cli;
+    if (!Array.isArray(c.stack)) c.stack = [];
+    if (!c.view) c.view = 'user-view';
+    for (const k of ['ifaceId', 'vlanifId', 'vlanId', 'trunkId', 'poolName', 'aclId', 'ospfPid', 'areaId']) {
+      if (c[k] === undefined) c[k] = null;
+    }
+    c.pending = null;
+    for (const p of dev.ports || []) {
+      if (!p.portSec) p.portSec = { enabled: false, maxMac: 1 };
+    }
+    return dev;
+  }
+
+  /* --------------------------- 拓扑（网络对象） --------------------------- */
+
+  const Net = {
+    devices: [],
+    cables: [],
+
+    reset() {
+      this.devices = [];
+      this.cables = [];
+    },
+
+    getDevice(id) {
+      return this.devices.find((d) => d.id === id) || null;
+    },
+
+    getCable(id) {
+      return this.cables.find((c) => c.id === id) || null;
+    },
+
+    getPort(device, portId) {
+      return (device && device.ports.find((p) => p.id === portId)) || null;
+    },
+
+    /** 找出与某端口相连的对端 { device, port, cable } */
+    peerOf(device, port) {
+      if (!port || !port.cableId) return null;
+      const cable = this.getCable(port.cableId);
+      if (!cable) return null;
+      const isSrc = cable.aDeviceId === device.id && cable.aPortId === port.id;
+      const otherDevId = isSrc ? cable.bDeviceId : cable.aDeviceId;
+      const otherPortId = isSrc ? cable.bPortId : cable.aPortId;
+      const otherDev = this.getDevice(otherDevId);
+      if (!otherDev) return null;
+      return { device: otherDev, port: this.getPort(otherDev, otherPortId), cable };
+    },
+
+    addDevice(key, x, y) {
+      const d = createDevice(key, x, y);
+      this.devices.push(d);
+      return d;
+    },
+
+    removeDevice(id) {
+      this.devices = this.devices.filter((d) => d.id !== id);
+      this.cables = this.cables.filter((c) => {
+        if (c.aDeviceId === id || c.bDeviceId === id) {
+          const other = this.getDevice(c.aDeviceId === id ? c.bDeviceId : c.aDeviceId);
+          const otherPort = other && this.getPort(other, c.aDeviceId === id ? c.bPortId : c.aPortId);
+          if (otherPort) otherPort.cableId = null;
+          return false;
+        }
+        return true;
+      });
+    },
+
+    canConnect(devA, portA, devB, portB) {
+      if (!devA || !devB || devA.id === devB.id) return '不能连接到同一台设备';
+      if (!portA || !portB) return '端口不存在';
+      if (portA.cableId) return `${devA.hostname} 的 ${portA.name} 已被占用`;
+      if (portB.cableId) return `${devB.hostname} 的 ${portB.name} 已被占用`;
+      if (portA.kind === 'SFP' !== (portB.kind === 'SFP')) return '光口与电口不能互连（请使用同类型端口）';
+      return null;
+    },
+
+    addCable(devA, portA, devB, portB) {
+      const err = this.canConnect(devA, portA, devB, portB);
+      if (err) return { ok: false, message: err };
+      const cable = {
+        id: uid('cable'),
+        aDeviceId: devA.id,
+        aPortId: portA.id,
+        bDeviceId: devB.id,
+        bPortId: portB.id
+      };
+      portA.cableId = cable.id;
+      portB.cableId = cable.id;
+      this.cables.push(cable);
+      return { ok: true, cable };
+    },
+
+    removeCable(id) {
+      const cable = this.getCable(id);
+      if (!cable) return;
+      const a = this.getDevice(cable.aDeviceId);
+      const b = this.getDevice(cable.bDeviceId);
+      const pa = a && this.getPort(a, cable.aPortId);
+      const pb = b && this.getPort(b, cable.bPortId);
+      if (pa) pa.cableId = null;
+      if (pb) pb.cableId = null;
+      this.cables = this.cables.filter((c) => c.id !== id);
+    },
+
+    /** 端口是否 up（没被 shutdown 且（已连线 或 是 Vlanif 承载口）） */
+    portUp(device, port) {
+      if (!port) return false;
+      if (port.shutdown) return false;
+      if (device.type === 'pc') return !!port.cableId;
+      return !!port.cableId;
+    }
+  };
+
+  /* ======================== 二层 / 三层转发模型 ======================== */
+
+  const VLAN_DOMAIN = 'vlan';
+  const P2P_DOMAIN = 'p2p';
+
+  /** 判断某端口在给定 VLAN 域下能否通行（作为二层口） */
+  function portPassesVlan(port, vlanId) {
+    if (!port || port.shutdown) return false;
+    if (port.mode === 'routed') return false;
+    if (port.mode === 'access') return port.vlan === vlanId;
+    if (port.mode === 'trunk' || port.mode === 'hybrid') {
+      if (port.allowedVlans === 'all') return true;
+      return Array.isArray(port.allowedVlans) && port.allowedVlans.includes(vlanId);
+    }
+    return false;
+  }
+
+  /** 端口的缺省 VLAN（access / hybrid 用） */
+  function portVlan(port) {
+    return port.vlan == null ? 1 : port.vlan;
+  }
+
+  /**
+   * 计算某个出接口把报文送到对端时，所在的二层域。
+   * 返回 { type:'vlan', vlan } 或 { type:'p2p' }
+   */
+  function egressDomain(device, port) {
+    if (!port) return null;
+    if (port.mode === 'routed') {
+      // 路由口：若对端是交换机的二层口，则实际落在对端所属 VLAN 里
+      const peer = Net.peerOf(device, port);
+      if (peer && peer.port && peer.device.type === 'switch' && peer.port.mode !== 'routed') {
+        return { type: VLAN_DOMAIN, vlan: portVlan(peer.port) };
+      }
+      return { type: P2P_DOMAIN };
+    }
+    return { type: VLAN_DOMAIN, vlan: portVlan(port) };
+  }
+
+  /**
+   * 从 (device, port) 出发，在二层域内做 BFS，寻找「拥有 targetIp 三层地址」的设备。
+   * 返回 { device, path:[devId...], reason } 或 null
+   */
+  function deliverL2(device, port, domain, targetIp, aclCtx) {
+    const visited = new Set([device.id]);
+    // 队列元素：{ device, path, ingressPortId }
+    const queue = [{ device, path: [device.id], ingressPortId: null }];
+
+    // 起点设备自身是否拥有该 IP（例如本地 Vlanif）
+    if (ownsIpInDomain(device, domain, targetIp)) {
+      return { device, path: [device.id], ingressPortId: null };
+    }
+
+    while (queue.length) {
+      const cur = queue.shift();
+      for (const p of cur.device.ports) {
+        if (p.shutdown || !p.cableId) continue;
+
+        // 起点只允许从指定端口出发（该端口的域已由 egressDomain 判定，无需再校验）
+        const isFirst = cur.device.id === device.id;
+        if (isFirst) {
+          if (p.id !== port.id) continue;
+        } else if (domain.type === VLAN_DOMAIN) {
+          if (cur.device.type !== 'pc' && !portPassesVlan(p, domain.vlan)) continue;
+        }
+
+        const peer = Net.peerOf(cur.device, p);
+        if (!peer || !peer.device || !peer.port) continue;
+        if (visited.has(peer.device.id)) continue;
+
+        // 对端端口必须也能承载该域（对端是路由口/PC 时表示二层段在此终结，允许进入）
+        const peerIsL3End = peer.port.mode === 'routed' || peer.device.type === 'pc';
+        if (domain.type === VLAN_DOMAIN && !peerIsL3End) {
+          if (!portPassesVlan(peer.port, domain.vlan)) continue;
+        }
+        if (domain.type === P2P_DOMAIN && !peerIsL3End) {
+          // 点到点域只走路由口/主机口
+          if (peer.port.mode !== 'routed' && peer.device.type !== 'pc') continue;
+        }
+
+        visited.add(peer.device.id);
+        const path = [...cur.path, peer.device.id];
+
+        // 报文经过的每一台设备都要检查入接口绑定的 ACL
+        if (aclCtx && aclCtx.srcIp) {
+          const deny = checkAcl(peer.device, aclCtx.srcIp, aclCtx.dstIp, peer.port.id);
+          if (deny) return { denied: deny, path };
+        }
+
+        if (ownsIpInDomain(peer.device, domain, targetIp)) {
+          return { device: peer.device, path, ingressPortId: peer.port.id };
+        }
+        queue.push({ device: peer.device, path, ingressPortId: peer.port.id });
+      }
+    }
+    return null;
+  }
+
+  /** 设备在给定二层域下是否拥有该 IP 地址（三层拥有关系） */
+  function ownsIpInDomain(device, domain, ip) {
+    if (!ip) return false;
+    // Vlanif
+    for (const vi of device.vlanifs) {
+      if (!vi.enabled) continue;
+      if (vi.ip !== ip) continue;
+      if (domain.type === VLAN_DOMAIN && vi.vlanId === domain.vlan) return true;
+      if (domain.type === P2P_DOMAIN) return false;
+    }
+    // 物理路由口
+    for (const p of device.ports) {
+      if (p.mode !== 'routed' || p.shutdown || !p.ip) continue;
+      if (p.ip !== ip) continue;
+      if (domain.type === P2P_DOMAIN) return true;
+      // 路由口挂在某个 VLAN 域里（路由口直连交换机二层口）
+      const d = egressDomain(device, p);
+      if (d && d.type === VLAN_DOMAIN && d.vlan === domain.vlan) return true;
+    }
+    // PC 主机口
+    if (device.type === 'pc') {
+      for (const p of device.ports) {
+        if (p.ip === ip && p.cableId) return true;
+      }
+    }
+    return false;
+  }
+
+  /** 设备所有三层接口（含 Vlanif / 路由口） */
+  function l3Interfaces(device) {
+    const list = [];
+    for (const vi of device.vlanifs) {
+      if (!vi.enabled || !vi.ip || vi.mask == null) continue;
+      list.push({ kind: 'vlanif', name: `Vlanif${vi.vlanId}`, vlanId: vi.vlanId, ip: vi.ip, mask: vi.mask, enabled: vi.enabled });
+    }
+    for (const p of device.ports) {
+      if (p.mode !== 'routed') continue;
+      if (!p.ip || p.mask == null) continue;
+      list.push({ kind: 'port', name: p.name, portId: p.id, ip: p.ip, mask: p.mask, up: !p.shutdown && !!p.cableId });
+    }
+    return list;
+  }
+
+  /** 查路由表：返回 { type:'direct'|'route'|'none', iface, nextHop } */
+  function routeLookup(device, dstIp) {
+    const ifaces = l3Interfaces(device);
+    // 1) 直连
+    for (const i of ifaces) {
+      if (i.kind === 'port' && !i.up) continue;
+      if (sameSubnet(i.ip, i.mask, dstIp)) {
+        return { type: 'direct', iface: i, nextHop: null };
+      }
+    }
+    // 2) 最长前缀匹配（静态 / OSPF）
+    let best = null;
+    for (const r of device.routes) {
+      if (r.mask == null) continue;
+      if (!sameSubnet(r.dest, r.mask, dstIp)) continue;
+      if (!best || r.mask > best.mask) best = r;
+    }
+    if (best) {
+      const iface =
+        ifaces.find((i) => (best.ifaceName ? i.name === best.ifaceName : false)) ||
+        ifaces.find((i) => sameSubnet(i.ip, i.mask, best.nextHop)) ||
+        null;
+      return { type: 'route', iface, nextHop: best.nextHop, route: best };
+    }
+    // 3) PC 的缺省网关兜底
+    if (device.type === 'pc') {
+      const p = device.ports.find((x) => x.ip && x.gateway && x.cableId);
+      if (p) {
+        const iface = ifaces.find((i) => i.portId === p.id) || null;
+        return {
+          type: 'route',
+          iface,
+          nextHop: p.gateway,
+          route: { dest: '0.0.0.0', mask: 0, nextHop: p.gateway, proto: 'Static', pre: 0 }
+        };
+      }
+    }
+    return { type: 'none' };
+  }
+
+  /** 找到设备上用于转发到某个下一跳/目的的出接口 */
+  function findEgressIface(device, dstIp, lookup) {
+    if (lookup.type === 'direct') return lookup.iface;
+    if (lookup.iface) return lookup.iface;
+    for (const i of l3Interfaces(device)) {
+      if (lookup.nextHop && sameSubnet(i.ip, i.mask, lookup.nextHop)) return i;
+    }
+    return null;
+  }
+
+  /** 由三层接口反查其承载端口（用于 Eth-Trunk / 物理口） */
+  function ifaceToPort(device, iface) {
+    if (!iface) return null;
+    if (iface.kind === 'port') return Net.getPort(device, iface.portId);
+    return null;
+  }
+
+  /**
+   * 核心：从 device 转发一个报文到 dstIp。
+   * 返回 { ok, path:[devId], reason, blocked }
+   */
+  function forward(device, dstIp, opts) {
+    const options = opts || {};
+    const maxHops = options.maxHops || 16;
+    const srcIp = options.srcIp || null;
+    const path = options.path ? [...options.path] : [device.id];
+    const visitedDevices = options.visitedDevices || new Set([device.id]);
+
+    if (maxHops <= 0) return { ok: false, path, reason: 'TTL 超时（路由环路）' };
+
+    // 目的地址是否就是本机
+    for (const i of l3Interfaces(device)) {
+      if (i.ip === dstIp) return { ok: true, path, reason: 'local' };
+    }
+    if (device.type === 'pc') {
+      for (const p of device.ports) if (p.ip === dstIp) return { ok: true, path, reason: 'local' };
+    }
+
+    // ACL 检查（仅检查报文入接口绑定的 ACL）
+    const aclDeny = checkAcl(device, srcIp, dstIp, options.ingressPortId);
+    if (aclDeny) return { ok: false, path, reason: aclDeny, blocked: true };
+
+    const lookup = routeLookup(device, dstIp);
+    if (lookup.type === 'none') {
+      return { ok: false, path, reason: `没有到达 ${dstIp} 的路由` };
+    }
+
+    const egress = findEgressIface(device, dstIp, lookup);
+    if (!egress) return { ok: false, path, reason: '找不到出接口' };
+
+    const ctx = { srcIp, path, visitedDevices, maxHops };
+    let port = null;
+    let domain = null;
+
+    if (egress.kind === 'port') {
+      port = Net.getPort(device, egress.portId);
+      if (!port || port.shutdown) return { ok: false, path, reason: `${egress.name} 接口已关闭` };
+      if (!port.cableId) return { ok: false, path, reason: `出接口 ${egress.name} 未连接线缆` };
+      domain = egressDomain(device, port);
+      const res = forwardViaPort(device, dstIp, lookup, port, domain, ctx);
+      return res || { ok: false, path, reason: `在二层域内无法到达 ${lookup.nextHop || dstIp}` };
+    }
+
+    // Vlanif：在对应 VLAN 内寻找物理出端口
+    const cands = device.ports.filter((p) => !p.shutdown && p.cableId && portPassesVlan(p, egress.vlanId));
+    if (!cands.length) {
+      return { ok: false, path, reason: `VLAN ${egress.vlanId} 内没有可用的物理端口（检查端口是否已连线和放行该 VLAN）` };
+    }
+    domain = { type: VLAN_DOMAIN, vlan: egress.vlanId };
+    let last = null;
+    for (const cp of cands) {
+      const res = forwardViaPort(device, dstIp, lookup, cp, domain, ctx);
+      if (res && res.ok) return res;
+      if (res) last = res;
+    }
+    return last || { ok: false, path, reason: `在 VLAN ${egress.vlanId} 内无法到达 ${lookup.nextHop || dstIp}` };
+  }
+
+  function forwardViaPort(device, dstIp, lookup, port, domain, ctx) {
+    // 目标 IP 在本二层域内？
+    const target = lookup.type === 'direct' ? dstIp : lookup.nextHop;
+    if (!target) return { ok: false, path: ctx.path, reason: '缺少下一跳' };
+
+    const hit = deliverL2(device, port, domain, target, { srcIp: ctx.srcIp, dstIp });
+    if (hit && hit.denied) {
+      return { ok: false, path: hit.path || ctx.path, reason: hit.denied, blocked: true };
+    }
+    if (!hit) {
+      return {
+        ok: false,
+        path: ctx.path,
+        reason: `在二层域内无法到达 ${target}（检查 VLAN 划分、Trunk 放行、端口是否 shutdown）`
+      };
+    }
+
+    const newPath = [...ctx.path, ...hit.path.slice(1)];
+    const arrived = hit.device;
+
+    if (lookup.type === 'direct' && target === dstIp) {
+      return { ok: true, path: newPath, reason: 'direct' };
+    }
+    if (arrived.id === device.id) {
+      return { ok: false, path: newPath, reason: '下一跳不可达' };
+    }
+    if (ctx.visitedDevices.has(arrived.id)) {
+      return { ok: false, path: newPath, reason: '路由环路' };
+    }
+
+    const nextVisited = new Set(ctx.visitedDevices);
+    nextVisited.add(arrived.id);
+    return forward(arrived, dstIp, {
+      srcIp: ctx.srcIp,
+      path: newPath,
+      visitedDevices: nextVisited,
+      maxHops: ctx.maxHops - 1,
+      ingressPortId: hit.ingressPortId
+    });
+  }
+
+  /** ACL 入方向过滤检查：仅在报文入接口上检查已绑定的 ACL，返回拒绝原因或 null */
+  function checkAcl(device, srcIp, dstIp, ingressPortId) {
+    if (!srcIp || !ingressPortId) return null;
+    for (const b of device.aclBindings) {
+      if (b.direction !== 'inbound' || b.portId !== ingressPortId) continue;
+      const acl = device.acl.find((a) => a.id === b.aclId);
+      if (!acl) continue;
+      for (const rule of acl.rules) {
+        if (!matchAclRule(rule, srcIp, dstIp)) continue;
+        if (rule.action === 'deny') {
+          return `ACL ${acl.id} 拒绝了该流量 (${srcIp} -> ${dstIp})`;
+        }
+        break; // permit 命中后放行
+      }
+    }
+    return null;
+  }
+
+  function matchAclRule(rule, srcIp, dstIp) {
+    if (rule.src) {
+      const pfx = rule.srcPrefix == null ? wildcardToPrefix(rule.srcWildcard || '0.0.0.0') : rule.srcPrefix;
+      if (pfx == null) return false;
+      if (!sameSubnet(rule.src, pfx, srcIp)) return false;
+    }
+    if (rule.dst) {
+      const pfx = rule.dstPrefix == null ? wildcardToPrefix(rule.dstWildcard || '0.0.0.0') : rule.dstPrefix;
+      if (pfx == null) return false;
+      if (!sameSubnet(rule.dst, pfx, dstIp)) return false;
+    }
+    return true;
+  }
+
+  /* ------------------------------ 连通性测试 ------------------------------ */
+
+  /** 设备自身的源 IP（用于 ping 源地址） */
+  function primaryIp(device) {
+    if (device.type === 'pc') {
+      const p = device.ports.find((x) => x.ip);
+      return p ? { ip: p.ip, mask: p.mask, port: p } : null;
+    }
+    for (const vi of device.vlanifs) if (vi.enabled && vi.ip) return { ip: vi.ip, mask: vi.mask };
+    for (const p of device.ports) if (p.mode === 'routed' && p.ip) return { ip: p.ip, mask: p.mask, port: p };
+    return null;
+  }
+
+  /** 执行 ping，返回 { ok, path, reason, srcIp, dstDevice } */
+  function ping(srcDevice, dstIp, srcIpOverride) {
+    const src = srcIpOverride ? { ip: srcIpOverride } : primaryIp(srcDevice);
+    if (!src || !src.ip) {
+      return { ok: false, reason: '源设备未配置 IP 地址', path: [srcDevice.id] };
+    }
+    if (!isValidIp(dstIp)) {
+      return { ok: false, reason: '目的地址不合法', path: [srcDevice.id] };
+    }
+    if (src.ip === dstIp) {
+      return { ok: true, reason: 'local', path: [srcDevice.id], srcIp: src.ip };
+    }
+
+    // 找到目的设备（便于回显与高亮）
+    let dstDevice = null;
+    for (const d of Net.devices) {
+      const owned =
+        d.ports.some((p) => p.ip === dstIp) || d.vlanifs.some((v) => v.enabled && v.ip === dstIp);
+      if (owned) {
+        dstDevice = d;
+        break;
+      }
+    }
+
+    const res = forward(srcDevice, dstIp, { srcIp: src.ip });
+    return { ...res, srcIp: src.ip, dstDevice: dstDevice || null, dstIp };
+  }
+
+  /** traceroute：逐跳收集 */
+  function traceroute(srcDevice, dstIp) {
+    const hops = [];
+    const src = primaryIp(srcDevice);
+    if (!src || !src.ip) return { ok: false, hops, reason: '源设备未配置 IP 地址' };
+
+    let cur = srcDevice;
+    let guard = 0;
+    const seen = new Set([srcDevice.id]);
+    while (guard++ < 16) {
+      const lookup = routeLookup(cur, dstIp);
+      if (lookup.type === 'none') return { ok: false, hops, reason: `在 ${cur.hostname} 上没有到达 ${dstIp} 的路由` };
+      const egress = findEgressIface(cur, dstIp, lookup);
+      if (!egress) return { ok: false, hops, reason: `在 ${cur.hostname} 上找不到出接口` };
+
+      // 本机即目的
+      for (const i of l3Interfaces(cur)) {
+        if (i.ip === dstIp) return { ok: true, hops, reason: 'local' };
+      }
+
+      let port = egress.kind === 'port' ? Net.getPort(cur, egress.portId) : null;
+      let domain;
+      if (port) domain = egressDomain(cur, port);
+      else {
+        domain = { type: VLAN_DOMAIN, vlan: egress.vlanId };
+        port = cur.ports.find((p) => !p.shutdown && p.cableId && portPassesVlan(p, egress.vlanId));
+      }
+      if (!port) return { ok: false, hops, reason: `在 ${cur.hostname} 上找不到可用出端口` };
+
+      const target = lookup.type === 'direct' ? dstIp : lookup.nextHop;
+      const hit = deliverL2(cur, port, domain, target);
+      if (!hit) return { ok: false, hops, reason: `无法到达下一跳 ${target}` };
+
+      hops.push({ device: hit.device, ip: target });
+
+      if (lookup.type === 'direct' && target === dstIp) return { ok: true, hops, reason: 'ok' };
+      if (seen.has(hit.device.id)) return { ok: false, hops, reason: '路由环路' };
+      seen.add(hit.device.id);
+      cur = hit.device;
+    }
+    return { ok: false, hops, reason: 'TTL 超时' };
+  }
+
+  /* ------------------------------ OSPF 计算 ------------------------------ */
+
+  /** 该接口是否被 area 的 network 语句覆盖 */
+  function ospfCovers(device, ip, mask) {
+    for (const area of device.ospf.areas) {
+      for (const n of area.networks) {
+        const pfx = n.prefix == null ? wildcardToPrefix(n.wildcard) : n.prefix;
+        if (pfx == null) continue;
+        // 接口网段需要落在 network 范围内
+        if (sameSubnet(n.ip, pfx, ip) && pfx <= mask) return { area: area.areaId, network: n };
+      }
+    }
+    return null;
+  }
+
+  /** 重新计算全网 OSPF 路由（邻居建立 + SPF 计算） */
+  function recomputeOspf() {
+    // 1) 清理旧 OSPF 路由
+    for (const d of Net.devices) {
+      d.routes = d.routes.filter((r) => r.proto !== 'OSPF');
+      d.ospfNeighbors = [];
+      d.ospfActiveIfaces = [];
+    }
+
+    // 2) 找出每台设备的 OSPF 活跃接口
+    for (const d of Net.devices) {
+      if (!d.ospf.enabled) continue;
+      if (!d.ospf.routerId) {
+        const p = primaryIp(d);
+        if (p) d.ospf.routerId = p.ip;
+      }
+      for (const i of l3Interfaces(d)) {
+        const cover = ospfCovers(d, i.ip, i.mask);
+        if (cover) d.ospfActiveIfaces.push({ ...i, area: cover.area });
+      }
+    }
+
+    // 3) 建立邻接关系（直连 + 同网段 + 同区域 + 双方 OSPF 启用且接口已通告）
+    const adj = new Map(); // devId -> [{ peer, myIface, peerIface, area }]
+    const addAdj = (a, b, aIf, bIf, area) => {
+      if (!adj.has(a.id)) adj.set(a.id, []);
+      if (!adj.has(b.id)) adj.set(b.id, []);
+      adj.get(a.id).push({ peer: b, myIface: aIf, peerIface: bIf, area });
+      adj.get(b.id).push({ peer: a, myIface: bIf, peerIface: aIf, area });
+    };
+
+    for (const cable of Net.cables) {
+      const a = Net.getDevice(cable.aDeviceId);
+      const b = Net.getDevice(cable.bDeviceId);
+      if (!a || !b) continue;
+      for (const aIf of a.ospfActiveIfaces || []) {
+        for (const bIf of b.ospfActiveIfaces || []) {
+          if (aIf.area !== bIf.area) continue;
+          if (!sameSubnet(aIf.ip, aIf.mask, bIf.ip) || !sameSubnet(bIf.ip, bIf.mask, aIf.ip)) continue;
+          // 确认两个接口确实通过这条线缆相连
+          const okLink =
+            (aIf.kind === 'port' && aIf.portId === cable.aPortId) ||
+            (bIf.kind === 'port' && bIf.portId === cable.bPortId) ||
+            (aIf.kind === 'vlanif' && aIf.vlanId != null && bIf.kind === 'vlanif' && aIf.vlanId != null);
+          if (!okLink) continue;
+          addAdj(a, b, aIf, bIf, aIf.area);
+        }
+      }
+    }
+
+    // 4) 收集每台设备的直连网段（LSA）
+    const subnets = new Map(); // devId -> [{network, mask, area}]
+    for (const d of Net.devices) {
+      const list = [];
+      for (const i of d.ospfActiveIfaces || []) {
+        list.push({ network: networkOf(i.ip, i.mask), mask: i.mask, area: i.area });
+      }
+      subnets.set(d.id, list);
+    }
+
+    // 5) SPF：对每台 OSPF 设备做 BFS，学习远端网段
+    for (const d of Net.devices) {
+      if (!d.ospf.enabled) continue;
+      const visited = new Set([d.id]);
+      const queue = [{ dev: d, nextHop: null, cost: 0, firstIface: null }];
+      const learned = new Map(); // network/mask -> route
+
+      while (queue.length) {
+        const cur = queue.shift();
+        const nbrs = adj.get(cur.dev.id) || [];
+        for (const n of nbrs) {
+          if (visited.has(n.peer.id)) continue;
+          visited.add(n.peer.id);
+          const nextHop = cur.nextHop || n.peerIface.ip;
+          const cost = cur.cost + 1;
+          const firstIface = cur.firstIface || n.myIface;
+          queue.push({ dev: n.peer, nextHop, cost, firstIface });
+
+          for (const s of subnets.get(n.peer.id) || []) {
+            const key = `${s.network}/${s.mask}`;
+            // 跳过本机直连网段
+            if ((subnets.get(d.id) || []).some((x) => x.network === s.network && x.mask === s.mask)) continue;
+            if (learned.has(key) && learned.get(key).cost <= cost) continue;
+            learned.set(key, {
+              dest: s.network,
+              mask: s.mask,
+              nextHop,
+              proto: 'OSPF',
+              pre: 10,
+              cost,
+              ifaceName: firstIface ? firstIface.name : null,
+              area: s.area
+            });
+          }
+        }
+      }
+
+      // 6) 回写邻居表（用于 display ospf peer）
+      d.ospfNeighbors = (adj.get(d.id) || []).map((n) => ({
+        routerId: n.peer.ospf.routerId || '0.0.0.0',
+        address: n.peerIface.ip,
+        iface: n.myIface.name,
+        state: 'Full',
+        area: n.area,
+        priority: 1
+      }));
+
+      for (const r of learned.values()) d.routes.push(r);
+    }
+  }
+
+  /* ------------------------------ STP 计算 ------------------------------ */
+
+  /** 简化 STP：按 (优先级, MAC) 选根，生成树上的端口 Forwarding，其余 Discarding */
+  function recomputeStp() {
+    for (const d of Net.devices) {
+      d.stpState = { rootId: null, isRoot: false, portRole: {} };
+    }
+    const switches = Net.devices.filter((d) => d.type === 'switch');
+    if (!switches.length) return;
+
+    // 收集所有 VLAN 域
+    const vlans = new Set();
+    for (const sw of switches) for (const p of sw.ports) if (p.mode !== 'routed') vlans.add(portVlan(p));
+    for (const sw of switches) for (const vi of sw.vlanifs) vlans.add(vi.vlanId);
+
+    for (const vlan of vlans) {
+      const members = switches.filter((sw) => sw.ports.some((p) => !p.shutdown && p.cableId && portPassesVlan(p, vlan)));
+      if (members.length < 1) continue;
+
+      // 每台交换机在该 VLAN 的角色
+      const swOf = new Map(members.map((m) => [m.id, m]));
+      const bridgeId = (sw) => `${String(sw.stp.priority).padStart(5, '0')}.${macOf(sw)}`;
+      const root = members.slice().sort((a, b) => (bridgeId(a) < bridgeId(b) ? -1 : 1))[0];
+
+      // 在 VLAN 内做连通图（仅交换机之间）
+      const adjL = new Map();
+      for (const m of members) adjL.set(m.id, []);
+      for (const m of members) {
+        for (const p of m.ports) {
+          if (p.shutdown || !p.cableId || !portPassesVlan(p, vlan)) continue;
+          const peer = Net.peerOf(m, p);
+          if (!peer || !peer.device || peer.device.type !== 'switch') continue;
+          if (!portPassesVlan(peer.port, vlan)) continue;
+          adjL.get(m.id).push({ portId: p.id, peerId: peer.device.id, peerPortId: peer.port.id });
+        }
+      }
+
+      // 从根做 BFS 生成树
+      const inTree = new Set(); // "devId:portId"
+      const visited = new Set([root.id]);
+      const q = [root.id];
+      while (q.length) {
+        const cur = q.shift();
+        for (const e of adjL.get(cur) || []) {
+          if (visited.has(e.peerId)) continue;
+          visited.add(e.peerId);
+          inTree.add(`${cur}:${e.portId}`);
+          inTree.add(`${e.peerId}:${e.peerPortId}`);
+          q.push(e.peerId);
+        }
+      }
+
+      for (const m of members) {
+        m.stpState.rootId = bridgeId(root);
+        m.stpState.isRoot = m.id === root.id;
+        for (const p of m.ports) {
+          if (p.mode === 'routed') continue;
+          if (!p.cableId) {
+            m.stpState.portRole[p.id] = portPassesVlan(p, vlan) ? 'root/designated' : 'disabled';
+            continue;
+          }
+          if (!portPassesVlan(p, vlan)) {
+            m.stpState.portRole[p.id] = 'disabled';
+            continue;
+          }
+          m.stpState.portRole[p.id] = inTree.has(`${m.id}:${p.id}`) ? (m.stpState.isRoot ? 'designated' : 'root') : 'alternate';
+        }
+        // 根桥端口统一为 designated
+        if (m.stpState.isRoot) {
+          for (const p of m.ports) if (m.stpState.portRole[p.id] === 'root') m.stpState.portRole[p.id] = 'designated';
+        }
+      }
+    }
+  }
+
+  function macOf(dev) {
+    if (!dev._mac) dev._mac = randomMac();
+    return dev._mac;
+  }
+
+  /* ------------------------------ DHCP ------------------------------ */
+
+  /** 在 PC 所在二层域里寻找可用的 DHCP 服务器设备与地址池 */
+  function findDhcpServer(pc) {
+    const port = pc.ports.find((p) => p.cableId);
+    if (!port) return null;
+    const peer = Net.peerOf(pc, port);
+    if (!peer || !peer.device) return null;
+    const switchDev = peer.device;
+
+    let domain;
+    if (switchDev.type === 'switch' && peer.port.mode !== 'routed') {
+      domain = { type: VLAN_DOMAIN, vlan: portVlan(peer.port) };
+    } else {
+      domain = { type: P2P_DOMAIN };
+    }
+    const vlan = domain.type === VLAN_DOMAIN ? domain.vlan : 1;
+
+    const visited = new Set([pc.id]);
+    const q = [switchDev];
+    visited.add(switchDev.id);
+    while (q.length) {
+      const d = q.shift();
+      if (d.dhcp.enabled) {
+        // 服务接口：已开启 dhcp select global 的 Vlanif 或路由口
+        const serving = [
+          ...d.vlanifs.filter((v) => v.enabled && v.ip && v.dhcpSelect).map((v) => ({ ip: v.ip, mask: v.mask })),
+          ...d.ports.filter((p) => p.mode === 'routed' && p.ip && p.dhcpSelect).map((p) => ({ ip: p.ip, mask: p.mask }))
+        ];
+        const pool = d.dhcp.pools.find(
+          (pl) => pl.network && pl.mask != null && serving.some((s) => sameSubnet(s.ip, s.mask, pl.network))
+        );
+        if (pool) return { server: d, pool, vlan };
+      }
+      // 继续在同 VLAN 内扩散
+      for (const p of d.ports) {
+        if (p.shutdown || !p.cableId) continue;
+        if (d.type === 'switch' && !portPassesVlan(p, vlan)) continue;
+        const np = Net.peerOf(d, p);
+        if (!np || !np.device || visited.has(np.device.id)) continue;
+        if (np.device.type === 'pc') continue;
+        visited.add(np.device.id);
+        q.push(np.device);
+      }
+    }
+    return null;
+  }
+
+  /** 地址池内分配一个可用 IP */
+  function allocateFromPool(server, pool, excludeIps) {
+    if (!pool.network || pool.mask == null) return null;
+    const prefix = pool.mask;
+    const size = prefix >= 31 ? 2 : Math.pow(2, 32 - prefix);
+    const base = ipToInt(pool.network);
+    const used = new Set();
+    (excludeIps || []).forEach((i) => used.add(i));
+    (pool.excluded || []).forEach((i) => used.add(i));
+    if (pool.gateway) used.add(pool.gateway);
+    for (let i = 1; i < Math.min(size - 1, 254); i++) {
+      const ip = intToIp((base + i) >>> 0);
+      if (used.has(ip)) continue;
+      return ip;
+    }
+    return null;
+  }
+
+  /* ------------------------------ 配置回显 ------------------------------ */
+
+  /**
+   * 单个端口的非缺省配置行（不含 `interface xxx` 行本身）。
+   * display current-configuration 与接口视图下的 display this 共用这一份，
+   * 避免两处各写一遍导致回显不一致。
+   */
+  function portConfigLines(dev, p) {
+    const lines = [];
+    if (p.desc) lines.push(` description ${p.desc}`);
+    if (p.mode === 'trunk') {
+      lines.push(' port link-type trunk');
+      if (p.allowedVlans === 'all') {
+        lines.push(' port trunk allow-pass vlan all');
+      } else if (Array.isArray(p.allowedVlans) && p.allowedVlans.length) {
+        lines.push(` port trunk allow-pass vlan ${p.allowedVlans.join(' ')}`);
+      }
+    }
+    if (p.mode === 'hybrid') {
+      lines.push(' port link-type hybrid');
+      lines.push(` port hybrid pvid vlan ${p.vlan}`);
+    }
+    if (p.mode === 'access' && p.vlan !== 1) lines.push(` port default vlan ${p.vlan}`);
+    if (p.mode === 'routed') lines.push(' undo portswitch');
+    if (p.ip) lines.push(` ip address ${p.ip} ${prefixToMask(p.mask)}`);
+    if (p.dhcpSelect) lines.push(' dhcp select global');
+    if (p.trunkId != null) lines.push(` eth-trunk ${p.trunkId}`);
+    if (p.stpEdged) lines.push(' stp edged-port enable');
+    if (p.bpduProtect) lines.push(' bpdu-protection');
+    if (p.portSec && p.portSec.enabled) {
+      lines.push(' port-security enable');
+      lines.push(` port-security max-mac-num ${p.portSec.maxMac}`);
+    }
+    for (const b of dev.aclBindings.filter((b) => b.portId === p.id)) {
+      lines.push(` traffic-filter ${b.direction} acl ${b.aclId}`);
+    }
+    if (p.shutdown && p.cableId) lines.push(' shutdown');
+    return lines;
+  }
+
+  function runningConfig(dev) {
+    const out = ['#', `sysname ${dev.hostname}`, '#'];
+    if (dev.type === 'pc') {
+      const p = dev.ports[0];
+      if (p.ip) {
+        out.push(`ip address ${p.ip} ${prefixToMask(p.mask)}`);
+        if (p.gateway) out.push(`ip gateway ${p.gateway}`);
+      }
+      return out;
+    }
+
+    // 真实 VRP 里没有附加属性的 VLAN 会合并成 vlan batch，有描述/名称的单独成段
+    const meta = dev.vlanMeta || {};
+    const plainVlans = dev.vlans.filter((v) => {
+      const m = meta[v];
+      return !m || (!m.desc && !m.name);
+    });
+    const namedVlans = dev.vlans.filter((v) => plainVlans.indexOf(v) < 0).sort((a, b) => a - b);
+    if (plainVlans.length > 1) {
+      out.push(`vlan batch ${plainVlans.slice().sort((a, b) => a - b).join(' ')}`);
+      out.push('#');
+    }
+    for (const v of namedVlans) {
+      const m = meta[v] || {};
+      out.push(`vlan ${v}`);
+      if (m.desc) out.push(` description ${m.desc}`);
+      if (m.name) out.push(` name ${m.name}`);
+      out.push('#');
+    }
+    if (dev.dhcp.enabled) {
+      out.push('dhcp enable');
+      out.push('#');
+    }
+    for (const vi of dev.vlanifs) {
+      out.push(`interface Vlanif${vi.vlanId}`);
+      if (vi.desc) out.push(` description ${vi.desc}`);
+      if (vi.ip) out.push(` ip address ${vi.ip} ${prefixToMask(vi.mask)}`);
+      if (vi.dhcpSelect) out.push(' dhcp select global');
+      if (!vi.enabled) out.push(' shutdown');
+      out.push('#');
+    }
+    for (const p of dev.ports) {
+      const lines = portConfigLines(dev, p);
+      if (lines.length) {
+        out.push(`interface ${p.name}`);
+        out.push(...lines);
+        out.push('#');
+      }
+    }
+    for (const t of ethTrunks(dev)) {
+      out.push(`interface Eth-Trunk${t.id}`);
+      out.push(` mode ${t.mode === 'lacp' ? 'lacp-static' : 'manual load-balance'}`);
+      out.push('#');
+    }
+    if (dev.acl.length) {
+      for (const a of dev.acl) {
+        out.push(`acl number ${a.id}`);
+        for (const r of a.rules) out.push(` rule ${r.ruleId} ${r.action} source ${r.src || '0.0.0.0'} ${r.srcWildcard || '0.0.0.0'}`);
+        out.push('#');
+      }
+    }
+    if (dev.ospf.enabled) {
+      out.push(`ospf ${dev.ospf.pid || 1} router-id ${dev.ospf.routerId || '0.0.0.0'}`);
+      for (const a of dev.ospf.areas) {
+        out.push(` area ${fmtArea(a.areaId)}`);
+        for (const n of a.networks) out.push(`  network ${n.ip} ${n.wildcard}`);
+      }
+      out.push('#');
+    }
+    for (const r of dev.routes.filter((x) => x.proto === 'Static')) {
+      out.push(`ip route-static ${r.dest} ${prefixToMask(r.mask)} ${r.nextHop}`);
+    }
+    for (const pl of dev.dhcp.pools) {
+      out.push(`ip pool ${pl.name}`);
+      out.push(` network ${pl.network} mask ${prefixToMask(pl.mask)}`);
+      if (pl.gateway) out.push(` gateway-list ${pl.gateway}`);
+      if (pl.dns) out.push(` dns-list ${pl.dns}`);
+      for (const e of pl.excluded || []) out.push(` excluded-ip-address ${e}`);
+      if (pl.leaseDays) out.push(` lease day ${pl.leaseDays}`);
+      out.push('#');
+    }
+    if (!dev.savedConfig) out.push('return');
+    return out;
+  }
+
+  function fmtArea(id) {
+    if (typeof id === 'number') return String(id);
+    return id;
+  }
+
+  function ethTrunks(dev) {
+    const map = new Map();
+    for (const p of dev.ports) {
+      if (p.trunkId == null) continue;
+      if (!map.has(p.trunkId)) map.set(p.trunkId, { id: p.trunkId, mode: p.trunkMode || 'lacp', members: [] });
+      map.get(p.trunkId).members.push(p);
+    }
+    return [...map.values()];
+  }
+
+  /* ------------------------------ 导出 ------------------------------ */
+
+  global.NE = global.NE || {};
+  Object.assign(global.NE, {
+    // 工具
+    uid,
+    clone,
+    randomMac,
+    macOf,
+    isValidIp,
+    ipToInt,
+    intToIp,
+    maskToPrefix,
+    prefixToMask,
+    sameSubnet,
+    networkOf,
+    wildcardToPrefix,
+    // 数据
+    TEMPLATES,
+    Net,
+    createDevice,
+    normalizeDevice,
+    // 转发
+    l3Interfaces,
+    routeLookup,
+    portPassesVlan,
+    portVlan,
+    primaryIp,
+    ping,
+    traceroute,
+    portConfigLines,
+    // 协议
+    recomputeOspf,
+    recomputeStp,
+    // DHCP
+    findDhcpServer,
+    allocateFromPool,
+    // 回显
+    runningConfig,
+    ethTrunks
+  });
+})(window);
+
+</script>
+<script>
+/* =========================================================================
+ * NE_HWSIM —— 华为 VRP 网络实训模拟器
+ * 模块：VRP 命令行引擎
+ * 覆盖交换机 / 路由器常用配置与 display 命令，回显格式贴近真实 VRP。
+ *
+ * Copyright (c) 2026 新易科技工作室 NewE
+ * 作者：Liuyi  <yimr@sohu.com>
+ * 协议：MIT License
+ *
+ * 本项目为独立的非官方教学演示工具，与华为技术有限公司无任何关联。
+ * 命令回显（如 display version）为自行编写的模拟内容，不含华为公司任何源代码或固件。
+ * ========================================================================= */
+(function (global) {
+  'use strict';
+
+  const E = global.NE;
+
+  /* ------------------------------ 小工具 ------------------------------ */
+
+  const padEnd = (s, n) => (String(s) + ' '.repeat(n)).slice(0, n);
+  const padStart = (s, n) => (' '.repeat(n) + String(s)).slice(-n);
+
+  /* ------------------------------ 错误回显 ------------------------------
+   * 真实 VRP 报错是「在出错词正下方对齐一个 ^，再跟一行 Error」：
+   *   [SW1] vlan b 10
+   *               ^
+   *   Error: Unrecognized command found at '^' position.
+   * 各命令分支只声明"错在哪"（kind + 词），由 execute() 拿到完整命令行和当时的
+   * 提示符后统一展开成这两行，省得每个分支自己算列号。
+   * -------------------------------------------------------------------- */
+  const ERR = '\u0001ERR\u0001';
+  const ERR_SEP = '\u0002';
+
+  function errAt(kind, word) {
+    return [ERR + kind + ERR_SEP + (word == null ? '' : word)];
+  }
+  function errUnrecognized(word) {
+    return errAt('Unrecognized', word);
+  }
+  function errIncomplete(word) {
+    return errAt('Incomplete', word);
+  }
+  function errWrong(word) {
+    return errAt('Wrong parameter', word);
+  }
+
+  /** 在原始命令行里找 word 首个词的出现列号（字符偏移），找不到返回 0 */
+  function columnOf(rawLine, word) {
+    if (!word) return 0;
+    const first = String(word).split(/\s+/)[0].toLowerCase();
+    if (!first) return 0;
+    const toks = String(rawLine).split(/(\s+)/);
+    let pos = 0;
+    for (const t of toks) {
+      if (!t) continue;
+      if (/^\s+$/.test(t)) {
+        pos += t.length;
+        continue;
+      }
+      if (t.toLowerCase() === first) return pos;
+      pos += t.length;
+    }
+    return 0;
+  }
+
+  /** 把错误标记展开成 ^ 定位行 + Error 行 */
+  function expandErrors(prompt, rawLine, lines) {
+    if (!lines.some((l) => typeof l === 'string' && l.indexOf(ERR) === 0)) return lines;
+    const out = [];
+    for (const l of lines) {
+      if (typeof l === 'string' && l.indexOf(ERR) === 0) {
+        const body = l.slice(ERR.length);
+        const sep = body.indexOf(ERR_SEP);
+        const kind = body.slice(0, sep);
+        const word = body.slice(sep + 1);
+        out.push(' '.repeat(prompt.length + 1 + columnOf(rawLine, word)) + '^');
+        // 真实 VRP 措辞：Unrecognized/Incomplete/Ambiguous 后面带 "command"，
+        // 而 Wrong parameter / Too many parameters 直接跟 "found at '^' position."
+        const needsCommand = !/parameter/i.test(kind);
+        out.push(
+          `Error: ${kind}${needsCommand ? ' command' : ''} found at '^' position.`
+        );
+      } else {
+        out.push(l);
+      }
+    }
+    return out;
+  }
+
+  /** 把 IPv4 掩码字符串转成前缀长度；支持 "24" 与 "255.255.255.0" */
+  function parseMask(v) {
+    return E.maskToPrefix(v);
+  }
+
+  /* --------------------------- 视图栈（核心） ---------------------------
+   * 真实 VRP 的视图是「一级一级进入、quit 一级一级退出」：
+   *   <SW1> --system-view--> [SW1]
+   *         --interface GE0/0/1--> [SW1-GigabitEthernet0/0/1]
+   *         --vlan 10-->           [SW1-vlan10]
+   *         --acl number 3000-->   [SW1-acl-adv-3000]
+   *         --ospf 1-->            [SW1-ospf-1] --area 0--> [SW1-ospf-1-area-0.0.0.0]
+   * quit 只回上一级，return 直接回用户视图。
+   * -------------------------------------------------------------------- */
+
+  /** 各子视图的上下文键，压栈 / 出栈时统一处理 */
+  const VIEW_CTX_KEYS = ['ifaceId', 'vlanifId', 'vlanId', 'trunkId', 'poolName', 'aclId', 'ospfPid', 'areaId'];
+
+  /** 当前视图上下文快照 */
+  function snapView(dev) {
+    const c = dev.cli;
+    const snap = { view: c.view };
+    for (const k of VIEW_CTX_KEYS) snap[k] = c[k];
+    return snap;
+  }
+
+  /** 进入子视图：当前视图压栈，再切到新视图 */
+  function enterView(dev, view, ctx) {
+    const st = dev.cli.stack;
+    if (st.length > 32) st.shift(); // 异常兜底，避免无限增长
+    st.push(snapView(dev));
+    for (const k of VIEW_CTX_KEYS) dev.cli[k] = null;
+    if (ctx) Object.assign(dev.cli, ctx);
+    dev.cli.view = view;
+  }
+
+  /** quit：退回上一级视图 */
+  function quitView(dev) {
+    const prev = dev.cli.stack.pop();
+    if (!prev) {
+      resetCliCtx(dev);
+      dev.cli.view = 'user-view';
+      return;
+    }
+    for (const k of VIEW_CTX_KEYS) dev.cli[k] = prev[k] === undefined ? null : prev[k];
+    dev.cli.view = prev.view;
+  }
+
+  function resetCliCtx(dev) {
+    for (const k of VIEW_CTX_KEYS) dev.cli[k] = null;
+  }
+
+  /** return：直接回用户视图，视图栈清空 */
+  function returnUserView(dev) {
+    dev.cli.stack = [];
+    resetCliCtx(dev);
+    dev.cli.view = 'user-view';
+  }
+
+  function viewOf(dev) {
+    return dev.cli.view;
+  }
+
+  function promptOf(dev) {
+    const name = dev.hostname;
+    switch (dev.cli.view) {
+      case 'user-view':
+        return `<${name}>`;
+      case 'system-view':
+        return `[${name}]`;
+      case 'vlan-view':
+        return `[${name}-vlan${dev.cli.vlanId != null ? dev.cli.vlanId : ''}]`;
+      case 'interface-view': {
+        const p = E.Net.getPort(dev, dev.cli.ifaceId);
+        return `[${name}-${p ? p.name : ''}]`;
+      }
+      case 'vlanif-view': {
+        const vi = dev.vlanifs.find((v) => v.vlanId === dev.cli.vlanifId);
+        return `[${name}-Vlanif${vi ? vi.vlanId : ''}]`;
+      }
+      case 'pool-view':
+        return `[${name}-ip-pool-${dev.cli.poolName || ''}]`;
+      case 'acl-view':
+        return `[${name}-acl-adv-${dev.cli.aclId || ''}]`;
+      case 'ospf-view':
+        return `[${name}-ospf-${dev.cli.ospfPid || ''}]`;
+      case 'ospf-area-view':
+        return `[${name}-ospf-${dev.cli.ospfPid || ''}-area-${dev.cli.areaId || ''}]`;
+      case 'trunk-view':
+        return `[${name}-Eth-Trunk${dev.cli.trunkId || ''}]`;
+      default:
+        return `[${name}]`;
+    }
+  }
+
+  /* --------------------------- 接口名解析 --------------------------- */
+
+  /** 解析接口名，返回 { kind:'eth'|'vlanif'|'trunk', port?, label } 或 null */
+  function resolveIface(dev, token) {
+    if (!token) return null;
+    const t = token.toLowerCase();
+
+    let m = t.match(/^vlanif\s*(\d+)$/);
+    if (m) return { kind: 'vlanif', vlanId: parseInt(m[1], 10), label: `Vlanif${m[1]}` };
+
+    m = t.match(/^eth-?trunk\s*(\d+)$/);
+    if (m) return { kind: 'trunk', trunkId: parseInt(m[1], 10), label: `Eth-Trunk${m[1]}` };
+
+    m = t.match(/^(?:gigabitethernet|ge|g)\s*0\/0\/(\d+)$/);
+    if (m) {
+      const idx = parseInt(m[1], 10);
+      const p = dev.ports.find((x) => x.name.toLowerCase().endsWith('0/0/' + idx));
+      return p ? { kind: 'eth', port: p, label: p.name } : null;
+    }
+    return null;
+  }
+
+  function vlanList(token) {
+    // "10 20 30" / "10 to 20" / "all"
+    if (!token) return null;
+    const t = token.toLowerCase().trim();
+    if (t === 'all') return 'all';
+    const out = [];
+    const parts = t.split(/\s+/);
+    for (let i = 0; i < parts.length; i++) {
+      const p = parts[i];
+      if (p === 'to') {
+        const from = out[out.length - 1];
+        const to = parseInt(parts[++i], 10);
+        if (isNaN(to) || isNaN(from)) return null;
+        for (let v = from + 1; v <= to && v <= 4094; v++) out.push(v);
+        continue;
+      }
+      const n = parseInt(p, 10);
+      if (isNaN(n) || n < 1 || n > 4094) return null;
+      out.push(n);
+    }
+    return out.length ? [...new Set(out)].sort((a, b) => a - b) : null;
+  }
+
+  /* --------------------------- display 系列 --------------------------- */
+
+  function cmdDisplayVersion(dev) {
+    const isRouter = dev.type === 'router';
+    return [
+      `Huawei Versatile Routing Platform Software`,
+      `VRP (R) software, Version 5.170 (${isRouter ? 'AR6121' : 'S5700 V200R019C10SPC500'})`,
+      `Copyright (C) 2012-2024 Huawei Technologies Co., Ltd.`,
+      `${dev.model} uptime is 0 day, 0 hour, 3 minutes`,
+      `SDRAM Memory Size   : 1024 M bytes`,
+      `Flash Memory Size   : 512 M bytes`,
+      `MPU version information :`,
+      `  1. PCB      Version  : ${isRouter ? 'AR01SRU' : 'S5700'} VER.A`,
+      `  2. Board    Type     : ${dev.model}`,
+      `  3. MPU Slot Quantity : 1`
+    ];
+  }
+
+  function cmdDisplayCurrentConfig(dev) {
+    const lines = E.runningConfig(dev);
+    const out = ['#'];
+    out.push(...lines);
+    if (!out[out.length - 1].startsWith('return')) out.push('return');
+    return out;
+  }
+
+  /** display this —— 按当前所在视图回显该视图下的配置 */
+  function cmdDisplayThis(dev) {
+    const view = dev.cli.view;
+    const out = ['#'];
+
+    if (view === 'interface-view') {
+      const p = E.Net.getPort(dev, dev.cli.ifaceId);
+      if (!p) return ['#', 'return'];
+      out.push(`interface ${p.name}`);
+      out.push(...E.portConfigLines(dev, p));
+      out.push('#', 'return');
+      return out;
+    }
+
+    if (view === 'vlan-view') {
+      const n = dev.cli.vlanId;
+      const m = (dev.vlanMeta || {})[n] || {};
+      out.push(`vlan ${n}`);
+      if (m.desc) out.push(` description ${m.desc}`);
+      if (m.name) out.push(` name ${m.name}`);
+      out.push('#', 'return');
+      return out;
+    }
+
+    if (view === 'vlanif-view') {
+      const vi = dev.vlanifs.find((v) => v.vlanId === dev.cli.vlanifId);
+      if (!vi) return ['#', 'return'];
+      out.push(`interface Vlanif${vi.vlanId}`);
+      if (vi.desc) out.push(` description ${vi.desc}`);
+      if (vi.ip) out.push(` ip address ${vi.ip} ${E.prefixToMask(vi.mask)}`);
+      if (vi.dhcpSelect) out.push(' dhcp select global');
+      if (!vi.enabled) out.push(' shutdown');
+      out.push('#', 'return');
+      return out;
+    }
+
+    if (view === 'trunk-view') {
+      const t = E.ethTrunks(dev).find((x) => x.id === dev.cli.trunkId);
+      out.push(`interface Eth-Trunk${dev.cli.trunkId}`);
+      if (t) out.push(` mode ${t.mode === 'lacp' ? 'lacp-static' : 'manual load-balance'}`);
+      out.push('#', 'return');
+      return out;
+    }
+
+    if (view === 'pool-view') {
+      const pl = dev.dhcp.pools.find((x) => x.name === dev.cli.poolName);
+      if (!pl) return ['#', 'return'];
+      out.push(`ip pool ${pl.name}`);
+      if (pl.network) out.push(` network ${pl.network} mask ${E.prefixToMask(pl.mask)}`);
+      if (pl.gateway) out.push(` gateway-list ${pl.gateway}`);
+      if (pl.dns) out.push(` dns-list ${pl.dns}`);
+      for (const e of pl.excluded || []) out.push(` excluded-ip-address ${e}`);
+      if (pl.leaseDays) out.push(` lease day ${pl.leaseDays}`);
+      out.push('#', 'return');
+      return out;
+    }
+
+    if (view === 'acl-view') {
+      const a = dev.acl.find((x) => x.id === dev.cli.aclId);
+      if (!a) return ['#', 'return'];
+      out.push(`acl number ${a.id}`);
+      for (const r of a.rules) {
+        out.push(` rule ${r.ruleId} ${r.action} source ${r.src || '0.0.0.0'} ${r.srcWildcard || '0.0.0.0'}`);
+      }
+      out.push('#', 'return');
+      return out;
+    }
+
+    if (view === 'ospf-view') {
+      out.push(`ospf ${dev.ospf.pid || 1} router-id ${dev.ospf.routerId || '0.0.0.0'}`);
+      for (const a of dev.ospf.areas) {
+        out.push(` area ${fmtArea(a.areaId)}`);
+        for (const n of a.networks) out.push(`  network ${n.ip} ${n.wildcard}`);
+      }
+      out.push('#', 'return');
+      return out;
+    }
+
+    if (view === 'ospf-area-view') {
+      const a = dev.ospf.areas.find((x) => String(x.areaId) === String(dev.cli.areaId));
+      out.push(`ospf ${dev.ospf.pid || 1} router-id ${dev.ospf.routerId || '0.0.0.0'}`);
+      out.push(` area ${fmtArea(dev.cli.areaId)}`);
+      for (const n of (a ? a.networks : [])) out.push(`  network ${n.ip} ${n.wildcard}`);
+      out.push('#', 'return');
+      return out;
+    }
+
+    // 系统视图（含用户视图兜底）：回显整机当前配置
+    out.push(...E.runningConfig(dev));
+    if (!out[out.length - 1].startsWith('return')) out.push('return');
+    return out;
+  }
+
+  function cmdDisplayIpInterfaceBrief(dev) {
+    const rows = [
+      padEnd('Interface', 34) + padEnd('PHY', 6) + padEnd('Protocol', 10) + padEnd('IP Address', 17) + 'Mask'
+    ];
+    const ifaces = E.l3Interfaces(dev);
+    const seen = new Set();
+
+    for (const p of dev.ports) {
+      if (dev.type === 'pc') break;
+      const up = p.cableId && !p.shutdown;
+      const ip = p.ip || 'unassigned';
+      const mask = p.ip ? E.prefixToMask(p.mask) : '--';
+      rows.push(padEnd(p.name, 34) + padEnd(up ? 'up' : 'down', 6) + padEnd(up ? 'up' : 'down', 10) + padEnd(ip, 17) + mask);
+      seen.add(p.name);
+    }
+    for (const vi of dev.vlanifs) {
+      const up = vi.enabled;
+      rows.push(
+        padEnd(`Vlanif${vi.vlanId}`, 34) +
+          padEnd(up ? 'up' : 'down', 6) +
+          padEnd(up ? 'up' : 'down', 10) +
+          padEnd(vi.ip || 'unassigned', 17) +
+          (vi.ip ? E.prefixToMask(vi.mask) : '--')
+      );
+    }
+    if (ifaces.length === 0 && dev.type !== 'pc') {
+      // 无三层接口时也保持表头可读
+    }
+    return rows;
+  }
+
+  function cmdDisplayVlan(dev, arg) {
+    const vlans = dev.vlans.slice().sort((a, b) => a - b);
+    const out = [`The total number of VLANs is : ${vlans.length}`, ''];
+    out.push('VID  Status  Property      MAC-LRN STAT    BC  MC  UC  Description');
+    out.push('-'.repeat(78));
+    const meta = dev.vlanMeta || {};
+    for (const v of vlans) {
+      const m = meta[v] || {};
+      // 真实 VRP 的 Description 列放 VLAN 名：缺省是 VLAN0010 这种格式化名，可被 name 覆盖
+      const desc = v === 1 ? 'VLAN 1' : m.name || `VLAN ${String(v).padStart(4, '0')}`;
+      out.push(
+        padEnd(v, 5) +
+          padEnd('enable', 8) +
+          padEnd(v === 1 ? 'default' : 'static', 14) +
+          padEnd('enable', 8) +
+          padEnd('disable', 8) +
+          'FWD FWD FWD ' +
+          desc
+      );
+    }
+    if (arg) {
+      const n = parseInt(arg, 10);
+      if (!vlans.includes(n)) return [`Error: The VLAN does not exist.`];
+      out.push('');
+      out.push(`U: Up  D: Down  TG: Tagged  UT: Untagged`);
+      out.push(`                          Untagged    Tagged`);
+      for (const p of dev.ports) {
+        const tags = [];
+        if (p.mode === 'access' && p.vlan === n) tags.push('UT');
+        if (p.mode === 'trunk' && (p.allowedVlans === 'all' || (p.allowedVlans || []).includes(n))) tags.push('TG');
+        if (p.mode === 'hybrid') tags.push('UT');
+        if (!tags.length) continue;
+        out.push(`${p.name}${' '.repeat(Math.max(1, 26 - p.name.length))}${tags.join(' ')}`);
+      }
+    }
+    return out;
+  }
+
+  function cmdDisplayIpRoutingTable(dev) {
+    const ifaces = E.l3Interfaces(dev);
+    const entries = [];
+
+    for (const i of ifaces) {
+      const net = E.networkOf(i.ip, i.mask);
+      entries.push({
+        dest: net,
+        mask: i.mask,
+        proto: 'Direct',
+        pre: 0,
+        cost: 0,
+        nextHop: i.ip,
+        iface: i.name,
+        flag: 'D'
+      });
+      entries.push({
+        dest: i.ip,
+        mask: 32,
+        proto: 'Direct',
+        pre: 0,
+        cost: 0,
+        nextHop: '127.0.0.1',
+        iface: i.name,
+        flag: 'D'
+      });
+    }
+    for (const r of dev.routes) {
+      entries.push({
+        dest: r.dest,
+        mask: r.mask,
+        proto: r.proto,
+        pre: r.pre != null ? r.pre : r.proto === 'OSPF' ? 10 : 60,
+        cost: r.cost != null ? r.cost : 0,
+        nextHop: r.nextHop,
+        iface: r.ifaceName || (E.routeLookup(dev, r.nextHop).iface || {}).name || '-',
+        flag: 'RD'
+      });
+    }
+    // 去重 & 排序
+    const map = new Map();
+    for (const e of entries) map.set(`${e.dest}/${e.mask}|${e.proto}`, e);
+    const list = [...map.values()].sort((a, b) => b.mask - a.mask || a.dest.localeCompare(b.dest));
+
+    const out = [
+      'Route Flags: R - relay, D - download to fib',
+      '-'.repeat(78),
+      'Routing Tables: Public',
+      `         Destinations : ${list.length}        Routes : ${list.length}`,
+      '',
+      'Destination/Mask    Proto   Pre  Cost      Flags NextHop         Interface',
+      ''
+    ];
+    for (const e of list) {
+      out.push(
+        padEnd(`${e.dest}/${e.mask}`, 20) +
+          padEnd(e.proto, 8) +
+          padEnd(e.pre, 5) +
+          padEnd(e.cost, 10) +
+          padEnd(e.flag, 6) +
+          padEnd(e.nextHop, 16) +
+          e.iface
+      );
+    }
+    return out;
+  }
+
+  /** 生成交换机 MAC 地址表 */
+  function computeMacTable(dev) {
+    const rows = [];
+    const devVlans = new Set(dev.vlans);
+    for (const p of dev.ports) {
+      if (!p.cableId || p.shutdown) continue;
+      if (p.mode === 'routed') continue;
+      const peer = E.Net.peerOf(dev, p);
+      if (!peer || !peer.device) continue;
+      const peerDev = peer.device;
+      const vlan = E.portVlan(p);
+      if (!devVlans.has(vlan)) continue;
+      if (peerDev.type === 'pc') {
+        rows.push({ mac: E.macOf(peerDev), vlan, port: p.name, type: 'dynamic' });
+      } else if (peerDev.type === 'router' && peer.port && peer.port.ip) {
+        rows.push({ mac: E.macOf(peerDev), vlan, port: p.name, type: 'dynamic' });
+      }
+    }
+    for (const sm of dev.staticMac || []) {
+      rows.push({ mac: sm.mac, vlan: sm.vlan, port: sm.port, type: 'static' });
+    }
+    return rows;
+  }
+
+  function cmdDisplayMacAddress(dev) {
+    const rows = computeMacTable(dev);
+    const out = [
+      'MAC Address    VLAN/VSI                          Learned-From        Type',
+      '-'.repeat(78)
+    ];
+    if (!rows.length) {
+      out.push('(no MAC address entries)');
+      return out;
+    }
+    for (const r of rows) {
+      out.push(padEnd(r.mac.replace(/:/g, '-').toLowerCase(), 15) + padEnd(r.vlan, 34) + padEnd(r.port.replace('GigabitEthernet', 'GE'), 20) + r.type);
+    }
+    out.push('');
+    out.push(`Total: ${rows.length}    Dynamic: ${rows.filter((r) => r.type === 'dynamic').length}    Static: ${rows.filter((r) => r.type === 'static').length}`);
+    return out;
+  }
+
+  function cmdDisplayArp(dev) {
+    const out = [
+      'IP ADDRESS      MAC ADDRESS     EXPIRE(M) TYPE        INTERFACE   VPN-INSTANCE',
+      '-'.repeat(78)
+    ];
+    let count = 0;
+    for (const i of E.l3Interfaces(dev)) {
+      for (const d of E.Net.devices) {
+        if (d.id === dev.id) continue;
+        for (const p of d.ports) {
+          if (!p.ip || !E.sameSubnet(i.ip, i.mask, p.ip)) continue;
+          const res = E.ping(dev, p.ip, i.ip);
+          if (!res.ok) continue;
+          out.push(
+            padEnd(p.ip, 16) +
+              padEnd(E.macOf(d).replace(/:/g, '-').toLowerCase(), 16) +
+              padEnd('20', 12) +
+              padEnd('dynamic', 12) +
+              i.name
+          );
+          count++;
+        }
+      }
+    }
+    if (!count) out.push('(no ARP entries)');
+    out.push('');
+    out.push(`Total: ${count}    Dynamic: ${count}    Static: 0`);
+    return out;
+  }
+
+  function cmdDisplayInterfaceBrief(dev) {
+    const out = [
+      'PHY: Physical',
+      '*down: The physical layer is down',
+      '',
+      padEnd('Interface', 34) + padEnd('PHY', 8) + 'Protocol  InUti  OutUti  inErrors  outErrors'
+    ];
+    for (const p of dev.ports) {
+      const up = !!p.cableId && !p.shutdown;
+      out.push(
+        padEnd(p.name, 34) +
+          padEnd(up ? 'up' : '*down', 8) +
+          padEnd(up ? 'up' : 'down', 10) +
+          padEnd(up ? '0.01%' : '0%', 7) +
+          padEnd(up ? '0.01%' : '0%', 8) +
+          padEnd('0', 10) +
+          '0'
+      );
+    }
+    for (const vi of dev.vlanifs) {
+      out.push(padEnd(`Vlanif${vi.vlanId}`, 34) + padEnd(vi.enabled ? 'up' : '*down', 8) + padEnd(vi.enabled ? 'up' : 'down', 10) + padEnd('0%', 7) + padEnd('0%', 8) + padEnd('0', 10) + '0');
+    }
+    return out;
+  }
+
+  function cmdDisplayStpBrief(dev) {
+    if (dev.type !== 'switch') return errUnrecognized('display stp');
+    E.recomputeStp();
+    const st = dev.stpState || { portRole: {}, rootId: null };
+    const rows = [];
+    for (const p of dev.ports) {
+      if (p.mode === 'routed' || !p.cableId) continue;
+      const role = st.portRole[p.id];
+      if (!role || role === 'disabled') continue;
+      const roleStr = role === 'root' ? 'ROOT' : role === 'designated' ? 'DESI' : 'ALTE';
+      const stateStr = role === 'alternate' ? 'DISCARDING' : 'FORWARDING';
+      rows.push({ vlan: E.portVlan(p), port: p.name, role: roleStr, state: stateStr });
+    }
+    const out = [
+      `CIST Bridge         :${String(dev.stp.priority)} .${E.macOf(dev).replace(/:/g, '-').toLowerCase()}`,
+      `Bridge Times        : Hello 2s MaxAge 20s FwDly 15s MaxHop 20`,
+      '',
+      'MSTID  Port                        Role  STP State    Protection'
+    ];
+    if (!rows.length) {
+      out.push('(no STP enabled ports)');
+      return out;
+    }
+    for (const r of rows) {
+      out.push(padStart(r.vlan, 5) + '  ' + padEnd(r.port.replace('GigabitEthernet', 'GE'), 28) + padEnd(r.role, 6) + padEnd(r.state, 13) + 'NONE');
+    }
+    return out;
+  }
+
+  function cmdDisplayStp(dev) {
+    E.recomputeStp();
+    const st = dev.stpState || {};
+    return [
+      `-------[CIST Global Info][Mode RSTP]-------`,
+      `CIST Bridge         :${String(dev.stp.priority)} .${E.macOf(dev).replace(/:/g, '-').toLowerCase()}`,
+      `Config Times        : Hello 2s MaxAge 20s FwDly 15s MaxHop 20`,
+      `Active Times        : Hello 2s MaxAge 20s FwDly 15s MaxHop 20`,
+      `CIST Root/ERPC      :${st.rootId || '--'} / ${st.isRoot ? 0 : 20000}`,
+      `CIST RegRoot/IRPC   :${String(dev.stp.priority)} .${E.macOf(dev).replace(/:/g, '-').toLowerCase()} / 0`,
+      `CIST RootPortId     :${st.isRoot ? '0.0' : '128.x'}`,
+      `${st.isRoot ? 'This bridge is the root of the CIST.' : 'This bridge is not the root of the CIST.'}`,
+      `Topology Changes    : 0`,
+      `Last Topology Change: 0day:0h:0m:0s`
+    ];
+  }
+
+  function cmdDisplayEthTrunk(dev) {
+    const trunks = E.ethTrunks(dev);
+    if (!trunks.length) return ['Eth-Trunk 信息为空。'];
+    const out = [];
+    for (const t of trunks) {
+      out.push(`Eth-Trunk${t.id} 的成员端口：`);
+      for (const m of t.members) out.push(`  ${m.name}    ${m.cableId && !m.shutdown ? 'Up' : 'Down'}    ${t.mode === 'lacp' ? 'Selected' : 'Unselected'}`);
+      out.push('-' .repeat(60));
+      out.push('Status: ' + (t.members.some((m) => m.cableId && !m.shutdown) ? 'Up' : 'Down'));
+      out.push('');
+    }
+    return out;
+  }
+
+  function cmdDisplayOspfPeer(dev, brief) {
+    if (!dev.ospf.enabled) return ['Error: OSPF is not enabled.'];
+    E.recomputeOspf();
+    const nbrs = dev.ospfNeighbors || [];
+    const out = [`OSPF Process ${dev.ospf.pid || 1} with Router ID ${dev.ospf.routerId || '0.0.0.0'}`];
+    if (brief) {
+      out.push('                  Peer Statistic Information');
+      out.push('-'.repeat(76));
+      out.push(padEnd('Area Id', 17) + padEnd('Interface', 34) + padEnd('Neighbor id', 17) + 'State');
+      for (const n of nbrs) {
+        out.push(padEnd(fmtArea(n.area), 17) + padEnd(n.iface, 34) + padEnd(n.routerId, 17) + n.state);
+      }
+      if (!nbrs.length) out.push('(没有邻居)');
+      return out;
+    }
+    if (!nbrs.length) {
+      out.push(' OSPF Process has no peer.');
+      return out;
+    }
+    for (const n of nbrs) {
+      out.push('');
+      out.push(` Area ${fmtArea(n.area)} interface ${n.iface}(${n.iface})`);
+      out.push(` Neighbor ${n.routerId}, Neighbor state: ${n.state}`);
+      out.push(` Address: ${n.address}    Priority: ${n.priority}`);
+      out.push(` Dead timer due in 37 sec`);
+      out.push(` Retrans timer interval: 5 sec`);
+      out.push(` Up Time: 00:05:22`);
+    }
+    return out;
+  }
+
+  function cmdDisplayOspfRouting(dev) {
+    if (!dev.ospf.enabled) return ['Error: OSPF is not enabled.'];
+    E.recomputeOspf();
+    const routes = dev.routes.filter((r) => r.proto === 'OSPF');
+    const out = [
+      'Route Flags: R - relay, D - download to fib',
+      '-'.repeat(78),
+      `         Destinations : ${routes.length + 1}        Routes : ${routes.length + 1}`,
+      '',
+      'Destination/Mask    Proto   Pre  Cost      Flags NextHop         Interface',
+      ''
+    ];
+    for (const i of E.l3Interfaces(dev)) {
+      out.push(padEnd(`${E.networkOf(i.ip, i.mask)}/${i.mask}`, 20) + padEnd('Direct', 8) + padEnd(0, 5) + padEnd(0, 10) + padEnd('D', 6) + padEnd(i.ip, 16) + i.name);
+    }
+    for (const r of routes) {
+      out.push(padEnd(`${r.dest}/${r.mask}`, 20) + padEnd('OSPF', 8) + padEnd(r.pre != null ? r.pre : 10, 5) + padEnd(r.cost, 10) + padEnd('D', 6) + padEnd(r.nextHop, 16) + (r.ifaceName || '-'));
+    }
+    return out;
+  }
+
+  function cmdDisplayIpPool(dev, name) {
+    if (!dev.dhcp.pools.length) return ['Error: The IP pool does not exist.'];
+    const out = [];
+    for (const pl of dev.dhcp.pools) {
+      if (name && pl.name !== name) continue;
+      const total = pl.mask >= 31 ? 2 : Math.pow(2, 32 - pl.mask) - 2;
+      const used = (dev.dhcp.leases || []).filter((l) => l.poolName === pl.name).length;
+      out.push(`  Pool-name        : ${pl.name}`);
+      out.push(`  Network          : ${pl.network}  Mask: ${E.prefixToMask(pl.mask)}`);
+      out.push(`  Gateway          : ${pl.gateway || '--'}`);
+      out.push(`  DNS              : ${pl.dns || '--'}`);
+      for (const e of pl.excluded || []) out.push(`  Excluded-IP      : ${e}`);
+      out.push(`  Total-IP         : ${total}   Used: ${used}   Idle: ${Math.max(0, total - used)}`);
+      out.push('');
+    }
+    return out;
+  }
+
+  function cmdDisplayPortSecurity(dev) {
+    const out = ['Port Security: ' + (dev.ports.some((p) => p.portSec.enabled) ? 'Enabled' : 'Disabled')];
+    for (const p of dev.ports) {
+      if (!p.portSec || !p.portSec.enabled) continue;
+      out.push(`  ${p.name}: max-mac-num=${p.portSec.maxMac}, status=${p.cableId && !p.shutdown ? 'up' : 'down'}`);
+    }
+    return out;
+  }
+
+  function fmtArea(id) {
+    if (typeof id === 'number') return id + '.0.0.0';
+    return id;
+  }
+
+  /* ------------------- display interface（详细回显） ------------------- */
+
+  function hwAddr(dev) {
+    return E.macOf(dev).replace(/:/g, '-').toUpperCase();
+  }
+
+  /** 物理口详细回显：接近真实 VRP 的 display interface 排版 */
+  function ethInterfaceLines(dev, p) {
+    const up = !!p.cableId && !p.shutdown;
+    const routed = p.mode === 'routed';
+    const out = [];
+    out.push(`${p.name} current state : ${up ? 'UP' : 'DOWN'}`);
+    out.push(`Line protocol current state : ${up ? 'UP' : 'DOWN'}`);
+    out.push(`Description:${p.desc || ''}`);
+
+    if (routed) {
+      out.push('Route Port,The Maximum Transmit Unit is 1500');
+      out.push(`Internet Address is ${p.ip ? `${p.ip}/${p.mask}` : 'unassigned'}`);
+    } else {
+      out.push(`Switch Port, PVID : ${E.portVlan(p)}, TPID : 8100(Hex), The Maximum Frame Length is 9216`);
+      out.push(`Port link-type : ${p.mode === 'trunk' ? 'Trunk' : p.mode === 'hybrid' ? 'Hybrid' : 'Access'}`);
+      if (p.mode === 'trunk') {
+        const list = p.allowedVlans === 'all' ? 'all' : (p.allowedVlans || []).join(', ');
+        out.push(`Trunk VLAN List : ${list || 'none'}`);
+      }
+      const st = dev.stpState && dev.stpState.portRole ? dev.stpState.portRole[p.id] : null;
+      if (st && st === 'alternate') out.push(`Stp Port State : DISCARDING   (端口被生成树阻塞)`);
+    }
+
+    out.push(`IP Sending Frames' Format is PKTFMT_ETHNT_2, Hardware address is ${hwAddr(dev)}`);
+    out.push('Port Mode: COMMON COPPER');
+    out.push('Speed : 1000,   Loopback: NONE');
+    out.push('Duplex: FULL,   Negotiation: ENABLE');
+    out.push('Mdi: AUTO');
+    out.push('Last 300 seconds input rate 0 bits/sec, 0 packets/sec');
+    out.push('Last 300 seconds output rate 0 bits/sec, 0 packets/sec');
+    out.push('Input:  0 packets, 0 bytes');
+    out.push('  Unicast: 0, Multicast: 0');
+    out.push('  Broadcast: 0, Jumbo: 0');
+    out.push('  Discard: 0, Total Error: 0');
+    out.push('Output: 0 packets, 0 bytes');
+    out.push('  Unicast: 0, Multicast: 0');
+    out.push('  Broadcast: 0, Jumbo: 0');
+    out.push('  Discard: 0, Total Error: 0');
+    return out;
+  }
+
+  function vlanifInterfaceLines(dev, vi) {
+    const up = vi.enabled;
+    return [
+      `Vlanif${vi.vlanId} current state : ${up ? 'UP' : 'DOWN'}`,
+      `Line protocol current state : ${up ? 'UP' : 'DOWN'}`,
+      `Description:${vi.desc || ''}`,
+      'The Maximum Transmit Unit is 1500',
+      `Internet Address is ${vi.ip ? `${vi.ip}/${vi.mask}` : 'unassigned'}`,
+      `IP Sending Frames' Format is PKTFMT_ETHNT_2, Hardware address is ${hwAddr(dev)}`,
+      '    Last 300 seconds input rate 0 bits/sec, 0 packets/sec',
+      '    Last 300 seconds output rate 0 bits/sec, 0 packets/sec',
+      '    Input:  0 packets, 0 bytes',
+      '    Output: 0 packets, 0 bytes'
+    ];
+  }
+
+  function ethTrunkInterfaceLines(dev, t) {
+    const up = t.members.some((m) => m.cableId && !m.shutdown);
+    const withIp = t.members.find((m) => m.ip);
+    const out = [
+      `Eth-Trunk${t.id} current state : ${up ? 'UP' : 'DOWN'}`,
+      `Line protocol current state : ${up ? 'UP' : 'DOWN'}`,
+      'Description:',
+      'Switch Port, PVID : 1, TPID : 8100(Hex), The Maximum Frame Length is 9216',
+      `Internet Address is ${withIp ? `${withIp.ip}/${withIp.mask}` : 'unassigned'}`,
+      `IP Sending Frames' Format is PKTFMT_ETHNT_2, Hardware address is ${hwAddr(dev)}`,
+      `WorkingMode: ${t.mode === 'lacp' ? 'LACP' : 'NORMAL'}`,
+      `Number of members: ${t.members.length}`,
+      '    Input:  0 packets, 0 bytes',
+      '    Output: 0 packets, 0 bytes'
+    ];
+    for (const m of t.members) {
+      out.push(`  ${padEnd(m.name, 24)}${padEnd(m.cableId && !m.shutdown ? 'Up' : 'Down', 8)}${t.mode === 'lacp' ? 'Selected' : 'Unselected'}`);
+    }
+    return out;
+  }
+
+  function cmdDisplayInterface(dev, token) {
+    if (!token) return errIncomplete('display interface');
+    const iface = resolveIface(dev, token);
+    if (!iface) return errWrong(token);
+    if (iface.kind === 'vlanif') {
+      const vi = dev.vlanifs.find((v) => v.vlanId === iface.vlanId);
+      if (!vi) return [`Error: The interface Vlanif${iface.vlanId} does not exist.`];
+      return vlanifInterfaceLines(dev, vi);
+    }
+    if (iface.kind === 'trunk') {
+      const t = E.ethTrunks(dev).find((x) => x.id === iface.trunkId);
+      if (!t) return [`Error: The interface Eth-Trunk${iface.trunkId} does not exist.`];
+      return ethTrunkInterfaceLines(dev, t);
+    }
+    return ethInterfaceLines(dev, iface.port);
+  }
+
+  /* ------------------------- display port vlan ------------------------- */
+
+  function cmdDisplayPortVlan(dev) {
+    const out = [
+      padEnd('Port', 24) + padEnd('Link Type', 13) + padEnd('PVID', 6) + 'Trunk VLAN List',
+      '-'.repeat(79)
+    ];
+    for (const p of dev.ports) {
+      if (p.mode === 'routed') continue;
+      const type = p.mode === 'trunk' ? 'trunk' : p.mode === 'hybrid' ? 'hybrid' : 'access';
+      let list = '-';
+      if (p.mode === 'trunk') {
+        list = p.allowedVlans === 'all' ? 'all' : (p.allowedVlans || []).join(', ') || '-';
+      } else if (p.mode === 'hybrid') {
+        list = String(p.vlan);
+      }
+      out.push(padEnd(p.name, 24) + padEnd(type, 13) + padEnd(E.portVlan(p), 6) + list);
+    }
+    return out;
+  }
+
+  /* ------------------------ display ospf interface ------------------------ */
+
+  /** 按 OSPF 的 DR 选举规则（网段内最高接口 IP 当选）判断接口状态 */
+  function ospfIfaceState(dev, iface) {
+    let best = iface.ip;
+    for (const cable of E.Net.cables) {
+      if (cable.aDeviceId !== dev.id && cable.bDeviceId !== dev.id) continue;
+      const otherId = cable.aDeviceId === dev.id ? cable.bDeviceId : cable.aDeviceId;
+      const other = E.Net.getDevice(otherId);
+      if (!other || !other.ospf || !other.ospf.enabled) continue;
+      for (const oi of other.ospfActiveIfaces || []) {
+        if (!E.sameSubnet(iface.ip, iface.mask, oi.ip)) continue;
+        if (E.ipToInt(oi.ip) > E.ipToInt(best)) best = oi.ip;
+      }
+    }
+    return best === iface.ip ? 'DR' : 'DROther';
+  }
+
+  function cmdDisplayOspfInterface(dev) {
+    if (!dev.ospf.enabled) return ['Error: OSPF is not enabled.'];
+    E.recomputeOspf();
+    const list = dev.ospfActiveIfaces || [];
+    const out = [`OSPF Process ${dev.ospf.pid || 1} with Router ID ${dev.ospf.routerId || '0.0.0.0'}`];
+    if (!list.length) {
+      out.push(' No OSPF interface is up.');
+      return out;
+    }
+    const byArea = new Map();
+    for (const i of list) {
+      const k = String(i.area);
+      if (!byArea.has(k)) byArea.set(k, []);
+      byArea.get(k).push(i);
+    }
+    for (const [area, ifs] of byArea) {
+      out.push(' Interfaces');
+      out.push(` Area: ${area}          (MPLS TE not enabled)`);
+      out.push(' IP Address       State    Cost  Type       MTU   Interface');
+      for (const i of ifs) {
+        out.push(
+          ' ' + padEnd(i.ip, 17) + padEnd(ospfIfaceState(dev, i), 9) + padEnd(1, 6) + padEnd('Broadcast', 11) + padEnd(1500, 6) + i.name
+        );
+      }
+    }
+    if (dev.ospfNeighbors && dev.ospfNeighbors.length) {
+      out.push('');
+      out.push(` Neighbor Count is ${dev.ospfNeighbors.length}`);
+    }
+    return out;
+  }
+
+  function dispatchDisplay(dev, args) {
+    const a = args.map((x) => x.toLowerCase());
+    const rest = args.slice(1);
+
+    if (!a[1]) return cmdDisplayVersion(dev);
+    switch (a[1]) {
+      case 'version':
+        return cmdDisplayVersion(dev);
+      case 'current-configuration':
+        return cmdDisplayCurrentConfig(dev);
+      case 'this':
+        return cmdDisplayThis(dev);
+      case 'ip':
+        if (a[2] === 'interface' && a[3] === 'brief') return cmdDisplayIpInterfaceBrief(dev);
+        if (a[2] === 'routing-table') return cmdDisplayIpRoutingTable(dev);
+        if (a[2] === 'pool') return cmdDisplayIpPool(dev, rest[2]);
+        return errUnrecognized('display ip');
+      case 'interface':
+        if (a[2] === 'brief') return cmdDisplayInterfaceBrief(dev);
+        return cmdDisplayInterface(dev, rest.slice(1).join(''));
+      case 'port':
+        if (a[2] === 'vlan') return cmdDisplayPortVlan(dev);
+        return errUnrecognized('display port');
+      case 'vlan':
+        return cmdDisplayVlan(dev, rest[1]);
+      case 'mac-address':
+        return cmdDisplayMacAddress(dev);
+      case 'arp':
+        return cmdDisplayArp(dev);
+      case 'stp':
+        if (a[2] === 'brief') return cmdDisplayStpBrief(dev);
+        return cmdDisplayStp(dev);
+      case 'eth-trunk':
+        return cmdDisplayEthTrunk(dev);
+      case 'ospf':
+        if (a[2] === 'peer') return cmdDisplayOspfPeer(dev, a[3] === 'brief');
+        if (a[2] === 'routing') return cmdDisplayOspfRouting(dev);
+        if (a[2] === 'interface') return cmdDisplayOspfInterface(dev);
+        if (a[2] === 'brief') return cmdDisplayOspfPeer(dev, true);
+        return errUnrecognized('display ospf');
+      case 'port-security':
+        return cmdDisplayPortSecurity(dev);
+      case 'saved-configuration':
+        return dev.savedConfig ? ['#', ...dev.savedConfig, 'return'] : ['Error: The saved configuration file does not exist.'];
+      default:
+        return errUnrecognized('display');
+    }
+  }
+
+  /* --------------------------- ping / tracert --------------------------- */
+
+  function cmdPing(dev, args) {
+    // ping [-c count] <ip>
+    let count = 5;
+    let ip = null;
+    for (let i = 0; i < args.length; i++) {
+      if (args[i] === '-c') {
+        count = parseInt(args[++i], 10) || 5;
+      } else if (E.isValidIp(args[i])) {
+        ip = args[i];
+      }
+    }
+    if (!ip) return errIncomplete('ping');
+
+    if (dev.type === 'pc') {
+      const res = E.ping(dev, ip);
+      const out = [`Pinging ${ip} with 32 bytes of data:`];
+      if (res.ok) {
+        for (let i = 0; i < 4; i++) out.push(`Reply from ${ip}: bytes=32 time=${2 + i}ms TTL=${20 + res.path.length * 3}`);
+        out.push('');
+        out.push(`Ping statistics for ${ip}:`);
+        out.push('    Packets: Sent = 4, Received = 4, Lost = 0 (0% loss),');
+        return { lines: out, traffic: res };
+      }
+      for (let i = 0; i < 4; i++) out.push('Request timed out.');
+      out.push('');
+      out.push(`Ping statistics for ${ip}:`);
+      out.push('    Packets: Sent = 4, Received = 0, Lost = 4 (100% loss),');
+      out.push(`失败原因：${res.reason}`);
+      return { lines: out, traffic: res };
+    }
+
+    const res = E.ping(dev, ip);
+    const out = [`  PING ${ip}: ${count === 5 ? 5 : count} data bytes, press CTRL_C to break`];
+    if (res.ok) {
+      for (let i = 0; i < count; i++) {
+        out.push(`    Reply from ${ip}: bytes=56 Sequence=${i + 1} ttl=${64 - res.path.length} time=${2 + i * 2} ms`);
+      }
+      out.push('');
+      out.push(`  --- ${ip} ping statistics ---`);
+      out.push(`    ${count} packet(s) transmitted`);
+      out.push(`    ${count} packet(s) received`);
+      out.push(`    0.00% packet loss`);
+      out.push(`    round-trip min/avg/max = 2/3/6 ms`);
+      return { lines: out, traffic: res };
+    }
+    out.push(`    Request time out`);
+    out.push('');
+    out.push(`  --- ${ip} ping statistics ---`);
+    out.push(`    5 packet(s) transmitted`);
+    out.push(`    0 packet(s) received`);
+    out.push(`    100.00% packet loss`);
+    out.push(`失败原因：${res.reason}`);
+    return { lines: out, traffic: res };
+  }
+
+  function cmdTracert(dev, args) {
+    const ip = args.find((a) => E.isValidIp(a));
+    if (!ip) return errIncomplete('tracert');
+    const res = E.traceroute(dev, ip);
+    const isPc = dev.type === 'pc';
+    const out = [];
+    if (isPc) out.push(`Tracing route to ${ip} over a maximum of 30 hops:`);
+    else out.push(`traceroute to ${ip}, 8 hops max, press CTRL_C to break`);
+
+    let i = 0;
+    for (const h of res.hops) {
+      i++;
+      if (isPc) {
+        out.push(`  ${padStart(i, 2)}    ${padEnd(4 + i, 6)} ms    ${padEnd(2 + i, 6)} ms    ${padEnd(3 + i, 6)} ms  ${h.ip}`);
+      } else {
+        out.push(`${padStart(i, 2)}  ${padEnd(h.ip, 20)} ${padEnd(4 + i, 8)} ms  ${padEnd(2 + i, 8)} ms  ${3 + i} ms`);
+      }
+    }
+    if (res.ok) {
+      out.push('');
+      if (isPc) out.push('Trace complete.');
+      else out.push(`  Trace complete.`);
+    } else {
+      out.push(` ${isPc ? 'Trace incomplete:' : 'trace incomplete:'} ${res.reason}`);
+    }
+    return { lines: out, traffic: { ...res, ok: res.ok, path: res.hops.map((h) => h.device.id) } };
+  }
+
+  /* --------------------------- PC 专用命令 --------------------------- */
+
+  function cmdIpconfig(dev, args) {
+    const p = dev.ports[0];
+    if (args[1] === '/renew' || args[1] === '/refresh') {
+      return { lines: doDhcp(dev), device: dev };
+    }
+    if (args[1] === '/release') {
+      p.ip = null;
+      p.mask = null;
+      p.gateway = null;
+      return { lines: ['IP 地址已释放。'], device: dev };
+    }
+    const out = ['', 'Windows IP Configuration', ''];
+    out.push('Ethernet adapter Ethernet0/0/0:');
+    out.push('');
+    out.push('   Connection-specific DNS Suffix  . :');
+    out.push('   Link-local IPv6 Address . . . . . : fe80::1%4');
+    out.push(`   IPv4 Address. . . . . . . . . . . : ${p.ip || '（未配置）'}`);
+    out.push(`   Subnet Mask . . . . . . . . . . . : ${p.ip ? E.prefixToMask(p.mask) : '（未配置）'}`);
+    out.push(`   Default Gateway . . . . . . . . . : ${p.gateway || '（未配置）'}`);
+    if (p.dhcp) out.push('   DHCP Enabled. . . . . . . . . . . : Yes');
+    else out.push('   DHCP Enabled. . . . . . . . . . . : No');
+    return { lines: out, device: dev };
+  }
+
+  function doDhcp(pc) {
+    const found = E.findDhcpServer(pc);
+    if (!found) {
+      return [
+        'DHCP 请求失败：没有找到可用的 DHCP 服务器。',
+        '请检查：① 服务器是否执行 dhcp enable ② 是否创建 ip pool ③ 三层接口是否配置 dhcp select global ④ 链路与 VLAN 是否正确。'
+      ];
+    }
+    const { server, pool } = found;
+    server.dhcp.leases = server.dhcp.leases || [];
+    const usedIps = server.dhcp.leases.map((l) => l.ip);
+    const ip = E.allocateFromPool(server, pool, usedIps);
+    if (!ip) return ['DHCP 请求失败：地址池中没有空闲地址。'];
+    const p = pc.ports[0];
+    p.ip = ip;
+    p.mask = pool.mask;
+    p.gateway = pool.gateway;
+    p.dhcp = true;
+    server.dhcp.leases.push({ ip, mac: E.macOf(pc), poolName: pool.name, t: Date.now() });
+    return [
+      `已通过 DHCP 获取地址：${ip}/${pool.mask}`,
+      `  网关：${pool.gateway || '--'}    DNS：${pool.dns || '--'}`,
+      `  （来自 ${server.hostname} 的地址池 ${pool.name}）`
+    ];
+  }
+
+  /* --------------------------- 主执行入口 --------------------------- */
+
+  /**
+   * 执行一条命令（对外入口，统一返回 { lines, traffic? }）
+   * 错误标记在这里统一展开成 ^ 定位行 + Error 行。
+   */
+  function execute(dev, rawLine) {
+    // 出错时的 ^ 要对齐"敲命令那一刻"显示的提示符，所以先进场先记下来
+    const prompt = promptOf(dev);
+    const r = executeInner(dev, rawLine);
+    let out;
+    if (Array.isArray(r)) out = { lines: r };
+    else if (!r || typeof r !== 'object') out = { lines: [] };
+    else out = r;
+    if (!out.lines) out.lines = [];
+    out.lines = expandErrors(prompt, rawLine, out.lines);
+    return out;
+  }
+
+  /* --------------------------- 交互式确认 ---------------------------
+   * save 这类命令真实设备会停下来等用户输入，这里用 dev.cli.pending 记录等待状态。
+   * 下一步输入（y/n、文件名）由 handlePending 消化，不再走正常命令解析。
+   * ------------------------------------------------------------------ */
+
+  function handlePending(dev, line) {
+    const p = dev.cli.pending;
+    dev.cli.pending = null;
+    const ans = line.trim();
+    const low = ans.toLowerCase();
+
+    if (p.kind === 'save-confirm') {
+      if (low === 'y' || low === 'yes') {
+        dev.cli.pending = { kind: 'save-name' };
+        return { lines: ['Info: Please input the file name(*.cfg, *.zip)[vrpcfg.zip]:'] };
+      }
+      // 选 n 或直接回车：真实 VRP 静默返回提示符
+      return { lines: [] };
+    }
+
+    if (p.kind === 'save-name') {
+      dev.savedConfig = E.runningConfig(dev);
+      dev.lastSaved = Date.now();
+      dev.savedFile = ans || 'vrpcfg.zip';
+      return {
+        lines: [
+          'Now saving the current configuration to the slot 0.',
+          'Save the configuration successfully.'
+        ]
+      };
+    }
+
+    if (p.kind === 'reset-confirm') {
+      if (low === 'y' || low === 'yes') {
+        dev.savedConfig = null;
+        return { lines: ['Configuration file are reset successfully.'] };
+      }
+      return { lines: [] };
+    }
+
+    return { lines: [] };
+  }
+
+  function executeInner(dev, rawLine) {
+    const line = rawLine.trim();
+
+    // ---- 交互式等待中：这一行是给上一条命令的回答 ----
+    if (dev.cli.pending) return handlePending(dev, line);
+
+    if (!line) return { lines: [] };
+
+    const args = line.split(/\s+/);
+    const cmd = args[0].toLowerCase();
+    const view = dev.cli.view;
+
+    // ---- 帮助 ----
+    if (line === '?' || cmd === 'help') {
+      return { lines: helpLines(dev) };
+    }
+
+    // ---- 视图切换：quit 逐级返回，return 直接回用户视图 ----
+    if (cmd === 'quit') {
+      if (view === 'user-view') {
+        return { lines: ['  ---- 已退出登录（模拟环境中保持连接）----'] };
+      }
+      quitView(dev);
+      return { lines: [] };
+    }
+    if (cmd === 'return') {
+      if (view === 'user-view') return { lines: [] };
+      returnUserView(dev);
+      return { lines: [] };
+    }
+    if (cmd === 'system-view' || line.toLowerCase() === 'sys') {
+      if (view !== 'user-view') return errUnrecognized(cmd);
+      // 从用户视图进系统视图，视图栈一定是干净的
+      dev.cli.stack = [];
+      resetCliCtx(dev);
+      dev.cli.view = 'system-view';
+      return { lines: ['Enter system view, return user view with Ctrl+Z.'] };
+    }
+
+    // ---- display / show ----
+    // PC 没有 VRP 命令行，不支持 display
+    if (cmd === 'display' || cmd === 'dis') {
+      if (dev.type === 'pc') return errUnrecognized(cmd);
+      return { lines: dispatchDisplay(dev, args) };
+    }
+
+    // ---- ping / tracert ----
+    if (cmd === 'ping') return cmdPing(dev, args);
+    if (cmd === 'tracert' || cmd === 'traceroute') return cmdTracert(dev, args);
+
+    // ---- save：真实设备会先问 y/n，再问文件名 ----
+    if (cmd === 'save') {
+      if (view !== 'user-view') return errUnrecognized(cmd);
+      if (args[1]) {
+        // 直接带文件名（save vrpcfg.cfg）→ 跳过交互
+        dev.savedConfig = E.runningConfig(dev);
+        dev.lastSaved = Date.now();
+        dev.savedFile = args[1];
+        return {
+          lines: [
+            'Now saving the current configuration to the slot 0.',
+            'Save the configuration successfully.'
+          ]
+        };
+      }
+      dev.cli.pending = { kind: 'save-confirm' };
+      return {
+        lines: [
+          'The current configuration will be written to the device.',
+          'Are you sure to continue? (y/n)[n]:'
+        ]
+      };
+    }
+    if (cmd === 'reset' && args[1] === 'saved-configuration') {
+      dev.cli.pending = { kind: 'reset-confirm' };
+      return {
+        lines: [
+          'The configuration file will be reset to the factory settings.',
+          'Warning: All configuration will be lost, continue? (y/n)[n]:'
+        ]
+      };
+    }
+
+    /* ================= 用户视图以下为 PC 命令 ================= */
+    if (dev.type === 'pc' && view === 'user-view') {
+      if (cmd === 'ipconfig') return cmdIpconfig(dev, args);
+      if (cmd === 'ip') {
+        // ip 192.168.10.2 255.255.255.0 192.168.10.1
+        const ip = args[1];
+        const mask = parseMask(args[2]);
+        const gw = args[3] || null;
+        if (!E.isValidIp(ip) || mask == null) return errWrong('ip');
+        if (gw && !E.isValidIp(gw)) return errWrong('ip');
+        const p = dev.ports[0];
+        p.ip = ip;
+        p.mask = mask;
+        p.gateway = gw;
+        p.dhcp = false;
+        return { lines: [`已设置 IP 地址：${ip}/${mask}${gw ? '  网关：' + gw : ''}`] };
+      }
+      if (cmd === 'dhcp') return { lines: doDhcp(dev) };
+      return errUnrecognized(cmd);
+    }
+
+    /* ================= 系统视图 ================= */
+    if (view === 'system-view') {
+      if (cmd === 'sysname') {
+        if (!args[1]) return errIncomplete('sysname');
+        dev.hostname = args[1];
+        return { lines: [] };
+      }
+      if (cmd === 'vlan') {
+        if (args[1] === 'batch') {
+          const list = vlanList(args.slice(2).join(' '));
+          if (!list || list === 'all') return errWrong('vlan batch');
+          list.forEach((v) => { if (!dev.vlans.includes(v)) dev.vlans.push(v); });
+          return { lines: [] };
+        }
+        const n = parseInt(args[1], 10);
+        if (isNaN(n) || n < 1 || n > 4094) return errWrong(args[1]);
+        if (!dev.vlans.includes(n)) dev.vlans.push(n);
+        // 关键：vlan <id> 会进入 VLAN 视图 [SW1-vlan10]，和真实 VRP 一致
+        enterView(dev, 'vlan-view', { vlanId: n });
+        return { lines: [] };
+      }
+      if (cmd === 'undo' && args[1] === 'vlan') {
+        const n = parseInt(args[2], 10);
+        if (isNaN(n)) return errWrong(args[2]);
+        if (n === 1) return { lines: ['Error: The default VLAN cannot be deleted.'] };
+        // 有接口还挂在上面时不允许直接删，真实 VRP 也是这个行为
+        const used = dev.ports.filter((p) => E.portVlan(p) === n || (p.mode === 'trunk' && Array.isArray(p.allowedVlans) && p.allowedVlans.includes(n)));
+        if (used.length) {
+          return {
+            lines: [
+              `Error: VLAN ${n} is in use by ${used.length} port(s): ${used.map((p) => p.name).join(', ')}.`,
+              `// 提示：请先把这些端口的 VLAN 配置改掉，再删除该 VLAN。`
+            ]
+          };
+        }
+        dev.vlans = dev.vlans.filter((v) => v !== n);
+        delete (dev.vlanMeta || {})[n];
+        return { lines: [] };
+      }
+      if (cmd === 'interface') {
+        if (args[1] && args[1].toLowerCase() === 'range') {
+          return [...errUnrecognized('range'), '// 提示：本模拟器不支持 interface range，请逐个进入端口配置。'];
+        }
+        // 支持 "interface vlanif 100" / "interface eth-trunk 1" 这种两段写法
+        let ifaceTok = args[1];
+        if (ifaceTok && /^(vlanif|eth-?trunk)$/i.test(ifaceTok) && args[2]) {
+          ifaceTok = ifaceTok + args[2];
+        }
+        const iface = resolveIface(dev, ifaceTok);
+        if (!iface) return errWrong('interface');
+        if (iface.kind === 'vlanif') {
+          if (dev.l2only) {
+            return { lines: ['Error: This is a layer 2 switch, Vlanif is not supported.', '// 提示：S3700 是二层交换机，三层接口请用 S5700/路由器。'] };
+          }
+          if (!dev.vlans.includes(iface.vlanId)) dev.vlans.push(iface.vlanId);
+          if (!dev.vlanifs.find((v) => v.vlanId === iface.vlanId)) {
+            dev.vlanifs.push({ vlanId: iface.vlanId, enabled: true, ip: null, mask: null, desc: '', dhcpSelect: false });
+          }
+          enterView(dev, 'vlanif-view', { vlanifId: iface.vlanId });
+          return { lines: [] };
+        }
+        if (iface.kind === 'trunk') {
+          const members = dev.ports.filter((p) => p.trunkId === iface.trunkId);
+          if (!members.length) return { lines: [`Error: Eth-Trunk${iface.trunkId} does not exist.`, `// 提示：请先进入物理端口执行 eth-trunk ${iface.trunkId} 加入成员口。`] };
+          enterView(dev, 'trunk-view', { trunkId: iface.trunkId });
+          return { lines: [] };
+        }
+        enterView(dev, 'interface-view', { ifaceId: iface.port.id });
+        return { lines: [] };
+      }
+      if (cmd === 'ip' && args[1] === 'route-static') {
+        const dest = args[2];
+        const mask = parseMask(args[3]);
+        const nh = args[4];
+        let pre = 60;
+        const pIdx = args.findIndex((a) => a.toLowerCase() === 'preference');
+        if (pIdx > 0) pre = parseInt(args[pIdx + 1], 10) || 60;
+        if (!E.isValidIp(dest) || mask == null || !E.isValidIp(nh)) return errWrong(!E.isValidIp(dest) ? dest : mask == null ? args[3] : nh);
+        dev.routes = dev.routes.filter((r) => !(r.proto === 'Static' && r.dest === dest && r.mask === mask));
+        dev.routes.push({ dest, mask, nextHop: nh, proto: 'Static', pre, cost: 0 });
+        return { lines: [] };
+      }
+      if (cmd === 'undo' && args[1] === 'ip' && args[2] === 'route-static') {
+        const dest = args[3];
+        const mask = parseMask(args[4]);
+        dev.routes = dev.routes.filter((r) => !(r.proto === 'Static' && r.dest === dest && r.mask === mask));
+        return { lines: [] };
+      }
+      if (cmd === 'ip' && args[1] === 'pool') {
+        if (!args[2]) return errIncomplete('ip pool');
+        if (!dev.dhcp.pools.find((p) => p.name === args[2])) {
+          dev.dhcp.pools.push({ name: args[2], network: null, mask: null, gateway: null, dns: null, excluded: [], leaseDays: 1 });
+        }
+        enterView(dev, 'pool-view', { poolName: args[2] });
+        return { lines: [] };
+      }
+      if (cmd === 'dhcp') {
+        if (args[1] === 'enable') {
+          dev.dhcp.enabled = true;
+          return { lines: [] };
+        }
+        if (args[1] === 'disable') {
+          dev.dhcp.enabled = false;
+          return { lines: [] };
+        }
+        return errWrong('dhcp');
+      }
+      if (cmd === 'undo' && args[1] === 'dhcp' && args[2] === 'enable') {
+        dev.dhcp.enabled = false;
+        return { lines: [] };
+      }
+      if (cmd === 'ospf') {
+        const pid = parseInt(args[1], 10);
+        if (isNaN(pid)) return errWrong(args[1]);
+        const ridIdx = args.findIndex((a) => a.toLowerCase() === 'router-id');
+        dev.ospf.enabled = true;
+        dev.ospf.pid = pid;
+        if (ridIdx > 0 && E.isValidIp(args[ridIdx + 1])) dev.ospf.routerId = args[ridIdx + 1];
+        enterView(dev, 'ospf-view', { ospfPid: pid });
+        return { lines: [] };
+      }
+      if (cmd === 'undo' && args[1] === 'ospf') {
+        dev.ospf = { enabled: false, pid: null, routerId: null, areas: [], ifaces: [], neighbors: [] };
+        dev.routes = dev.routes.filter((r) => r.proto !== 'OSPF');
+        return { lines: [] };
+      }
+      if (cmd === 'acl') {
+        let id = args[1];
+        if (id && id.toLowerCase() === 'number') id = args[2];
+        const n = parseInt(id, 10);
+        if (isNaN(n)) return errWrong(id);
+        if (!dev.acl.find((a) => a.id === n)) dev.acl.push({ id: n, rules: [] });
+        enterView(dev, 'acl-view', { aclId: n });
+        return { lines: [] };
+      }
+      if (cmd === 'stp') {
+        if (args[1] === 'mode') {
+          if (!['stp', 'rstp', 'mstp'].includes(args[2])) return errWrong(args[2]);
+          dev.stp.mode = args[2];
+          return { lines: [] };
+        }
+        if (args[1] === 'priority') {
+          const n = parseInt(args[2], 10);
+          if (isNaN(n) || n % 4096 !== 0)
+            return [...errWrong(args[2]), '// 提示：STP 优先级必须是 4096 的倍数（4096/8192/16384/32768）。'];
+          dev.stp.priority = n;
+          return { lines: [] };
+        }
+        return errWrong('stp');
+      }
+      if (cmd === 'traffic-filter') {
+        return [...errWrong('traffic-filter'), '// 提示：traffic-filter 只能在接口视图下配置。'];
+      }
+      return errUnrecognized(cmd);
+    }
+
+    /* ================= VLAN 视图 ================= */
+    if (view === 'vlan-view') {
+      const n = dev.cli.vlanId;
+      if (!dev.vlans.includes(n)) { quitView(dev); return errUnrecognized(cmd); }
+      dev.vlanMeta = dev.vlanMeta || {};
+      const meta = dev.vlanMeta[n] || (dev.vlanMeta[n] = {});
+
+      if (cmd === 'description') {
+        meta.desc = args.slice(1).join(' ');
+        return { lines: [] };
+      }
+      if (cmd === 'undo' && args[1] === 'description') {
+        delete meta.desc;
+        return { lines: [] };
+      }
+      if (cmd === 'name') {
+        if (!args[1]) return errIncomplete('name');
+        meta.name = args[1];
+        return { lines: [] };
+      }
+      if (cmd === 'undo' && args[1] === 'name') {
+        delete meta.name;
+        return { lines: [] };
+      }
+      return errUnrecognized(cmd);
+    }
+
+    /* ================= 接口视图 ================= */
+    if (view === 'interface-view') {
+      const p = E.Net.getPort(dev, dev.cli.ifaceId);
+      if (!p) { quitView(dev); return errUnrecognized(cmd); }
+
+      if (cmd === 'description') {
+        p.desc = args.slice(1).join(' ');
+        return { lines: [] };
+      }
+      if (cmd === 'shutdown') {
+        p.shutdown = true;
+        return { lines: [] };
+      }
+      if (cmd === 'undo' && args[1] === 'shutdown') {
+        p.shutdown = false;
+        return { lines: [] };
+      }
+      if (cmd === 'port') {
+        if (args[1] === 'link-type') {
+          const t = args[2];
+          if (!['access', 'trunk', 'hybrid'].includes(t)) return errWrong(t);
+          p.mode = t;
+          if (t === 'trunk') p.allowedVlans = 'all';
+          if (t === 'access') p.allowedVlans = 'all';
+          return { lines: [] };
+        }
+        if (args[1] === 'default' && args[2] === 'vlan') {
+          const n = parseInt(args[3], 10);
+          if (isNaN(n) || n < 1 || n > 4094) return errWrong(args[3]);
+          if (!dev.vlans.includes(n)) dev.vlans.push(n);
+          p.vlan = n;
+          return { lines: [] };
+        }
+        if (args[1] === 'trunk' && args[2] === 'allow-pass' && args[3] === 'vlan') {
+          const list = vlanList(args.slice(4).join(' '));
+          if (!list) return errWrong('port trunk allow-pass vlan');
+          p.allowedVlans = list;
+          if (list !== 'all') list.forEach((v) => { if (!dev.vlans.includes(v)) dev.vlans.push(v); });
+          return { lines: [] };
+        }
+        if (args[1] === 'hybrid') {
+          const n = parseInt(args[3], 10);
+          if (isNaN(n)) return errWrong('port hybrid');
+          p.vlan = n;
+          if (!dev.vlans.includes(n)) dev.vlans.push(n);
+          return { lines: [] };
+        }
+        return errWrong('port');
+      }
+      if (cmd === 'undo' && args[1] === 'port') {
+        if (args[2] === 'trunk' && args[3] === 'allow-pass') {
+          p.allowedVlans = [];
+          return { lines: [] };
+        }
+        if (args[2] === 'default') {
+          p.vlan = 1;
+          return { lines: [] };
+        }
+        return errWrong('undo port');
+      }
+      if (cmd === 'ip' && args[1] === 'address') {
+        if (p.mode !== 'routed') {
+          return { lines: ['Error: Wrong parameter found at \'^\' position.', '// 提示：只有路由口才能直接配 IP，请先 undo portswitch，或在 Vlanif 接口下配置。'] };
+        }
+        const ip = args[2];
+        const mask = parseMask(args[3]);
+        if (!E.isValidIp(ip) || mask == null) return errWrong(!E.isValidIp(ip) ? ip : args[3]);
+        p.ip = ip;
+        p.mask = mask;
+        return { lines: [] };
+      }
+      if (cmd === 'undo' && args[1] === 'ip' && args[2] === 'address') {
+        p.ip = null;
+        p.mask = null;
+        return { lines: [] };
+      }
+      if (cmd === 'undo' && args[1] === 'portswitch') {
+        p.mode = 'routed';
+        return { lines: [] };
+      }
+      if (cmd === 'eth-trunk') {
+        const n = parseInt(args[1], 10);
+        if (isNaN(n)) return errWrong(args[1]);
+        p.trunkId = n;
+        if (p.trunkMode == null) p.trunkMode = 'lacp';
+        return { lines: [] };
+      }
+      if (cmd === 'undo' && args[1] === 'eth-trunk') {
+        p.trunkId = null;
+        return { lines: [] };
+      }
+      if (cmd === 'mode') {
+        if (args[1] === 'lacp-static') { p.trunkMode = 'lacp'; return { lines: [] }; }
+        if (args[1] === 'manual') { p.trunkMode = 'manual'; return { lines: [] }; }
+        return errWrong('mode');
+      }
+      if (cmd === 'stp') {
+        if (args[1] === 'edged-port') {
+          p.stpEdged = args[2] === 'enable' || args[2] === undefined;
+          return { lines: [] };
+        }
+        return errWrong('stp');
+      }
+      if (cmd === 'undo' && args[1] === 'stp' && args[2] === 'edged-port') {
+        p.stpEdged = false;
+        return { lines: [] };
+      }
+      if (cmd === 'bpdu-protection' || (cmd === 'stp' && args[1] === 'bpdu-protection')) {
+        p.bpduProtect = true;
+        return { lines: [] };
+      }
+      if (cmd === 'undo' && args[1] === 'bpdu-protection') {
+        p.bpduProtect = false;
+        return { lines: [] };
+      }
+      if (cmd === 'port-security') {
+        if (args[1] === 'enable') { p.portSec.enabled = true; return { lines: [] }; }
+        if (args[1] === 'max-mac-num') {
+          const n = parseInt(args[2], 10);
+          if (isNaN(n) || n < 1) return errWrong(args[2]);
+          p.portSec.maxMac = n;
+          return { lines: [] };
+        }
+        return errWrong('port-security');
+      }
+      if (cmd === 'undo' && args[1] === 'port-security') {
+        if (args[2] === 'enable') p.portSec.enabled = false;
+        return { lines: [] };
+      }
+      if (cmd === 'dhcp' && args[1] === 'select') {
+        p.dhcpSelect = true;
+        return { lines: [] };
+      }
+      if (cmd === 'traffic-filter') {
+        const dir = args[1];
+        const aclIdx = args.findIndex((a) => a.toLowerCase() === 'acl');
+        const aclId = aclIdx > 0 ? parseInt(args[aclIdx + 1], 10) : NaN;
+        if (!['inbound', 'outbound'].includes(dir) || isNaN(aclId)) return errWrong(!['inbound', 'outbound'].includes(dir) ? dir : args[aclIdx + 1]);
+        if (!dev.acl.find((a) => a.id === aclId)) {
+          return { lines: [`Error: ACL ${aclId} does not exist.`, `// 提示：请先在系统视图执行 acl ${aclId} 创建该 ACL。`] };
+        }
+        dev.aclBindings = dev.aclBindings.filter((b) => !(b.portId === p.id && b.direction === dir));
+        dev.aclBindings.push({ portId: p.id, direction: dir, aclId });
+        return { lines: [] };
+      }
+      if (cmd === 'undo' && args[1] === 'traffic-filter') {
+        const dir = args[2];
+        dev.aclBindings = dev.aclBindings.filter((b) => !(b.portId === p.id && b.direction === dir));
+        return { lines: [] };
+      }
+      return errUnrecognized(cmd);
+    }
+
+    /* ================= Vlanif 视图 ================= */
+    if (view === 'vlanif-view') {
+      const vi = dev.vlanifs.find((v) => v.vlanId === dev.cli.vlanifId);
+      if (!vi) { quitView(dev); return errUnrecognized(cmd); }
+
+      if (cmd === 'ip' && args[1] === 'address') {
+        const ip = args[2];
+        const mask = parseMask(args[3]);
+        if (!E.isValidIp(ip) || mask == null) return errWrong(!E.isValidIp(ip) ? ip : args[3]);
+        vi.ip = ip;
+        vi.mask = mask;
+        return { lines: [] };
+      }
+      if (cmd === 'undo' && args[1] === 'ip' && args[2] === 'address') {
+        vi.ip = null;
+        vi.mask = null;
+        return { lines: [] };
+      }
+      if (cmd === 'description') { vi.desc = args.slice(1).join(' '); return { lines: [] }; }
+      if (cmd === 'shutdown') { vi.enabled = false; return { lines: [] }; }
+      if (cmd === 'undo' && args[1] === 'shutdown') { vi.enabled = true; return { lines: [] }; }
+      if (cmd === 'dhcp' && args[1] === 'select') { vi.dhcpSelect = true; return { lines: [] }; }
+      if (cmd === 'undo' && args[1] === 'dhcp' && args[2] === 'select') { vi.dhcpSelect = false; return { lines: [] }; }
+      return errUnrecognized(cmd);
+    }
+
+    /* ================= Eth-Trunk 视图 ================= */
+    if (view === 'trunk-view') {
+      const members = dev.ports.filter((p) => p.trunkId === dev.cli.trunkId);
+      if (!members.length) { quitView(dev); return errUnrecognized(cmd); }
+
+      if (cmd === 'mode') {
+        // 先校验再落配置，避免参数写错时配置已被改掉
+        if (!['lacp-static', 'manual'].includes(args[1])) return errWrong(args[1]);
+        if (args[1] === 'manual' && args[2] !== 'load-balance') return errWrong('mode');
+        members.forEach((m) => { m.trunkMode = args[1] === 'manual' ? 'manual' : 'lacp'; });
+        return { lines: [] };
+      }
+      if (cmd === 'ip' && args[1] === 'address') {
+        const ip = args[2];
+        const mask = parseMask(args[3]);
+        if (!E.isValidIp(ip) || mask == null) return errWrong(!E.isValidIp(ip) ? ip : args[3]);
+        members.forEach((m) => { m.mode = 'routed'; m.ip = ip; m.mask = mask; });
+        return { lines: [] };
+      }
+      if (cmd === 'undo' && args[1] === 'ip' && args[2] === 'address') {
+        members.forEach((m) => { m.ip = null; m.mask = null; });
+        return { lines: [] };
+      }
+      if (cmd === 'description') {
+        members.forEach((m) => (m.desc = args.slice(1).join(' ')));
+        return { lines: [] };
+      }
+      return errUnrecognized(cmd);
+    }
+
+    /* ================= 地址池视图 ================= */
+    if (view === 'pool-view') {
+      const pool = dev.dhcp.pools.find((p) => p.name === dev.cli.poolName);
+      if (!pool) { quitView(dev); return errUnrecognized(cmd); }
+
+      if (cmd === 'network') {
+        const net = args[1];
+        const mi = args.findIndex((a) => a.toLowerCase() === 'mask');
+        const mask = mi > 0 ? parseMask(args[mi + 1]) : null;
+        if (!E.isValidIp(net) || mask == null) return errWrong(!E.isValidIp(net) ? net : args[mi + 1]);
+        pool.network = E.networkOf(net, mask);
+        pool.mask = mask;
+        return { lines: [] };
+      }
+      if (cmd === 'gateway-list') {
+        if (!E.isValidIp(args[1])) return errWrong(args[1]);
+        pool.gateway = args[1];
+        return { lines: [] };
+      }
+      if (cmd === 'dns-list') {
+        if (!E.isValidIp(args[1])) return errWrong(args[1]);
+        pool.dns = args[1];
+        return { lines: [] };
+      }
+      if (cmd === 'excluded-ip-address') {
+        if (!E.isValidIp(args[1])) return errWrong(args[1]);
+        pool.excluded = pool.excluded || [];
+        pool.excluded.push(args[1]);
+        return { lines: [] };
+      }
+      if (cmd === 'lease') {
+        const n = parseInt(args[2], 10) || 1;
+        pool.leaseDays = n;
+        return { lines: [] };
+      }
+      if (cmd === 'static-bind') {
+        return { lines: ['（本模拟器暂不校验静态绑定，配置已记录）'] };
+      }
+      return errUnrecognized(cmd);
+    }
+
+    /* ================= ACL 视图 ================= */
+    if (view === 'acl-view') {
+      const acl = dev.acl.find((a) => a.id === dev.cli.aclId);
+      if (!acl) { quitView(dev); return errUnrecognized(cmd); }
+
+      if (cmd === 'rule') {
+        const ruleId = parseInt(args[1], 10);
+        const action = args[2];
+        if (isNaN(ruleId) || !['permit', 'deny'].includes(action)) return errWrong(!['permit', 'deny'].includes(action) ? action : args[1]);
+        const rule = { ruleId, action, src: null, srcWildcard: null };
+        const si = args.findIndex((a) => a.toLowerCase() === 'source');
+        if (si > 0) {
+          if (!E.isValidIp(args[si + 1])) return errWrong(args[si + 1]);
+          rule.src = args[si + 1];
+          rule.srcWildcard = E.isValidIp(args[si + 2]) ? args[si + 2] : '0.0.0.0';
+        }
+        acl.rules = acl.rules.filter((r) => r.ruleId !== ruleId);
+        acl.rules.push(rule);
+        acl.rules.sort((x, y) => x.ruleId - y.ruleId);
+        return { lines: [] };
+      }
+      if (cmd === 'undo' && args[1] === 'rule') {
+        const ruleId = parseInt(args[2], 10);
+        acl.rules = acl.rules.filter((r) => r.ruleId !== ruleId);
+        return { lines: [] };
+      }
+      return errUnrecognized(cmd);
+    }
+
+    /* ================= OSPF 视图 ================= */
+    if (view === 'ospf-view') {
+      if (cmd === 'router-id') {
+        if (!E.isValidIp(args[1])) return errWrong(args[1]);
+        dev.ospf.routerId = args[1];
+        return { lines: [] };
+      }
+      if (cmd === 'area') {
+        const areaId = args[1];
+        if (areaId == null) return errIncomplete('area');
+        const norm = areaId === '0' ? '0.0.0.0' : areaId;
+        if (!dev.ospf.areas.find((a) => String(a.areaId) === String(norm))) {
+          dev.ospf.areas.push({ areaId: norm, networks: [] });
+        }
+        enterView(dev, 'ospf-area-view', { ospfPid: dev.ospf.pid, areaId: norm });
+        return { lines: [] };
+      }
+      return errUnrecognized(cmd);
+    }
+
+    /* ================= OSPF 区域视图 ================= */
+    // quit 从这里只回上一级（OSPF 视图），不会直接跳到系统视图
+    if (view === 'ospf-area-view') {
+      const area = dev.ospf.areas.find((a) => String(a.areaId) === String(dev.cli.areaId));
+      if (!area) { quitView(dev); return errUnrecognized(cmd); }
+      if (cmd === 'network') {
+        const ip = args[1];
+        const wc = args[2];
+        if (!E.isValidIp(ip) || !E.isValidIp(wc)) return errWrong(!E.isValidIp(ip) ? ip : wc);
+        area.networks = area.networks.filter((n) => !(n.ip === ip && n.wildcard === wc));
+        area.networks.push({ ip, wildcard: wc });
+        return { lines: [] };
+      }
+      if (cmd === 'undo' && args[1] === 'network') {
+        area.networks = area.networks.filter((n) => !(n.ip === args[2] && n.wildcard === args[3]));
+        return { lines: [] };
+      }
+      return errUnrecognized(cmd);
+    }
+
+    return errUnrecognized(cmd);
+  }
+
+  /* ------------------------------ 帮助提示 ------------------------------ */
+
+  const VIEW_LABEL = {
+    'user-view': '用户视图',
+    'system-view': '系统视图',
+    'vlan-view': 'VLAN 视图',
+    'interface-view': '接口视图',
+    'vlanif-view': 'Vlanif 视图',
+    'trunk-view': 'Eth-Trunk 视图',
+    'pool-view': '地址池视图',
+    'acl-view': 'ACL 视图',
+    'ospf-view': 'OSPF 视图',
+    'ospf-area-view': 'OSPF 区域视图'
+  };
+
+  /** 把视图栈拼成"一级一级"的路径，帮学生搞清自己在第几层 */
+  function viewChain(dev) {
+    const chain = dev.cli.stack.map((f) => VIEW_LABEL[f.view] || f.view);
+    chain.push(VIEW_LABEL[dev.cli.view] || dev.cli.view);
+    return chain;
+  }
+
+  function helpLines(dev) {
+    const v = dev.cli.view;
+    const chain = viewChain(dev);
+    const common = ['', `  ---- 当前视图路径：${chain.join('  ›  ')} ----`];
+    if (chain.length > 1) common.push('  ---- quit 回上一级，return 直接回用户视图 ----');
+    common.push('', '  ---- 本视图可用命令（模拟器提供）----');
+    const map = {
+      'user-view': [
+        'system-view                  进入系统视图',
+        'display version              查看版本信息',
+        'display current-configuration  查看当前配置',
+        'display ip interface brief   查看接口 IP 简要信息',
+        'display interface <接口名>   查看接口详细信息',
+        'display port vlan            查看端口 VLAN 归属',
+        'display vlan                 查看 VLAN',
+        'display ip routing-table     查看路由表',
+        'display mac-address          查看 MAC 地址表',
+        'display arp                  查看 ARP 表',
+        'display stp brief            查看生成树状态',
+        'display eth-trunk            查看链路聚合',
+        'display ospf peer brief      查看 OSPF 邻居',
+        'display ospf interface       查看 OSPF 接口状态',
+        'display ip pool              查看 DHCP 地址池',
+        'ping <ip>                    连通性测试',
+        'tracert <ip>                 路由跟踪',
+        'save                         保存配置（会先问 y/n，再问文件名）'
+      ],
+      'system-view': [
+        'sysname <名字>               修改设备名',
+        'vlan <id>                    创建并进入 VLAN 视图',
+        'vlan batch <ids>             批量创建 VLAN（不进入视图）',
+        'undo vlan <id>               删除 VLAN',
+        'interface <接口名>           进入接口视图',
+        'ip route-static <目的> <掩码> <下一跳>   配置静态路由',
+        'ip pool <名字>               创建 DHCP 地址池',
+        'dhcp enable                  开启 DHCP 服务',
+        'ospf <进程号> router-id <id> 开启 OSPF',
+        'acl number <3000-3999>       创建高级 ACL',
+        'stp mode rstp                设置生成树模式',
+        'stp priority <4096的倍数>    设置桥优先级'
+      ],
+      'vlan-view': [
+        'description <描述>           给 VLAN 加备注',
+        'name <名称>                  给 VLAN 命名（display vlan 的 Description 列）',
+        'display this                 查看本 VLAN 配置'
+      ],
+      'interface-view': [
+        'description <描述>           接口描述',
+        'shutdown / undo shutdown     关闭 / 开启接口',
+        'port link-type access|trunk|hybrid   端口类型',
+        'port default vlan <id>       Access 口加入 VLAN',
+        'port trunk allow-pass vlan <列表|all>  Trunk 放行 VLAN',
+        'undo portswitch              转为路由口（可配 IP）',
+        'ip address <ip> <掩码>       配置 IP（路由口）',
+        'eth-trunk <编号>             加入链路聚合组',
+        'stp edged-port enable        配置边缘端口',
+        'port-security enable         开启端口安全',
+        'port-security max-mac-num <n>  限制 MAC 数量',
+        'traffic-filter inbound acl <编号>  应用 ACL',
+        'display this                 查看本接口配置'
+      ],
+      'vlanif-view': [
+        'ip address <ip> <掩码>       配置 VLAN 三层网关地址',
+        'dhcp select global           指定使用全局地址池',
+        'description <描述>           接口描述',
+        'shutdown / undo shutdown     关闭 / 开启接口',
+        'display this                 查看本接口配置'
+      ],
+      'trunk-view': [
+        'mode lacp-static             设置为 LACP 模式',
+        'mode manual load-balance     设置为手工负载分担',
+        'ip address <ip> <掩码>       配置 IP',
+        'display this                 查看本接口配置'
+      ],
+      'pool-view': [
+        'network <网段> mask <掩码>   地址池网段',
+        'gateway-list <ip>            网关',
+        'dns-list <ip>                DNS',
+        'excluded-ip-address <ip>     排除地址',
+        'lease day <n>                租期',
+        'display this                 查看本地址池配置'
+      ],
+      'acl-view': [
+        'rule <序号> permit|deny source <ip> <通配符>    配置规则',
+        'display this                 查看本 ACL 配置'
+      ],
+      'ospf-view': [
+        'router-id <ip>               指定 Router ID',
+        'area 0                       进入区域视图',
+        'display this                 查看 OSPF 配置'
+      ],
+      'ospf-area-view': [
+        'network <网段> <通配符>      通告网段',
+        'display this                 查看本区域配置'
+      ]
+    };
+    if (dev.type === 'pc') {
+      return [
+        '',
+        '  ---- PC 可用命令 ----',
+        'ipconfig                     查看 IP 配置',
+        'ipconfig /renew              通过 DHCP 重新获取地址',
+        'ipconfig /release            释放地址',
+        'ip <地址> <掩码> <网关>      手工配置 IP',
+        'ping <ip>                    连通性测试',
+        'tracert <ip>                 路由跟踪'
+      ];
+    }
+    return [...common, ...(map[v] || [])];
+  }
+
+  global.NE = global.NE || {};
+  Object.assign(global.NE, {
+    execute,
+    promptOf,
+    resolveIface,
+    helpLines,
+    computeMacTable,
+    viewChain,
+    VIEW_LABEL
+  });
+})(window);
+
+</script>
+<script>
+/* =========================================================================
+ * NE_HWSIM —— 华为 VRP 网络实训模拟器
+ * 模块：界面与交互（画布 / 拖拽 / 连线 / 终端 / 持久化 / 实训实验）
+ *
+ * Copyright (c) 2026 新易科技工作室 NewE
+ * 作者：Liuyi  <yimr@sohu.com>
+ * 协议：MIT License
+ *
+ * 本项目为独立的非官方教学演示工具，与华为技术有限公司无任何关联。
+ * ========================================================================= */
+(function (global) {
+  'use strict';
+
+  const E = global.NE;
+  const $ = (id) => document.getElementById(id);
+
+  /* ------------------------------ 布局常量 ------------------------------ */
+  const COLS = 14;
+  const CARD_W = 260;
+  const PAD_X = 13;
+  const GAP = 3;
+  const PORT_H = 14;
+  const HEAD_H = 46;
+  const PORTS_PAD_TOP = 6;
+  const COL_W = (CARD_W - 2 * PAD_X - (COLS - 1) * GAP) / COLS;
+
+  /* ------------------------------ 运行时状态 ------------------------------ */
+  const UI = {
+    scale: 1,
+    panX: 0,
+    panY: 0,
+    selDev: null,
+    pend: null, // { devId, portId }
+    tabs: [],
+    activeTab: null,
+    hist: {},
+    histIdx: -1,
+    labs: [],
+    currentLab: null
+  };
+
+  /* ------------------------------ 提示条 ------------------------------ */
+  let toastTimer = null;
+  function toast(msg, kind) {
+    const el = $('toast');
+    el.textContent = msg;
+    el.className = 'toast on' + (kind ? ' ' + kind : '');
+    clearTimeout(toastTimer);
+    toastTimer = setTimeout(() => (el.className = 'toast'), 2200);
+  }
+
+  /* ------------------------------ 坐标换算 ------------------------------ */
+  function portCenter(dev, idx) {
+    const col = idx % COLS;
+    const row = Math.floor(idx / COLS);
+    return {
+      x: dev.x + PAD_X + col * (COL_W + GAP) + COL_W / 2,
+      y: dev.y + HEAD_H + PORTS_PAD_TOP + row * (PORT_H + GAP) + PORT_H / 2
+    };
+  }
+
+  function cardHeight(dev) {
+    const rows = Math.ceil(dev.ports.length / COLS) || 1;
+    return HEAD_H + PORTS_PAD_TOP + rows * PORT_H + (rows - 1) * GAP + 12;
+  }
+
+  function screenToWorld(sx, sy) {
+    const rect = $('stage').getBoundingClientRect();
+    return {
+      x: (sx - rect.left - UI.panX) / UI.scale,
+      y: (sy - rect.top - UI.panY) / UI.scale
+    };
+  }
+
+  function applyTransform() {
+    $('stageInner').style.transform = `translate(${UI.panX}px, ${UI.panY}px) scale(${UI.scale})`;
+  }
+
+  /* ------------------------------ 设备库 ------------------------------ */
+  function renderPalette() {
+    const items = [
+      { key: 'S5700', ic: '🔀', name: '三层交换机', sub: 'S5700-28TP-EI' },
+      { key: 'S3700', ic: '🔀', name: '二层交换机', sub: 'S3700-28TP-EI' },
+      { key: 'AR6121', ic: '📡', name: '路由器', sub: 'AR6121' },
+      { key: 'PC', ic: '💻', name: 'PC 终端', sub: 'Windows 主机' }
+    ];
+    $('palette').innerHTML = items
+      .map(
+        (it) => `<button class="pal" data-k="${it.key}">
+          <span class="ic">${it.ic}</span>
+          <span class="tx"><b>${it.name}</b><span>${it.sub}</span></span>
+        </button>`
+      )
+      .join('');
+    $('palette').querySelectorAll('.pal').forEach((b) => {
+      b.onclick = () => {
+        const w = screenToWorld(window.innerWidth / 2, window.innerHeight / 2);
+        const d = E.Net.addDevice(b.dataset.k, Math.round(w.x - CARD_W / 2 + Math.random() * 60), Math.round(w.y - 60 + Math.random() * 40));
+        autoName(d);
+        render();
+        toast(`已添加 ${d.hostname}`, 'good');
+      };
+    });
+  }
+
+  let nameSeq = {};
+  function autoName(dev) {
+    const base = dev.type === 'pc' ? 'PC' : dev.type === 'router' ? 'R' : 'SW';
+    nameSeq[base] = (nameSeq[base] || 0) + 1;
+    dev.hostname = base + nameSeq[base];
+  }
+
+  /* ------------------------------ 画布渲染 ------------------------------ */
+  function render() {
+    const cards = $('cards');
+    cards.innerHTML = '';
+
+    for (const d of E.Net.devices) {
+      const el = document.createElement('div');
+      el.className = 'card' + (UI.selDev === d.id ? ' sel' : '');
+      el.style.left = d.x + 'px';
+      el.style.top = d.y + 'px';
+      el.style.width = CARD_W + 'px';
+      el.dataset.id = d.id;
+
+      const tagTxt = d.type === 'pc' ? 'PC' : d.type === 'router' ? 'Router' : d.key === 'S3700' ? 'L2 Switch' : 'L3 Switch';
+      el.innerHTML = `
+        <div class="head">
+          <div style="min-width:0">
+            <div class="nm">${esc(d.hostname)}</div>
+            <div class="md">${d.model}</div>
+          </div>
+          <span class="tag">${tagTxt}</span>
+          <span class="x" title="删除设备">×</span>
+        </div>
+        <div class="ports" style="grid-template-columns:repeat(${COLS},1fr)"></div>`;
+
+      const portsEl = el.querySelector('.ports');
+      d.ports.forEach((p, i) => {
+        const pe = document.createElement('div');
+        pe.className = 'port ' + portClass(d, p);
+        pe.title = `${p.name}\n${portTitle(d, p)}`;
+        pe.innerHTML = `<span class="lab">${p.name.replace('GigabitEthernet', 'GE')}</span>`;
+        pe.onmousedown = (ev) => ev.stopPropagation();
+        pe.onclick = (ev) => {
+          ev.stopPropagation();
+          onPortClick(d, p);
+        };
+        portsEl.appendChild(pe);
+      });
+
+      const head = el.querySelector('.head');
+      head.onmousedown = (ev) => startDrag(ev, d, el);
+      head.ondblclick = () => openConsole(d);
+      el.querySelector('.x').onclick = (ev) => {
+        ev.stopPropagation();
+        removeDevice(d);
+      };
+      el.onclick = () => {
+        UI.selDev = d.id;
+        render();
+      };
+      el.oncontextmenu = (ev) => {
+        ev.preventDefault();
+        removeDevice(d);
+      };
+
+      cards.appendChild(el);
+    }
+
+    renderWires();
+    $('empty').style.display = E.Net.devices.length ? 'none' : 'flex';
+  }
+
+  function esc(s) {
+    return String(s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+  }
+
+  function portClass(dev, p) {
+    const cls = [];
+    if (p.cableId && !p.shutdown) cls.push('up');
+    if (p.shutdown) cls.push('shut');
+    if (p.mode === 'trunk') cls.push('trunk');
+    if (UI.pend && UI.pend.devId === dev.id && UI.pend.portId === p.id) cls.push('pend');
+    return cls.join(' ');
+  }
+
+  function portTitle(dev, p) {
+    const rows = [];
+    rows.push(p.shutdown ? '状态：已关闭（shutdown）' : p.cableId ? '状态：已连线 Up' : '状态：未连线 Down');
+    rows.push('类型：' + (p.mode === 'routed' ? '路由口' : p.mode === 'trunk' ? 'Trunk' : p.mode === 'hybrid' ? 'Hybrid' : 'Access'));
+    if (p.mode === 'access') rows.push('VLAN：' + p.vlan);
+    if (p.mode === 'trunk') rows.push('放行 VLAN：' + (p.allowedVlans === 'all' ? 'all' : (p.allowedVlans || []).join(',')));
+    if (p.ip) rows.push('IP：' + p.ip + '/' + p.mask);
+    if (p.trunkId != null) rows.push('Eth-Trunk' + p.trunkId);
+    return rows.join('  |  ');
+  }
+
+  function renderWires() {
+    const svg = $('wires');
+    let html = '';
+    for (const c of E.Net.cables) {
+      const a = E.Net.getDevice(c.aDeviceId);
+      const b = E.Net.getDevice(c.bDeviceId);
+      if (!a || !b) continue;
+      const ia = a.ports.findIndex((p) => p.id === c.aPortId);
+      const ib = b.ports.findIndex((p) => p.id === c.bPortId);
+      if (ia < 0 || ib < 0) continue;
+      const pa = portCenter(a, ia);
+      const pb = portCenter(b, ib);
+      const alive = !a.ports[ia].shutdown && !b.ports[ib].shutdown;
+      html += `<line x1="${pa.x}" y1="${pa.y}" x2="${pb.x}" y2="${pb.y}"
+        stroke="${alive ? '#3fb950' : '#6e7681'}" stroke-width="2" vector-effect="non-scaling-stroke" opacity="0.85"/>`;
+    }
+    svg.innerHTML = html;
+  }
+
+  /* ------------------------------ 拖动 ------------------------------ */
+  function startDrag(ev, dev, el) {
+    if (ev.button !== 0) return;
+    ev.preventDefault();
+    const startX = ev.clientX;
+    const startY = ev.clientY;
+    const ox = dev.x;
+    const oy = dev.y;
+    let moved = false;
+
+    const onMove = (e) => {
+      const dx = (e.clientX - startX) / UI.scale;
+      const dy = (e.clientY - startY) / UI.scale;
+      if (Math.abs(dx) > 2 || Math.abs(dy) > 2) moved = true;
+      dev.x = Math.round(ox + dx);
+      dev.y = Math.round(oy + dy);
+      el.style.left = dev.x + 'px';
+      el.style.top = dev.y + 'px';
+      renderWires();
+    };
+    const onUp = () => {
+      document.removeEventListener('mousemove', onMove);
+      document.removeEventListener('mouseup', onUp);
+      if (moved) {
+        persist();
+        UI.selDev = dev.id;
+        render();
+      }
+    };
+    document.addEventListener('mousemove', onMove);
+    document.addEventListener('mouseup', onUp);
+  }
+
+  /* ------------------------------ 连线 ------------------------------ */
+  function onPortClick(dev, port) {
+    if (!UI.pend) {
+      UI.pend = { devId: dev.id, portId: port.id };
+      render();
+      return;
+    }
+    if (UI.pend.devId === dev.id && UI.pend.portId === port.id) {
+      UI.pend = null;
+      render();
+      return;
+    }
+    const from = E.Net.getDevice(UI.pend.devId);
+    const fromPort = from && E.Net.getPort(from, UI.pend.portId);
+    if (!from || !fromPort) {
+      UI.pend = null;
+      render();
+      return;
+    }
+    const res = E.Net.addCable(from, fromPort, dev, port);
+    UI.pend = null;
+    if (!res.ok) {
+      toast(res.message, 'bad');
+      render();
+      return;
+    }
+    E.recomputeOspf();
+    E.recomputeStp();
+    persist();
+    render();
+    toast(`${from.hostname} ${fromPort.name} ↔ ${dev.hostname} ${port.name} 连接成功`, 'good');
+  }
+
+  function removeDevice(dev) {
+    if (!confirm(`确定删除设备 ${dev.hostname} 吗？相关连线会一并删除。`)) return;
+    E.Net.removeDevice(dev.id);
+    UI.tabs = UI.tabs.filter((t) => t !== dev.id);
+    if (UI.activeTab === dev.id) UI.activeTab = UI.tabs[UI.tabs.length - 1] || null;
+    if (UI.selDev === dev.id) UI.selDev = null;
+    E.recomputeOspf();
+    E.recomputeStp();
+    persist();
+    render();
+    renderConsole();
+  }
+
+  /* ------------------------------ 终端 ------------------------------ */
+  function openConsole(dev) {
+    if (!UI.tabs.includes(dev.id)) UI.tabs.push(dev.id);
+    UI.activeTab = dev.id;
+    $('term').classList.add('open');
+    renderConsole();
+    setTimeout(() => $('cmd').focus(), 60);
+  }
+
+  function closeConsole(id) {
+    UI.tabs = UI.tabs.filter((t) => t !== id);
+    if (UI.activeTab === id) UI.activeTab = UI.tabs[UI.tabs.length - 1] || null;
+    if (!UI.tabs.length) $('term').classList.remove('open');
+    renderConsole();
+  }
+
+  function activeDev() {
+    return UI.activeTab ? E.Net.getDevice(UI.activeTab) : null;
+  }
+
+  function renderConsole() {
+    const tabsEl = $('tabs');
+    if (!UI.tabs.length) {
+      tabsEl.innerHTML = '';
+      $('screen').innerHTML = '';
+      return;
+    }
+    tabsEl.innerHTML =
+      UI.tabs
+        .map((id) => {
+          const d = E.Net.getDevice(id);
+          if (!d) return '';
+          return `<div class="tab ${id === UI.activeTab ? 'on' : ''}" data-id="${id}">
+            <span style="width:7px;height:7px;border-radius:50%;background:${id === UI.activeTab ? '#3fb950' : '#484f58'}"></span>
+            ${esc(d.hostname)}
+            <span class="cl" data-close="${id}">×</span>
+          </div>`;
+        })
+        .join('') +
+      `<div class="sp">
+         <button class="btn" id="btnClearLog" title="清屏">清屏</button>
+         <button class="btn" id="btnMax" title="最大化 / 还原">⤢</button>
+       </div>`;
+
+    tabsEl.querySelectorAll('.tab').forEach((t) => {
+      t.onclick = (ev) => {
+        if (ev.target.dataset.close) return;
+        UI.activeTab = t.dataset.id;
+        renderConsole();
+        $('cmd').focus();
+      };
+    });
+    tabsEl.querySelectorAll('[data-close]').forEach((el) => {
+      el.onclick = (ev) => {
+        ev.stopPropagation();
+        closeConsole(el.dataset.close);
+      };
+    });
+    tabsEl.querySelector('#btnClearLog').onclick = () => {
+      const d = activeDev();
+      if (d) {
+        d.logs = [];
+        renderConsole();
+      }
+    };
+    tabsEl.querySelector('#btnMax').onclick = () => {
+      $('term').classList.toggle('max');
+    };
+
+    const d = activeDev();
+    if (!d) return;
+    const screen = $('screen');
+    if (!d.logs.length) {
+      d.logs.push({ t: `--- 已进入 ${d.hostname} 的命令行（${d.model}）---`, c: 'dim' });
+      d.logs.push({ t: '提示：输入 ? 查看可用命令；双击其他设备可切换会话。', c: 'dim' });
+    }
+    screen.innerHTML = d.logs
+      .map((l) => `<div class="ln ${l.c || ''}">${esc(l.t)}</div>`)
+      .join('');
+    screen.scrollTop = screen.scrollHeight;
+    // 等待 y/n 或文件名输入时，真实 VRP 不显示提示符
+    $('prompt').textContent = d.cli.pending ? '' : E.promptOf(d);
+  }
+
+  function classify(line) {
+    const s = line.trim();
+    if (/^\^$/.test(s)) return 'err'; // 真实 VRP 的错误插入符行
+    if (/^\/\/ /.test(s)) return 'hl'; // 模拟器附加的中文提示，区别于设备真实回显
+    if (/^Error[:：]|^Error |失败原因|请求失败|无法到达|已被占用/.test(s)) return 'err';
+    if (/^(Warning|警告)|失败/.test(s)) return 'warn';
+    if (/成功|reply|Reply|ping statistics|Save the configuration successfully/.test(s)) return 'ok';
+    if (/^#|^return$|^\(no /.test(s)) return 'dim';
+    return '';
+  }
+
+  function runCommand(line) {
+    const d = activeDev();
+    if (!d) return;
+    const waiting = !!d.cli.pending;
+    // 非等待状态下空回车没有意义，直接忽略
+    if (!waiting && !line.trim()) return;
+
+    if (waiting) {
+      // 真实控制台里 y / 文件名是紧跟在问题后面的，所以追加到上一行末尾
+      const last = d.logs[d.logs.length - 1];
+      if (last) last.t += line;
+    } else {
+      d.logs.push({ t: `${E.promptOf(d)} ${line}`, c: 'cmd' });
+    }
+
+    let res;
+    try {
+      res = E.execute(d, line);
+    } catch (e) {
+      d.logs.push({ t: '内部错误：' + e.message, c: 'err' });
+      renderConsole();
+      return;
+    }
+    for (const l of res.lines || []) d.logs.push({ t: l, c: classify(l) });
+    if (res.traffic) showTraffic(d, res.traffic);
+    E.recomputeOspf();
+    E.recomputeStp();
+    persist();
+    renderConsole();
+    render();
+  }
+
+  /** 高亮本次通信路径 */
+  function showTraffic(dev, traffic) {
+    const path = (traffic.path || []).filter(Boolean);
+    if (!path.length) return;
+    const names = path.map((id) => (E.Net.getDevice(id) || {}).hostname || '?').join(' → ');
+    dev.logs.push({ t: '', c: '' });
+    dev.logs.push({ t: `  通信路径：${names}`, c: 'hl' });
+    dev.logs.push({ t: '', c: '' });
+  }
+
+  /* ------------------------------ 命令输入 ------------------------------ */
+  function setupInput() {
+    const inp = $('cmd');
+    inp.addEventListener('keydown', (ev) => {
+      const d = activeDev();
+      if (!d) return;
+      const key = ev.key;
+      if (key === 'Enter') {
+        ev.preventDefault();
+        const v = inp.value;
+        inp.value = '';
+        // 等待确认的回答（y / 文件名）不进历史，避免 ↑ 翻出一堆 y
+        if (v.trim() && !d.cli.pending) {
+          if (!UI.hist[d.id]) UI.hist[d.id] = [];
+          UI.hist[d.id].push(v.trim());
+          UI.histIdx = UI.hist[d.id].length;
+        }
+        runCommand(v);
+      } else if (key === 'ArrowUp') {
+        ev.preventDefault();
+        const h = UI.hist[d.id] || [];
+        if (!h.length) return;
+        UI.histIdx = Math.max(0, (UI.histIdx == null ? h.length : UI.histIdx) - 1);
+        inp.value = h[UI.histIdx] || '';
+      } else if (key === 'ArrowDown') {
+        ev.preventDefault();
+        const h = UI.hist[d.id] || [];
+        UI.histIdx = Math.min(h.length, (UI.histIdx == null ? 0 : UI.histIdx) + 1);
+        inp.value = h[UI.histIdx] || '';
+      } else if (key === 'Tab') {
+        ev.preventDefault();
+        autocomplete(d, inp);
+      } else if (key === '?' && !inp.value) {
+        ev.preventDefault();
+        runCommand('?');
+      }
+    });
+  }
+
+  const CANDIDATES = {
+    'user-view': ['system-view', 'display version', 'display current-configuration', 'display ip interface brief', 'display interface ', 'display port vlan', 'display vlan', 'display ip routing-table', 'display mac-address', 'display arp', 'display stp brief', 'display eth-trunk', 'display ospf peer brief', 'display ospf interface', 'display ip pool', 'ping ', 'tracert ', 'save', 'help'],
+    'system-view': ['sysname ', 'vlan ', 'vlan batch ', 'interface ', 'ip route-static ', 'ip pool ', 'dhcp enable', 'ospf 1 router-id ', 'acl number 3000', 'stp mode rstp', 'stp priority ', 'display current-configuration', 'display this', 'save', 'quit', 'return'],
+    'vlan-view': ['description ', 'name ', 'display this', 'display vlan', 'quit', 'return'],
+    'interface-view': ['description ', 'shutdown', 'undo shutdown', 'port link-type access', 'port link-type trunk', 'port default vlan ', 'port trunk allow-pass vlan ', 'undo portswitch', 'ip address ', 'eth-trunk 1', 'stp edged-port enable', 'port-security enable', 'port-security max-mac-num 2', 'traffic-filter inbound acl ', 'display this', 'display interface ', 'quit', 'return'],
+    'vlanif-view': ['ip address ', 'dhcp select global', 'description ', 'shutdown', 'undo shutdown', 'display this', 'quit', 'return'],
+    'pool-view': ['network ', 'gateway-list ', 'dns-list ', 'excluded-ip-address ', 'lease day 1', 'display this', 'quit', 'return'],
+    'acl-view': ['rule 5 permit source ', 'rule 10 deny source ', 'display this', 'quit', 'return'],
+    'ospf-view': ['router-id ', 'area 0', 'display this', 'quit', 'return'],
+    'ospf-area-view': ['network ', 'display this', 'quit', 'return'],
+    'trunk-view': ['mode lacp-static', 'mode manual load-balance', 'ip address ', 'display this', 'quit', 'return']
+  };
+
+  function autocomplete(d, inp) {
+    const cur = inp.value;
+    let list = CANDIDATES[d.cli.view] || [];
+    if (d.type === 'pc') list = ['ipconfig', 'ipconfig /renew', 'ipconfig /release', 'ip ', 'ping ', 'tracert ', 'help'];
+
+    if (!cur.trim()) {
+      const d2 = activeDev();
+      d2.logs.push({ t: '', c: '' });
+      d2.logs.push({ t: '  可输入的命令：', c: 'dim' });
+      for (const c of list) d2.logs.push({ t: '    ' + c, c: 'hl' });
+      renderConsole();
+      return;
+    }
+    const hits = list.filter((c) => c.toLowerCase().startsWith(cur.toLowerCase()));
+    if (hits.length === 1) {
+      inp.value = hits[0];
+      return;
+    }
+    if (hits.length > 1) {
+      const common = commonPrefix(hits);
+      if (common.length > cur.length) inp.value = common;
+      else {
+        const d2 = activeDev();
+        d2.logs.push({ t: '', c: '' });
+        d2.logs.push({ t: '  匹配到的命令：', c: 'dim' });
+        for (const c of hits) d2.logs.push({ t: '    ' + c, c: 'hl' });
+        renderConsole();
+      }
+    }
+  }
+
+  function commonPrefix(arr) {
+    if (!arr.length) return '';
+    let p = arr[0];
+    for (const s of arr) {
+      while (s.toLowerCase().indexOf(p.toLowerCase()) !== 0) {
+        p = p.slice(0, -1);
+        if (!p) return '';
+      }
+    }
+    return p;
+  }
+
+  /* ------------------------------ 画布平移缩放 ------------------------------ */
+  function setupStage() {
+    const stage = $('stage');
+    stage.addEventListener('mousedown', (ev) => {
+      if (ev.target !== stage && ev.target.id !== 'stageInner' && ev.target.tagName !== 'svg') return;
+      if (ev.button === 1 || ev.button === 0) {
+        UI.pend = null;
+        UI.selDev = null;
+        render();
+        const sx = ev.clientX;
+        const sy = ev.clientY;
+        const ox = UI.panX;
+        const oy = UI.panY;
+        const mv = (e) => {
+          UI.panX = ox + (e.clientX - sx);
+          UI.panY = oy + (e.clientY - sy);
+          applyTransform();
+        };
+        const up = () => {
+          document.removeEventListener('mousemove', mv);
+          document.removeEventListener('mouseup', up);
+        };
+        document.addEventListener('mousemove', mv);
+        document.addEventListener('mouseup', up);
+      }
+    });
+    stage.addEventListener('wheel', (ev) => {
+      if (!ev.ctrlKey && !ev.metaKey) return;
+      ev.preventDefault();
+      const rect = stage.getBoundingClientRect();
+      const mx = ev.clientX - rect.left;
+      const my = ev.clientY - rect.top;
+      const old = UI.scale;
+      const next = Math.min(2, Math.max(0.35, old * (ev.deltaY < 0 ? 1.12 : 0.89)));
+      UI.panX = mx - (mx - UI.panX) * (next / old);
+      UI.panY = my - (my - UI.panY) * (next / old);
+      UI.scale = next;
+      applyTransform();
+    }, { passive: false });
+    document.addEventListener('keydown', (ev) => {
+      if (ev.key === 'Escape') {
+        UI.pend = null;
+        render();
+      }
+      if (ev.key === 'Delete' && UI.selDev) {
+        const d = E.Net.getDevice(UI.selDev);
+        if (d) removeDevice(d);
+      }
+    });
+  }
+
+  /* ------------------------------ 持久化 ------------------------------ */
+  const LS_KEY = 'hw-netsim-lite-v1';
+
+  function persist() {
+    try {
+      localStorage.setItem(
+        LS_KEY,
+        JSON.stringify({
+          devices: E.Net.devices,
+          cables: E.Net.cables,
+          seq: nameSeq,
+          pan: { x: UI.panX, y: UI.panY, s: UI.scale }
+        })
+      );
+    } catch (e) {
+      /* 忽略存储异常 */
+    }
+  }
+
+  function restore() {
+    try {
+      const raw = localStorage.getItem(LS_KEY);
+      if (!raw) return false;
+      const data = JSON.parse(raw);
+      if (!data.devices || !data.devices.length) return false;
+      E.Net.devices = (data.devices || []).map((d) => E.normalizeDevice(d));
+      E.Net.cables = data.cables || [];
+      nameSeq = data.seq || {};
+      if (data.pan) {
+        UI.panX = data.pan.x || 0;
+        UI.panY = data.pan.y || 0;
+        UI.scale = data.pan.s || 1;
+      }
+      return true;
+    } catch (e) {
+      return false;
+    }
+  }
+
+  /* ------------------------------ 实验预设 ------------------------------ */
+  function mk(key, x, y, name) {
+    const d = E.Net.addDevice(key, x, y);
+    d.hostname = name;
+    nameSeq[d.type === 'pc' ? 'PC' : d.type === 'router' ? 'R' : 'SW'] = Math.max(
+      nameSeq[d.type === 'pc' ? 'PC' : d.type === 'router' ? 'R' : 'SW'] || 0,
+      parseInt(String(name).replace(/\D/g, ''), 10) || 0
+    );
+    return d;
+  }
+
+  function link(a, ai, b, bi) {
+    const res = E.Net.addCable(a, a.ports[ai], b, b.ports[bi]);
+    if (!res.ok) console.warn('连线失败：' + res.message);
+    return res.ok;
+  }
+
+  function setPort(dev, idx, patch) {
+    Object.assign(dev.ports[idx], patch);
+  }
+
+  function setName(dev, name) {
+    dev.hostname = name;
+  }
+
+  function clearAll() {
+    E.Net.reset();
+    nameSeq = {};
+    UI.tabs = [];
+    UI.activeTab = null;
+    UI.selDev = null;
+    UI.pend = null;
+    UI.panX = 0;
+    UI.panY = 0;
+    UI.scale = 1;
+    applyTransform();
+    persist();
+    render();
+    renderConsole();
+  }
+
+  const LABS = [
+    {
+      id: 'vlan-basic',
+      name: '实验一 · VLAN 基础与端口划分',
+      level: '基础',
+      desc: '1 台交换机 + 2 台 PC。把 PC 划入同一个 VLAN，验证二层互通；再隔离到不同 VLAN，观察现象。',
+      build() {
+        const sw = mk('S3700', 340, 90, 'SW1');
+        const p1 = mk('PC', 130, 320, 'PC1');
+        const p2 = mk('PC', 570, 320, 'PC2');
+        setPort(p1, 0, { ip: '192.168.10.1', mask: 24 });
+        setPort(p2, 0, { ip: '192.168.10.2', mask: 24 });
+        link(p1, 0, sw, 0);
+        link(p2, 0, sw, 1);
+        return { focus: sw };
+      },
+      goals: [
+        '在系统视图下创建 VLAN 10 和 VLAN 20（<code>vlan batch 10 20</code>）',
+        '把 GE0/0/1、GE0/0/2 都划入 VLAN 10（<code>port link-type access</code> + <code>port default vlan 10</code>）',
+        '在 PC1 上 ping 192.168.10.2，确认同 VLAN 二层互通',
+        '把 GE0/0/2 改到 VLAN 20，在 PC1 上再 ping 一次，观察结果变化'
+      ],
+      tips: [
+        '交换机端口缺省都在 VLAN 1，同一个 VLAN 内可以直接二层通信，不需要配 IP。',
+        'PC 的地址用 <code>ip 192.168.10.1 24</code> 命令配置（点 PC 打开终端输入）。',
+        '注意视图层级：<code>vlan 10</code> 会进入 <code>[SW1-vlan10]</code>，配完要 <code>quit</code> 回 <code>[SW1]</code> 才能敲 <code>interface</code>。想省事就用 <code>vlan batch 10 20</code>，它不进视图。'
+      ]
+    },
+    {
+      id: 'trunk',
+      name: '实验二 · Trunk 跨交换机 VLAN',
+      level: '基础',
+      desc: '2 台交换机通过 Trunk 互联，两台 PC 同属 VLAN 10，验证跨交换机的 VLAN 内互通。',
+      build() {
+        const s1 = mk('S3700', 150, 70, 'SW1');
+        const s2 = mk('S3700', 540, 70, 'SW2');
+        const p1 = mk('PC', 90, 330, 'PC1');
+        const p2 = mk('PC', 600, 330, 'PC2');
+        setPort(p1, 0, { ip: '192.168.10.1', mask: 24 });
+        setPort(p2, 0, { ip: '192.168.10.2', mask: 24 });
+        link(p1, 0, s1, 0);
+        link(p2, 0, s2, 0);
+        link(s1, 23, s2, 23); // SW1 GE0/0/24 ↔ SW2 GE0/0/24
+        // 互联口预配为 trunk，放行 VLAN 10
+        setPort(s1, 23, { mode: 'trunk', allowedVlans: [10] });
+        setPort(s2, 23, { mode: 'trunk', allowedVlans: [10] });
+        [s1, s2].forEach((s) => {
+          if (!s.vlans.includes(10)) s.vlans.push(10);
+        });
+        return { focus: s1 };
+      },
+      goals: [
+        '两台交换机都创建 VLAN 10',
+        '把各自的接入口 GE0/0/1 配成 access 并加入 VLAN 10',
+        '确认互联口 GE0/0/24 为 <code>port link-type trunk</code> 且 <code>port trunk allow-pass vlan 10</code>',
+        '在 PC1 上 ping 192.168.10.2，验证跨交换机互通'
+      ],
+      tips: [
+        'Trunk 口默认只放行 VLAN 1，必须显式 allow-pass 对应 VLAN，这是最常见的故障点。',
+        '可以用 <code>display vlan 10</code> 在交换机上查看各端口属于 VLAN 10 的标记（UT / TG）。'
+      ]
+    },
+    {
+      id: 'intervlan',
+      name: '实验三 · 三层交换实现 VLAN 间互通',
+      level: '进阶',
+      desc: '1 台三层交换机 + 2 台 PC，分别属于 VLAN 10 / VLAN 20，用 Vlanif 做网关实现互通。',
+      build() {
+        const sw = mk('S5700', 340, 80, 'SW1');
+        const p1 = mk('PC', 130, 330, 'PC1');
+        const p2 = mk('PC', 570, 330, 'PC2');
+        setPort(p1, 0, { ip: '192.168.10.10', mask: 24, gateway: '192.168.10.1' });
+        setPort(p2, 0, { ip: '192.168.20.10', mask: 24, gateway: '192.168.20.1' });
+        link(p1, 0, sw, 0);
+        link(p2, 0, sw, 1);
+        setPort(sw, 0, { mode: 'access', vlan: 10 });
+        setPort(sw, 1, { mode: 'access', vlan: 20 });
+        if (!sw.vlans.includes(10)) sw.vlans.push(10);
+        if (!sw.vlans.includes(20)) sw.vlans.push(20);
+        return { focus: sw };
+      },
+      goals: [
+        '确认 VLAN 10 / VLAN 20 已存在（<code>display vlan</code>）',
+        '创建 Vlanif10：<code>interface Vlanif10</code> → <code>ip address 192.168.10.1 24</code>',
+        '创建 Vlanif20：<code>interface Vlanif20</code> → <code>ip address 192.168.20.1 24</code>',
+        '在 PC1 上 ping 192.168.20.10，验证跨 VLAN 互通',
+        '执行 <code>display ip routing-table</code>，观察直连路由'
+      ],
+      tips: [
+        'PC 的网关必须指向对应 VLAN 的 Vlanif 地址，否则跨网段不通。',
+        '三层交换机上 Vlanif 就是各 VLAN 的网关，这是「一次路由多次交换」的核心。'
+      ]
+    },
+    {
+      id: 'static',
+      name: '实验四 · 静态路由实现跨网段互通',
+      level: '进阶',
+      desc: '2 台路由器 + 2 台 PC。配置物理接口 IP 与静态路由，实现两个网段互通。',
+      build() {
+        const r1 = mk('AR6121', 170, 90, 'R1');
+        const r2 = mk('AR6121', 530, 90, 'R2');
+        const p1 = mk('PC', 80, 350, 'PC1');
+        const p2 = mk('PC', 620, 350, 'PC2');
+        const s1 = mk('S3700', 60, 240, 'SW1');
+        const s2 = mk('S3700', 640, 240, 'SW2');
+        setPort(p1, 0, { ip: '192.168.1.10', mask: 24, gateway: '192.168.1.1' });
+        setPort(p2, 0, { ip: '192.168.2.10', mask: 24, gateway: '192.168.2.1' });
+        link(p1, 0, s1, 0);
+        link(p2, 0, s2, 0);
+        link(s1, 1, r1, 0);
+        link(s2, 1, r2, 0);
+        link(r1, 1, r2, 1); // R1 GE0/0/1 ↔ R2 GE0/0/1
+        // 路由器与交换机之间用 access 口，缺省 VLAN 1
+        setPort(r1, 0, { ip: '192.168.1.1', mask: 24 });
+        setPort(r2, 0, { ip: '192.168.2.1', mask: 24 });
+        return { focus: r1 };
+      },
+      goals: [
+        '查看 R1、R2 的接口地址：R1 GE0/0/0 = 192.168.1.1/24，R2 GE0/0/0 = 192.168.2.1/24',
+        '互联口配置地址：R1 GE0/0/1 = 10.0.0.1/24，R2 GE0/0/1 = 10.0.0.2/24',
+        'R1 上配置：<code>ip route-static 192.168.2.0 24 10.0.0.2</code>',
+        'R2 上配置：<code>ip route-static 192.168.1.0 24 10.0.0.1</code>',
+        'PC1 ping 192.168.2.10，并用 <code>tracert</code> 观察路径'
+      ],
+      tips: [
+        '两台路由器互联口必须在同一网段，否则连直连路由都建立不起来。',
+        '静态路由写法：<code>ip route-static 目标网段 掩码 下一跳地址</code>，掩码可用 24 或 255.255.255.0。'
+      ]
+    },
+    {
+      id: 'ospf',
+      name: '实验五 · OSPF 单区域动态路由',
+      level: '进阶',
+      desc: '3 台路由器组成三角拓扑，配置 OSPF 单区域，观察邻居建立与动态学习路由。',
+      build() {
+        const r1 = mk('AR6121', 130, 80, 'R1');
+        const r2 = mk('AR6121', 530, 80, 'R2');
+        const r3 = mk('AR6121', 330, 330, 'R3');
+        const p1 = mk('PC', 40, 300, 'PC1');
+        const p2 = mk('PC', 650, 300, 'PC2');
+        setPort(p1, 0, { ip: '192.168.1.10', mask: 24, gateway: '192.168.1.1' });
+        setPort(p2, 0, { ip: '192.168.2.10', mask: 24, gateway: '192.168.2.1' });
+        link(p1, 0, r1, 0);
+        link(p2, 0, r2, 0);
+        link(r1, 1, r2, 1); // R1-R2 骨干
+        link(r1, 2, r3, 0); // R1-R3
+        link(r2, 2, r3, 1); // R2-R3
+        setPort(r1, 0, { ip: '192.168.1.1', mask: 24 });
+        setPort(r2, 0, { ip: '192.168.2.1', mask: 24 });
+        return { focus: r1 };
+      },
+      goals: [
+        '为互联口配置地址：R1-R2 用 10.0.0.0/24，R1-R3 用 10.0.1.0/24，R2-R3 用 10.0.2.0/24',
+        '三台路由器都配置：<code>ospf 1 router-id x.x.x.x</code> → <code>area 0</code> → <code>network 网段 反掩码</code>',
+        '用 <code>display ospf peer brief</code> 确认邻居状态为 Full',
+        '用 <code>display ip routing-table</code> 观察 OSPF 学到的路由（Proto 为 OSPF）',
+        'PC1 ping 192.168.2.10，并用 tracert 对比路径'
+      ],
+      tips: [
+        'network 命令用的是反掩码（通配符掩码）：/24 对应 0.0.0.255。',
+        'area 0 也可以写成 area 0.0.0.0。',
+        'router-id 建议用环回口或互联口地址，三台设备不能重复。',
+        'OSPF 是三层嵌套视图：<code>[R1-ospf-1]</code> 里敲 <code>area 0</code> 进入 <code>[R1-ospf-1-area-0.0.0.0]</code>，配完 <code>quit</code> 只回到 <code>[R1-ospf-1]</code>，要再 <code>quit</code> 一次才回 <code>[R1]</code>。'
+      ]
+    },
+    {
+      id: 'dhcp',
+      name: '实验六 · DHCP 自动分配地址',
+      level: '进阶',
+      desc: '路由器作为 DHCP 服务器，PC 通过 DHCP 自动获取地址，体验 ipconfig /renew。',
+      build() {
+        const r1 = mk('AR6121', 340, 90, 'R1');
+        const sw = mk('S3700', 340, 260, 'SW1');
+        const p1 = mk('PC', 160, 420, 'PC1');
+        const p2 = mk('PC', 520, 420, 'PC2');
+        link(r1, 0, sw, 23);
+        link(p1, 0, sw, 0);
+        link(p2, 0, sw, 1);
+        setPort(r1, 0, { ip: '192.168.10.1', mask: 24 });
+        return { focus: r1 };
+      },
+      goals: [
+        '在 R1 上开启 DHCP：<code>dhcp enable</code>',
+        '创建地址池：<code>ip pool pool1</code> → <code>network 192.168.10.0 mask 255.255.255.0</code> → <code>gateway-list 192.168.10.1</code> → <code>dns-list 8.8.8.8</code>',
+        '让接口使用全局地址池：<code>interface GigabitEthernet0/0/0</code> → <code>dhcp select global</code>',
+        '在 PC1 上执行 <code>ipconfig /renew</code>，检查是否拿到 192.168.10.x 地址',
+        '在 R1 上执行 <code>display ip pool</code> 查看地址池使用情况',
+        'PC1 ping PC2，验证自动获取地址后的互通性'
+      ],
+      tips: [
+        'PC 需要和 DHCP 服务器在同一广播域（同一 VLAN / 同一二层网络）。',
+        '如果拿不到地址，按顺序检查：dhcp enable → ip pool 配置 → 接口 dhcp select global → 链路与 VLAN。'
+      ]
+    }
+  ];
+
+  /* ------------------------------ 弹窗 ------------------------------ */
+  function openModal(html) {
+    $('modal').innerHTML = html;
+    $('mask').classList.add('on');
+  }
+  function closeModal() {
+    $('mask').classList.remove('on');
+  }
+
+  function showLabs() {
+    const html = `
+      <div class="mh">
+        <h2>实训实验</h2>
+        <button class="btn" id="mClose">关闭</button>
+      </div>
+      <div class="mb">
+        <p style="color:var(--tx2);line-height:1.8;margin-bottom:14px">
+          选择一个实验，会自动搭建好拓扑（含线缆，部分实验预置了 PC 地址），你只需要完成交换机 / 路由器的配置。
+        </p>
+        <div class="labgrid">
+          ${LABS.map(
+            (l) => `<div class="labcard" data-lab="${l.id}">
+              <b>${l.name}</b>
+              <span>${l.desc}</span>
+              <span class="lv">${l.level}</span>
+            </div>`
+          ).join('')}
+        </div>
+      </div>`;
+    openModal(html);
+    $('mClose').onclick = closeModal;
+    $('modal').querySelectorAll('.labcard').forEach((c) => {
+      c.onclick = () => loadLab(c.dataset.lab);
+    });
+  }
+
+  function loadLab(id) {
+    const lab = LABS.find((l) => l.id === id);
+    if (!lab) return;
+    clearAll();
+    const info = lab.build() || {};
+    E.recomputeOspf();
+    E.recomputeStp();
+    // 视图居中
+    const devs = E.Net.devices;
+    if (devs.length) {
+      const minX = Math.min(...devs.map((d) => d.x));
+      const maxX = Math.max(...devs.map((d) => d.x)) + CARD_W;
+      const minY = Math.min(...devs.map((d) => d.y));
+      const maxY = Math.max(...devs.map((d) => d.y)) + 180;
+      const rect = $('stage').getBoundingClientRect();
+      const s = Math.min(1.1, Math.min(rect.width / (maxX - minX + 80), rect.height / (maxY - minY + 80)));
+      UI.scale = Math.max(0.35, s);
+      UI.panX = (rect.width - (maxX - minX) * UI.scale) / 2 - minX * UI.scale;
+      UI.panY = (rect.height - (maxY - minY) * UI.scale) / 2 - minY * UI.scale;
+      applyTransform();
+    }
+    UI.currentLab = lab;
+    persist();
+    render();
+    if (info.focus) openConsole(info.focus);
+    showLabBrief(lab);
+  }
+
+  function showLabBrief(lab) {
+    const html = `
+      <div class="mh">
+        <h2>${lab.name}</h2>
+        <button class="btn primary" id="mStart">开始配置</button>
+      </div>
+      <div class="mb">
+        <h4 class="sec">实验目标</h4>
+        <ul class="steps">
+          ${lab.goals.map((g, i) => `<li><span class="n">${i + 1}</span><span>${g}</span></li>`).join('')}
+        </ul>
+        <h4 class="sec">小贴士</h4>
+        <ul class="steps">
+          ${lab.tips.map((t) => `<li><span class="n">※</span><span>${t}</span></li>`).join('')}
+        </ul>
+        <h4 class="sec">常用操作</h4>
+        <div class="kv">
+          <div class="r"><b>切换设备</b><span>双击画布上的设备打开它的命令行；终端上方标签页可切换。</span></div>
+          <div class="r"><b>查看配置</b><span>设备终端里输入 <code>display current-configuration</code></span></div>
+          <div class="r"><b>验证连通</b><span>双击 PC，输入 <code>ping 目标IP</code></span></div>
+          <div class="r"><b>保存拓扑</b><span>拓扑会自动保存在本机浏览器里，下次打开自动恢复。</span></div>
+        </div>
+      </div>`;
+    openModal(html);
+    $('mStart').onclick = closeModal;
+  }
+
+  function showHelp() {
+    const html = `
+      <div class="mh">
+        <h2>使用帮助</h2>
+        <button class="btn" id="mClose">关闭</button>
+      </div>
+      <div class="mb">
+        <h4 class="sec">四步上手</h4>
+        <ul class="steps">
+          <li><span class="n">1</span><span>点左侧「设备库」里的设备，把它加到画布上；拖动标题栏可移动。</span></li>
+          <li><span class="n">2</span><span>先点一个灰色端口，再点另一个灰色端口，即完成连线。按 Esc 取消当前选择。</span></li>
+          <li><span class="n">3</span><span>双击设备打开命令行，输入华为 VRP 命令，例如 <code>system-view</code>。</span></li>
+          <li><span class="n">4</span><span>双击 PC 输入 <code>ip 192.168.10.1 24</code> 配地址，再 <code>ping</code> 目标地址验证。</span></li>
+        </ul>
+        <h4 class="sec">视图是一级一级进入的</h4>
+        <p class="hint">和真机一样，命令要先进到对应视图才能敲。提示符会告诉你现在在哪一层：</p>
+        <div class="tree">
+          <div><code>&lt;SW1&gt;</code><span>用户视图</span></div>
+          <div class="lv2"><code>[SW1]</code><span>system-view 进入系统视图</span></div>
+          <div class="lv3"><code>[SW1-vlan10]</code><span>vlan 10 进入 VLAN 视图</span></div>
+          <div class="lv3"><code>[SW1-GigabitEthernet0/0/1]</code><span>interface GE0/0/1 进入接口视图</span></div>
+          <div class="lv3"><code>[SW1-Vlanif10]</code><span>interface Vlanif10</span></div>
+          <div class="lv3"><code>[SW1-ospf-1]</code><span>ospf 1</span></div>
+          <div class="lv4"><code>[SW1-ospf-1-area-0.0.0.0]</code><span>area 0（再深一层）</span></div>
+        </div>
+        <div class="kv">
+          <div class="r"><b>quit</b><span>只退回上一层。<code>area 0</code> 里 <code>quit</code> 是回 <code>[SW1-ospf-1]</code>，不是直接回 <code>[SW1]</code></span></div>
+          <div class="r"><b>return</b><span>一步直接回到用户视图 <code>&lt;SW1&gt;</code></span></div>
+          <div class="r"><b>常见错误</b><span><code>vlan 10</code> 之后要 <code>quit</code> 才能敲 <code>interface</code>——在 VLAN 视图里敲 <code>interface</code> 会报错，真机也是</span></div>
+          <div class="r"><b>看自己在哪</b><span>输入 <code>?</code>，第一行会显示完整的视图路径</span></div>
+        </div>
+        <h4 class="sec">命令行速查</h4>
+        <div class="kv">
+          <div class="r"><b>视图切换</b><span><code>system-view</code> 进系统视图 · <code>quit</code> 退一级 · <code>return</code> 回用户视图</span></div>
+          <div class="r"><b>VLAN</b><span><code>vlan 10</code>（进入 VLAN 视图，可配 <code>description</code> / <code>name</code>）· <code>vlan batch 10 20</code> · <code>port link-type access</code> · <code>port default vlan 10</code></span></div>
+          <div class="r"><b>Trunk</b><span><code>port link-type trunk</code> · <code>port trunk allow-pass vlan 10 20</code> 或 <code>all</code></span></div>
+          <div class="r"><b>三层</b><span><code>interface Vlanif10</code> · <code>ip address 192.168.10.1 24</code></span></div>
+          <div class="r"><b>路由</b><span><code>ip route-static 192.168.2.0 24 10.0.0.2</code></span></div>
+          <div class="r"><b>OSPF</b><span><code>ospf 1 router-id 1.1.1.1</code> → <code>area 0</code> → <code>network 10.0.0.0 0.0.0.255</code></span></div>
+          <div class="r"><b>DHCP</b><span><code>dhcp enable</code> · <code>ip pool pool1</code> · <code>network 192.168.10.0 mask 24</code> · <code>gateway-list 192.168.10.1</code> · 接口下 <code>dhcp select global</code></span></div>
+          <div class="r"><b>查看</b><span><code>display this</code> · <code>display ip interface brief</code> · <code>display interface GE0/0/1</code> · <code>display port vlan</code> · <code>display vlan</code> · <code>display ip routing-table</code> · <code>display mac-address</code> · <code>display stp brief</code> · <code>display ospf peer brief</code> · <code>display ospf interface</code></span></div>
+          <div class="r"><b>ACL</b><span><code>acl number 3000</code> → <code>rule 5 deny source 192.168.10.0 0.0.0.255</code>；再在接口下 <code>traffic-filter inbound acl 3000</code></span></div>
+          <div class="r"><b>保存</b><span><code>save</code> 会先问 <code>Are you sure to continue? (y/n)</code> 再问文件名，直接回车用默认的 <code>vrpcfg.zip</code></span></div>
+          <div class="r"><b>报错怎么读</b><span>错误行上面的 <code>^</code> 指出了出错的位置，例如 <code>vlan 9999</code> 的 <code>^</code> 会指在 <code>9999</code> 下面</span></div>
+          <div class="r"><b>小技巧</b><span>输入 <code>?</code> 看当前视图可用命令；按 <code>Tab</code> 自动补全；↑ ↓ 翻历史命令</span></div>
+        </div>
+        <h4 class="sec">画布操作</h4>
+        <div class="kv">
+          <div class="r"><b>平移</b><span>在空白处按住鼠标拖动</span></div>
+          <div class="r"><b>缩放</b><span>按住 Ctrl 滚动滚轮</span></div>
+          <div class="r"><b>删除</b><span>点设备右上角 × ，或右键设备；选中后按 Delete 键</span></div>
+          <div class="r"><b>端口颜色</b><span>灰＝未连线，绿＝已连通，红＝已 shutdown，紫＝Trunk 口，黄＝当前选中待连线</span></div>
+        </div>
+      </div>`;
+    openModal(html);
+    $('mClose').onclick = closeModal;
+  }
+
+  /* ------------------------------ 导出配置 ------------------------------ */
+  function exportConfig() {
+    if (!E.Net.devices.length) {
+      toast('当前没有设备可导出', 'bad');
+      return;
+    }
+    const parts = ['配置导出时间：' + new Date().toLocaleString(), ''];
+    for (const d of E.Net.devices) {
+      parts.push('='.repeat(66));
+      parts.push(`设备：${d.hostname}（${d.model}）`);
+      parts.push('='.repeat(66));
+      parts.push(...E.runningConfig(d));
+      parts.push('');
+    }
+    const blob = new Blob([parts.join('\n')], { type: 'text/plain;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = '网络设备配置_' + new Date().toISOString().slice(0, 10) + '.txt';
+    a.click();
+    setTimeout(() => URL.revokeObjectURL(url), 3000);
+    toast('配置已导出', 'good');
+  }
+
+  /* ------------------------------ 启动 ------------------------------ */
+  function boot() {
+    renderPalette();
+    setupStage();
+    setupInput();
+
+    $('btnLab').onclick = showLabs;
+    $('btnHelp').onclick = showHelp;
+    $('btnSave').onclick = exportConfig;
+    $('btnClear').onclick = () => {
+      if (confirm('确定清空当前拓扑吗？此操作不可撤销。')) {
+        clearAll();
+        toast('拓扑已清空');
+      }
+    };
+    $('mask').onclick = (ev) => {
+      if (ev.target.id === 'mask') closeModal();
+    };
+    document.addEventListener('keydown', (ev) => {
+      if (ev.key === 'Escape') closeModal();
+    });
+
+    const restored = restore();
+    applyTransform();
+    E.recomputeOspf();
+    E.recomputeStp();
+    render();
+    renderConsole();
+
+    if (restored && E.Net.devices.length) {
+      // 恢复上次的拓扑：自动打开第一台网络设备的命令行，学生可直接开始输入
+      const first = E.Net.devices.find((d) => d.type !== 'pc') || E.Net.devices[0];
+      openConsole(first);
+      toast('已恢复上次的拓扑');
+    } else {
+      // 首次打开：直接加载实验一，让学生立刻有东西可玩
+      loadLab('vlan-basic');
+      toast('已加载「实验一 · VLAN 基础」，点击「开始配置」即可');
+    }
+  }
+
+  // 对外可编程接口：便于自动化测试与二次集成（NE.UI.openConsole(dev) 等）
+  UI.openConsole = openConsole;
+  UI.closeConsole = closeConsole;
+  UI.runCommand = runCommand;
+  UI.loadLab = loadLab;
+  UI.clearAll = clearAll;
+  UI.toast = toast;
+
+  global.NE = global.NE || {};
+  global.NE.UI = UI;
+  global.NE.LABS = LABS;
+
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', boot);
+  else boot();
+})(window);
+
+</script>
+</body>
+</html>

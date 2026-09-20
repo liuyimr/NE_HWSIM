@@ -1,0 +1,30 @@
+# 本项目是单文件交付，仓库里只有 1 个 HTML + 说明文件。
+# 这个 .gitignore 主要是防止本地测试时产生的残留被误提交。
+
+# 浏览器测试残留（含 Cookies / Login Data，绝对不能提交）
+.edgeprofile*/
+.edgeprofile-*/
+_chrome*/
+_firefox*/
+
+# 测试临时文件
+_uitest.html
+_*.html
+test-results/
+playwright-report/
+
+# 构建与依赖
+node_modules/
+build-tmp/
+*.tgz
+
+# 编辑器 / 系统
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# 日志
+*.log
+npm-debug.log*

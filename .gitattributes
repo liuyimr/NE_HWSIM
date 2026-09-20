@@ -1,0 +1,27 @@
+# 统一换行符，避免 Windows / macOS / Linux 协作时整文件 diff
+* text=auto eol=lf
+
+# HTML / JS / CSS
+*.html text eol=lf
+*.js   text eol=lf
+*.css  text eol=lf
+*.mjs  text eol=lf
+
+# Markdown / 纯文本
+*.md   text eol=lf
+*.txt  text eol=lf
+
+# 图片按二进制处理，不做换行转换
+*.png  binary
+*.jpg  binary
+*.jpeg binary
+*.gif  binary
+*.ico  binary
+*.webp binary
+
+# 压缩包
+*.zip  binary
+*.gz   binary
+
+# 中文文件在 GitHub 网页上按 UTF-8 正确显示
+*.md   diff
