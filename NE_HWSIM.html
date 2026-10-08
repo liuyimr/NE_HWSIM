@@ -53,6 +53,9 @@
   .btn.primary:hover{background:#4a95f8}
   .btn.ghost{background:transparent}
   .btn.sm{padding:4px 9px;font-size:12px}
+  /* 命令行面板开关：面板展开时高亮，一眼看出当前状态 */
+  .btn.on{border-color:var(--cy);color:#79b8ff;background:#12233b}
+  .btn.on:hover{background:#16304f}
 
   .main{flex:1;display:flex;min-height:0}
 
@@ -112,6 +115,13 @@
   }
   .card .head .x:hover{color:var(--rd);background:#2d1618}
   .ports{display:grid;gap:3px;padding:6px 13px 12px}
+  /* PC 只有一个网口，卡片既矮又窄（宽度由 JS 按设备类型给），头部元素跟着收紧 */
+  .card.compact .head{height:30px;padding:0 10px;gap:6px;align-items:center}
+  .card.compact .head .md{display:none}
+  .card.compact .head .nm{font-size:12px}
+  .card.compact .head .tag{font-size:9.5px;padding:0 5px}
+  .card.compact .head .x{padding:2px 2px}
+  .card.compact .ports{padding:4px 13px 7px}
   .port{
     height:14px;border-radius:3px;background:#30363d;border:1px solid #3d444d;
     cursor:crosshair;position:relative;transition:.12s;
@@ -221,6 +231,21 @@
   .tree .lv2{margin-left:14px}
   .tree .lv3{margin-left:28px}
   .tree .lv4{margin-left:42px}
+
+  /* ---------- 导入配置结果 ---------- */
+  .imp{display:flex;flex-direction:column;gap:8px}
+  .improw{border:1px solid var(--line);border-radius:8px;background:var(--bg3);padding:10px 12px}
+  .improw .imph{display:flex;align-items:center;gap:9px;font-size:12.5px;flex-wrap:wrap}
+  .improw .imph b{font-weight:600}
+  .improw .impm{color:var(--tx3);font-size:11px}
+  .improw .impn{margin-left:auto;font-size:11.5px;color:var(--tx2);white-space:nowrap}
+  .improw .impn.bad{color:#ffb3ae}
+  .tag2{font-size:10px;padding:1px 7px;border-radius:9px;border:1px solid var(--line);color:var(--tx3);white-space:nowrap}
+  .tag2.new{border-color:#2ea043;color:#8ee99b}
+  .tag2.skip{border-color:#8b3a3a;color:#ffb3ae}
+  .implist{margin-top:9px;display:flex;flex-direction:column;gap:6px}
+  .implist code{font-family:var(--mono);color:#79b8ff;background:#0d1117;border:1px solid var(--line);padding:0 5px;border-radius:4px}
+  .implist .e{font-family:var(--mono);font-size:11.5px;color:#ffb3ae;line-height:1.6;white-space:pre-wrap;margin-top:3px}
   .toast{
     position:fixed;bottom:22px;left:50%;transform:translateX(-50%) translateY(14px);
     background:var(--bg3);border:1px solid var(--line);color:var(--tx);padding:9px 16px;
@@ -246,8 +271,10 @@
     </div>
     <div class="tb-actions">
       <button class="btn" id="btnLab">实训实验</button>
+      <button class="btn" id="btnTerm" title="展开 / 收起下方命令行面板（Ctrl+`）">命令行 ⌃</button>
       <button class="btn" id="btnHelp">帮助</button>
       <button class="btn" id="btnSave">导出配置</button>
+      <button class="btn" id="btnImport">导入配置</button>
       <button class="btn" id="btnClear">清空</button>
     </div>
   </div>
@@ -290,6 +317,7 @@
 
 <div class="mask" id="mask"><div class="modal" id="modal"></div></div>
 <div class="toast" id="toast"></div>
+<input type="file" id="fileImport" accept=".txt,.cfg,.log,.conf,text/plain" style="display:none" />
 
 <script>
 /* =========================================================================
@@ -387,6 +415,26 @@
     return bits.split('').filter((c) => c === '1').length;
   }
 
+  /**
+   * 是否是私网（RFC1918 / 保留）地址。
+   * 私网地址在公网上不可路由，出公网必须做 NAT —— 转发引擎靠这个判断给出教学提示。
+   */
+  function isPrivateIp(ip) {
+    if (!isValidIp(ip)) return false;
+    const n = ipToInt(ip);
+    const inNet = (base, bits) => {
+      const m = bits === 0 ? 0 : (~((1 << (32 - bits)) - 1) >>> 0);
+      return ((n & m) >>> 0) === ((ipToInt(base) & m) >>> 0);
+    };
+    return (
+      inNet('10.0.0.0', 8) ||
+      inNet('172.16.0.0', 12) ||
+      inNet('192.168.0.0', 16) ||
+      inNet('127.0.0.0', 8) ||
+      inNet('169.254.0.0', 16)
+    );
+  }
+
   /* ------------------------------ 设备模板 ------------------------------ */
 
   const TEMPLATES = {
@@ -450,6 +498,7 @@
       bpduProtect: false,
       portSec: { enabled: false, maxMac: 1 },
       dhcpSelect: false,
+      nat: null, // { aclId, addrGroup } —— 接口下的 nat outbound 配置
       cableId: null
     };
   }
@@ -474,7 +523,10 @@
       vlanifs: [],
       routes: [],
       acl: [],
-      aclBindings: [], // { portId, direction, aclId }
+      aclBindings: [], // { portId | vlanifId, direction, aclId }
+      portGroups: [], // 永久端口组：{ name, memberIds:[portId] }
+      natAddrGroups: [], // NAT 公网地址池：{ id, sections:[{ index, start, end }] }
+      natSessions: [], // NAT 会话表（做地址转换时记录下来，供 display nat session 查看）
       dhcp: { enabled: false, pools: [] },
       ospf: { enabled: false, pid: null, routerId: null, areas: [], ifaces: [] },
       stp: { mode: 'rstp', priority: 32768 },
@@ -492,11 +544,14 @@
         view: 'user-view',
         stack: [],
         ifaceId: null,
+        ifaceIds: null, // 端口组视图下可能是多个口（interface range / port-group group-member）
+        groupName: null, // 永久端口组名，临时端口组为 null
         vlanifId: null,
         vlanId: null,
         trunkId: null,
         poolName: null,
         aclId: null,
+        natGroupId: null,
         ospfPid: null,
         areaId: null,
         // 交互式命令的等待状态，例如 save 的 y/n 确认、文件名输入。
@@ -516,7 +571,7 @@
     if (!dev.vlanMeta) dev.vlanMeta = {};
     if (!Array.isArray(dev.vlans)) dev.vlans = [1];
     if (!dev.vlans.includes(1)) dev.vlans.unshift(1);
-    for (const k of ['vlanifs', 'routes', 'acl', 'aclBindings', 'staticMac', 'logs']) {
+    for (const k of ['vlanifs', 'routes', 'acl', 'aclBindings', 'staticMac', 'logs', 'portGroups', 'natAddrGroups', 'natSessions']) {
       if (!Array.isArray(dev[k])) dev[k] = [];
     }
     if (!dev.dhcp) dev.dhcp = { enabled: false, pools: [], leases: [] };
@@ -529,12 +584,13 @@
     const c = dev.cli;
     if (!Array.isArray(c.stack)) c.stack = [];
     if (!c.view) c.view = 'user-view';
-    for (const k of ['ifaceId', 'vlanifId', 'vlanId', 'trunkId', 'poolName', 'aclId', 'ospfPid', 'areaId']) {
+    for (const k of ['ifaceId', 'ifaceIds', 'groupName', 'vlanifId', 'vlanId', 'trunkId', 'poolName', 'aclId', 'natGroupId', 'ospfPid', 'areaId']) {
       if (c[k] === undefined) c[k] = null;
     }
     c.pending = null;
     for (const p of dev.ports || []) {
       if (!p.portSec) p.portSec = { enabled: false, maxMac: 1 };
+      if (p.nat === undefined) p.nat = null;
     }
     return dev;
   }
@@ -725,12 +781,18 @@
 
         // 报文经过的每一台设备都要检查入接口绑定的 ACL
         if (aclCtx && aclCtx.srcIp) {
-          const deny = checkAcl(peer.device, aclCtx.srcIp, aclCtx.dstIp, peer.port.id);
+          const dv = domain.type === VLAN_DOMAIN ? domain.vlan : null;
+          const deny = checkAcl(peer.device, aclCtx.srcIp, aclCtx.dstIp, peer.port.id, dv);
           if (deny) return { denied: deny, path };
         }
 
         if (ownsIpInDomain(peer.device, domain, targetIp)) {
-          return { device: peer.device, path, ingressPortId: peer.port.id };
+          return {
+            device: peer.device,
+            path,
+            ingressPortId: peer.port.id,
+            ingressVlanId: domain.type === VLAN_DOMAIN ? domain.vlan : null
+          };
         }
         queue.push({ device: peer.device, path, ingressPortId: peer.port.id });
       }
@@ -860,7 +922,7 @@
     }
 
     // ACL 检查（仅检查报文入接口绑定的 ACL）
-    const aclDeny = checkAcl(device, srcIp, dstIp, options.ingressPortId);
+    const aclDeny = checkAcl(device, srcIp, dstIp, options.ingressPortId, options.ingressVlanId);
     if (aclDeny) return { ok: false, path, reason: aclDeny, blocked: true };
 
     const lookup = routeLookup(device, dstIp);
@@ -871,7 +933,17 @@
     const egress = findEgressIface(device, dstIp, lookup);
     if (!egress) return { ok: false, path, reason: '找不到出接口' };
 
-    const ctx = { srcIp, path, visitedDevices, maxHops };
+    // ACL 出方向过滤：报文从出接口发出时检查该接口绑定的 ACL
+    const aclOutDeny = checkAclOutbound(device, srcIp, dstIp, egress);
+    if (aclOutDeny) return { ok: false, path, reason: aclOutDeny, blocked: true };
+
+    // ---- NAT：私网源地址去往公网地址，必须在出口做地址转换 ----
+    // 真实网络里公网侧没有到 192.168.x/10.x 的回程路由，报文会被丢弃。
+    const natRes = applyNatOnEgress(device, egress, srcIp, dstIp);
+    if (natRes.blocked) return { ok: false, path, reason: natRes.reason, blocked: true };
+    const outSrcIp = natRes.translated || srcIp;
+
+    const ctx = { srcIp: outSrcIp, path, visitedDevices, maxHops };
     let port = null;
     let domain = null;
 
@@ -936,26 +1008,65 @@
       path: newPath,
       visitedDevices: nextVisited,
       maxHops: ctx.maxHops - 1,
-      ingressPortId: hit.ingressPortId
+      ingressPortId: hit.ingressPortId,
+      ingressVlanId: hit.ingressVlanId
     });
   }
 
-  /** ACL 入方向过滤检查：仅在报文入接口上检查已绑定的 ACL，返回拒绝原因或 null */
-  function checkAcl(device, srcIp, dstIp, ingressPortId) {
-    if (!srcIp || !ingressPortId) return null;
-    for (const b of device.aclBindings) {
-      if (b.direction !== 'inbound' || b.portId !== ingressPortId) continue;
+  /**
+   * ACL 过滤检查（inbound / outbound 共用）。
+   * 传入的是「报文经过的那个接口」：物理口用 portId，三层口用 vlanId（对应 Vlanif）。
+   * 返回拒绝原因字符串；放行返回 null。
+   *
+   * 注意：ACL 末尾有一条隐含的「拒绝所有」缺省规则 —— 只要包没有命中任何 permit，
+   * 就会被丢弃（真实设备就是这个行为，也是学生最容易踩的坑）。
+   */
+  function checkAclBound(device, srcIp, dstIp, direction, portId, vlanId) {
+    if (!srcIp) return null;
+    if (portId == null && vlanId == null) return null;
+    for (const b of device.aclBindings || []) {
+      if (b.direction !== direction) continue;
+      const hitPort = portId != null && b.portId === portId;
+      const hitVlanif = vlanId != null && b.vlanifId != null && b.vlanifId === vlanId;
+      if (!hitPort && !hitVlanif) continue;
+
       const acl = device.acl.find((a) => a.id === b.aclId);
       if (!acl) continue;
+
+      let matched = null;
       for (const rule of acl.rules) {
-        if (!matchAclRule(rule, srcIp, dstIp)) continue;
-        if (rule.action === 'deny') {
-          return `ACL ${acl.id} 拒绝了该流量 (${srcIp} -> ${dstIp})`;
+        if (matchAclRule(rule, srcIp, dstIp)) {
+          matched = rule;
+          break;
         }
-        break; // permit 命中后放行
       }
+      if (!matched) {
+        return `ACL ${acl.id} 拒绝了该流量 (${srcIp} -> ${dstIp})：没有命中任何 permit 规则，被 ACL 末尾的缺省规则丢弃`;
+      }
+      if (matched.action === 'deny') {
+        return `ACL ${acl.id} 拒绝了该流量 (${srcIp} -> ${dstIp})`;
+      }
+      return null; // 命中 permit，放行
     }
     return null;
+  }
+
+  /** 报文入方向：进入设备时检查入接口绑定的 ACL */
+  function checkAcl(device, srcIp, dstIp, ingressPortId, ingressVlanId) {
+    return checkAclBound(device, srcIp, dstIp, 'inbound', ingressPortId, ingressVlanId);
+  }
+
+  /** 报文出方向：从出接口发出时检查该接口绑定的 ACL */
+  function checkAclOutbound(device, srcIp, dstIp, egress) {
+    if (!egress) return null;
+    return checkAclBound(
+      device,
+      srcIp,
+      dstIp,
+      'outbound',
+      egress.kind === 'port' ? egress.portId : null,
+      egress.kind === 'vlanif' ? egress.vlanId : null
+    );
   }
 
   function matchAclRule(rule, srcIp, dstIp) {
@@ -970,6 +1081,84 @@
       if (!sameSubnet(rule.dst, pfx, dstIp)) return false;
     }
     return true;
+  }
+
+  /* ------------------------------ NAT ------------------------------ */
+
+  /**
+   * 出口方向的 NAT 处理。
+   *   · 私网源地址访问公网地址时，出口必须有匹配的 nat outbound，否则报文被丢弃
+   *     （真实网络里公网设备没有回程路由，这是 NAT 存在的根本原因）
+   *   · 命中 ACL 后把源地址换成出口接口地址（Easy IP）或地址池里的第一个地址
+   *   · 转换结果记入会话表，供 display nat session all 查看
+   * 返回 { translated } / { blocked, reason } / {}
+   */
+  function applyNatOnEgress(device, egress, srcIp, dstIp) {
+    if (!srcIp || !dstIp) return {};
+    if (device.type === 'pc') return {}; // PC 只管把包交给网关，NAT 是网关的事
+    if (!isPrivateIp(srcIp) || isPrivateIp(dstIp)) return {}; // 只有「私网 → 公网」才需要转换
+
+    const port = egress && egress.kind === 'port' ? Net.getPort(device, egress.portId) : null;
+    const ifaceName = egress ? egress.name : '出口';
+    const natCfg = port ? port.nat : null;
+
+    if (natCfg && natCfg.aclId != null) {
+      const acl = device.acl.find((a) => a.id === natCfg.aclId);
+      const matched = acl && acl.rules.some((r) => r.action === 'permit' && matchAclRule(r, srcIp, dstIp));
+      if (matched) {
+        const translated = natPublicAddr(device, port, natCfg);
+        if (translated) {
+          recordNatSession(device, port, srcIp, dstIp, translated);
+          return { translated };
+        }
+        return {
+          blocked: true,
+          reason: `出口 ${ifaceName} 的 NAT 无法确定公网地址（Easy IP 需要接口已配置 IP，或地址池里要有可用地址）`
+        };
+      }
+      return {
+        blocked: true,
+        reason: `私网源地址 ${srcIp} 未匹配 ACL ${natCfg.aclId}，出口 ${ifaceName} 不做 NAT 转换，报文被丢弃`
+      };
+    }
+
+    return {
+      blocked: true,
+      reason: `私网源地址 ${srcIp} 无法在公网路由 —— 请在出口 ${ifaceName} 上配置 nat outbound（先建 ACL 指定源网段）`
+    };
+  }
+
+  /** 取转换后的公网地址：配了地址池就用池里第一个地址，否则用出口接口地址（Easy IP） */
+  function natPublicAddr(device, port, natCfg) {
+    if (natCfg.addrGroup != null) {
+      const g = (device.natAddrGroups || []).find((x) => x.id === natCfg.addrGroup);
+      const sec = g && g.sections && g.sections[0];
+      if (sec) return sec.start;
+    }
+    return port.ip || null;
+  }
+
+  /** 记录一条 NAT 会话（同一组「内网地址→目的地址」只记一条，便于阅读） */
+  function recordNatSession(device, port, insideIp, dstIp, outsideIp) {
+    device.natSessions = device.natSessions || [];
+    if (device.natSessions.some((s) => s.inside === insideIp && s.dest === dstIp && s.outside === outsideIp)) return;
+    const portNo = 1024 + (device.natSessions.length * 7) % 40000;
+    device.natSessions.push({
+      proto: 'ICMP',
+      inside: insideIp,
+      insidePort: portNo,
+      outside: outsideIp,
+      outsidePort: portNo,
+      dest: dstIp,
+      destPort: 0,
+      iface: port.name,
+      age: 0
+    });
+  }
+
+  /** 该设备上是否配置了 NAT（供 CLI 判断提示文案） */
+  function hasNatConfig(device) {
+    return (device.ports || []).some((p) => p.nat && p.nat.aclId != null);
   }
 
   /* ------------------------------ 连通性测试 ------------------------------ */
@@ -1364,8 +1553,36 @@
     for (const b of dev.aclBindings.filter((b) => b.portId === p.id)) {
       lines.push(` traffic-filter ${b.direction} acl ${b.aclId}`);
     }
+    if (p.nat && p.nat.aclId != null) {
+      lines.push(` nat outbound ${p.nat.aclId}${p.nat.addrGroup != null ? ' address-group ' + p.nat.addrGroup : ''}`);
+    }
     if (p.shutdown && p.cableId) lines.push(' shutdown');
     return lines;
+  }
+
+  /**
+   * 单个 Vlanif 的非缺省配置行（不含 `interface Vlanifx` 行本身）。
+   * display current-configuration 与 Vlanif 视图下的 display this 共用这一份。
+   */
+  function vlanifConfigLines(dev, vi) {
+    const lines = [];
+    if (vi.desc) lines.push(` description ${vi.desc}`);
+    if (vi.ip) lines.push(` ip address ${vi.ip} ${prefixToMask(vi.mask)}`);
+    if (vi.dhcpSelect) lines.push(' dhcp select global');
+    for (const b of (dev.aclBindings || []).filter((b) => b.vlanifId === vi.vlanId)) {
+      lines.push(` traffic-filter ${b.direction} acl ${b.aclId}`);
+    }
+    if (!vi.enabled) lines.push(' shutdown');
+    return lines;
+  }
+
+  /** 一条 ACL 规则回显成 VRP 配置行的样子 */
+  function aclRuleText(r) {
+    const parts = [`rule ${r.ruleId} ${r.action}`];
+    if (r.proto) parts.push(r.proto);
+    if (r.src) parts.push(`source ${r.src} ${r.srcWildcard || '0.0.0.0'}`);
+    if (r.dst) parts.push(`destination ${r.dst} ${r.dstWildcard || '0.0.0.0'}`);
+    return parts.join(' ');
   }
 
   function runningConfig(dev) {
@@ -1401,12 +1618,14 @@
       out.push('dhcp enable');
       out.push('#');
     }
+    for (const g of dev.natAddrGroups || []) {
+      out.push(`nat address-group ${g.id}`);
+      for (const s of g.sections || []) out.push(` section ${s.index} ${s.start} ${s.end}`);
+      out.push('#');
+    }
     for (const vi of dev.vlanifs) {
       out.push(`interface Vlanif${vi.vlanId}`);
-      if (vi.desc) out.push(` description ${vi.desc}`);
-      if (vi.ip) out.push(` ip address ${vi.ip} ${prefixToMask(vi.mask)}`);
-      if (vi.dhcpSelect) out.push(' dhcp select global');
-      if (!vi.enabled) out.push(' shutdown');
+      out.push(...vlanifConfigLines(dev, vi));
       out.push('#');
     }
     for (const p of dev.ports) {
@@ -1417,6 +1636,14 @@
         out.push('#');
       }
     }
+    for (const g of dev.portGroups || []) {
+      out.push(`port-group ${g.name}`);
+      for (const id of g.memberIds) {
+        const p = dev.ports.find((x) => x.id === id);
+        if (p) out.push(` group-member ${p.name}`);
+      }
+      out.push('#');
+    }
     for (const t of ethTrunks(dev)) {
       out.push(`interface Eth-Trunk${t.id}`);
       out.push(` mode ${t.mode === 'lacp' ? 'lacp-static' : 'manual load-balance'}`);
@@ -1425,7 +1652,8 @@
     if (dev.acl.length) {
       for (const a of dev.acl) {
         out.push(`acl number ${a.id}`);
-        for (const r of a.rules) out.push(` rule ${r.ruleId} ${r.action} source ${r.src || '0.0.0.0'} ${r.srcWildcard || '0.0.0.0'}`);
+        if (a.desc) out.push(` description ${a.desc}`);
+        for (const r of a.rules) out.push(' ' + aclRuleText(r));
         out.push('#');
       }
     }
@@ -1485,6 +1713,7 @@
     sameSubnet,
     networkOf,
     wildcardToPrefix,
+    isPrivateIp,
     // 数据
     TEMPLATES,
     Net,
@@ -1499,6 +1728,9 @@
     ping,
     traceroute,
     portConfigLines,
+    vlanifConfigLines,
+    aclRuleText,
+    hasNatConfig,
     // 协议
     recomputeOspf,
     recomputeStp,
@@ -1618,7 +1850,36 @@
    * -------------------------------------------------------------------- */
 
   /** 各子视图的上下文键，压栈 / 出栈时统一处理 */
-  const VIEW_CTX_KEYS = ['ifaceId', 'vlanifId', 'vlanId', 'trunkId', 'poolName', 'aclId', 'ospfPid', 'areaId'];
+  const VIEW_CTX_KEYS = [
+    'ifaceId',
+    'ifaceIds',
+    'groupName',
+    'vlanifId',
+    'vlanId',
+    'trunkId',
+    'poolName',
+    'aclId',
+    'natGroupId',
+    'ospfPid',
+    'areaId'
+  ];
+
+  /** 接口视图 / 端口组视图下当前被配置的端口列表 */
+  function viewPorts(dev) {
+    const c = dev.cli;
+    if (c.view === 'portgroup-view' && c.groupName) {
+      const g = (dev.portGroups || []).find((x) => x.name === c.groupName);
+      if (g) return g.memberIds.map((id) => E.Net.getPort(dev, id)).filter(Boolean);
+    }
+    const ids = Array.isArray(c.ifaceIds) && c.ifaceIds.length ? c.ifaceIds : c.ifaceId ? [c.ifaceId] : [];
+    return ids.map((id) => E.Net.getPort(dev, id)).filter(Boolean);
+  }
+
+  /** 把设备拉回「刚登录」的干净状态：用户视图 + 空视图栈 + 无待确认输入 */
+  function resetCli(dev) {
+    returnUserView(dev);
+    dev.cli.pending = null;
+  }
 
   /** 当前视图上下文快照 */
   function snapView(dev) {
@@ -1661,6 +1922,13 @@
     dev.cli.view = 'user-view';
   }
 
+  /** 直接回到系统视图（在子视图里切换目标时用，不走「逐级 quit」） */
+  function resetToSystemView(dev) {
+    dev.cli.stack = [];
+    resetCliCtx(dev);
+    dev.cli.view = 'system-view';
+  }
+
   function viewOf(dev) {
     return dev.cli.view;
   }
@@ -1678,14 +1946,23 @@
         const p = E.Net.getPort(dev, dev.cli.ifaceId);
         return `[${name}-${p ? p.name : ''}]`;
       }
+      case 'portgroup-view':
+        // 真实 VRP：临时端口组与 interface range 都显示 [设备名-port-group]，
+        // 永久端口组显示 [设备名-port-group-组名]。
+        return `[${name}-port-group${dev.cli.groupName ? '-' + dev.cli.groupName : ''}]`;
       case 'vlanif-view': {
         const vi = dev.vlanifs.find((v) => v.vlanId === dev.cli.vlanifId);
         return `[${name}-Vlanif${vi ? vi.vlanId : ''}]`;
       }
       case 'pool-view':
         return `[${name}-ip-pool-${dev.cli.poolName || ''}]`;
-      case 'acl-view':
-        return `[${name}-acl-adv-${dev.cli.aclId || ''}]`;
+      case 'acl-view': {
+        const id = dev.cli.aclId;
+        const kind = id >= 2000 && id <= 2999 ? 'basic' : 'adv';
+        return `[${name}-acl-${kind}-${id == null ? '' : id}]`;
+      }
+      case 'nat-group-view':
+        return `[${name}-nat-address-group-${dev.cli.natGroupId == null ? '' : dev.cli.natGroupId}]`;
       case 'ospf-view':
         return `[${name}-ospf-${dev.cli.ospfPid || ''}]`;
       case 'ospf-area-view':
@@ -1742,6 +2019,94 @@
     return out.length ? [...new Set(out)].sort((a, b) => a - b) : null;
   }
 
+  /** 真实 VRP 允许 "interface gigabitethernet 0/0/1" 这种中间带空格的写法，这里合并成一个词 */
+  function joinIfaceTokens(tokens) {
+    const out = [];
+    for (let i = 0; i < tokens.length; i++) {
+      const t = tokens[i];
+      if (/^(vlanif|eth-?trunk|gigabitethernet|ge|g)$/i.test(t) && tokens[i + 1] && !/^to$/i.test(tokens[i + 1])) {
+        out.push(t + tokens[i + 1]);
+        i++;
+      } else {
+        out.push(t);
+      }
+    }
+    return out;
+  }
+
+  /**
+   * 展开接口列表，支持批量写法：
+   *   ge0/0/1 to ge0/0/5        区间（与真实 VRP 一致：两端要在同一块接口板上）
+   *   ge0/0/1 ge0/0/3 ge0/0/5   离散列举
+   * 返回端口 id 数组；解析失败返回 null。
+   */
+  function expandIfaceList(dev, tokens) {
+    const ids = [];
+    for (let i = 0; i < tokens.length; i++) {
+      const t = tokens[i];
+      if (/^to$/i.test(t)) {
+        const fromId = ids[ids.length - 1];
+        const toRes = resolveIface(dev, tokens[++i]);
+        if (fromId == null || !toRes || toRes.kind !== 'eth') return null;
+        const a = dev.ports.findIndex((p) => p.id === fromId);
+        const b = dev.ports.findIndex((p) => p.id === toRes.port.id);
+        if (a < 0 || b < a) return null;
+        for (let k = a + 1; k <= b; k++) ids.push(dev.ports[k].id);
+        continue;
+      }
+      const r = resolveIface(dev, t);
+      if (!r || r.kind !== 'eth') return null;
+      ids.push(r.port.id);
+    }
+    return ids.length ? [...new Set(ids)] : null;
+  }
+
+  /**
+   * 解析 ACL 规则（真实 VRP 顺序：序号 → permit/deny → 可选协议 → 可选源/目的）：
+   *   rule <序号> permit|deny [ip|icmp|tcp|udp] [source <ip> <反掩码>|any] [destination <ip> <反掩码>|any]
+   * 返回 { rule } 或 { err }
+   */
+  function parseAclRule(toks) {
+    const ruleId = parseInt(toks[0], 10);
+    if (isNaN(ruleId) || ruleId < 0) return { err: errWrong(toks[0]) };
+    let i = 1;
+    const action = (toks[i] || '').toLowerCase();
+    if (action !== 'permit' && action !== 'deny') return { err: errWrong(toks[i]) };
+    i++;
+    // 协议跟在 permit/deny 之后，例如 rule 5 deny ip source ...
+    let proto = null;
+    if (toks[i] && /^(ip|icmp|tcp|udp|gre|ospf|ipv6)$/i.test(toks[i])) {
+      proto = toks[i].toLowerCase();
+      i++;
+    }
+
+    const rule = { ruleId, action, proto, src: null, srcWildcard: null, dst: null, dstWildcard: null };
+    while (i < toks.length) {
+      const key = toks[i].toLowerCase();
+      if (key === 'source' || key === 'destination') {
+        const v1 = toks[i + 1];
+        if (v1 && v1.toLowerCase() === 'any') {
+          i += 2;
+          continue;
+        }
+        if (!E.isValidIp(v1)) return { err: errWrong(v1) };
+        const v2 = toks[i + 2];
+        const hasWc = !!v2 && E.isValidIp(v2);
+        if (key === 'source') {
+          rule.src = v1;
+          rule.srcWildcard = hasWc ? v2 : '0.0.0.0';
+        } else {
+          rule.dst = v1;
+          rule.dstWildcard = hasWc ? v2 : '0.0.0.0';
+        }
+        i += hasWc ? 3 : 2;
+      } else {
+        return { err: errWrong(toks[i]) };
+      }
+    }
+    return { rule };
+  }
+
   /* --------------------------- display 系列 --------------------------- */
 
   function cmdDisplayVersion(dev) {
@@ -1773,12 +2138,21 @@
     const view = dev.cli.view;
     const out = ['#'];
 
-    if (view === 'interface-view') {
-      const p = E.Net.getPort(dev, dev.cli.ifaceId);
-      if (!p) return ['#', 'return'];
-      out.push(`interface ${p.name}`);
-      out.push(...E.portConfigLines(dev, p));
-      out.push('#', 'return');
+    if (view === 'interface-view' || view === 'portgroup-view') {
+      if (view === 'portgroup-view' && dev.cli.groupName) {
+        out.push(`port-group ${dev.cli.groupName}`);
+        for (const p of viewPorts(dev)) out.push(` group-member ${p.name}`);
+        out.push('#', 'return');
+        return out;
+      }
+      const ports = viewPorts(dev);
+      if (!ports.length) return ['#', 'return'];
+      for (const p of ports) {
+        out.push(`interface ${p.name}`);
+        out.push(...E.portConfigLines(dev, p));
+        out.push('#');
+      }
+      out.push('return');
       return out;
     }
 
@@ -1796,10 +2170,16 @@
       const vi = dev.vlanifs.find((v) => v.vlanId === dev.cli.vlanifId);
       if (!vi) return ['#', 'return'];
       out.push(`interface Vlanif${vi.vlanId}`);
-      if (vi.desc) out.push(` description ${vi.desc}`);
-      if (vi.ip) out.push(` ip address ${vi.ip} ${E.prefixToMask(vi.mask)}`);
-      if (vi.dhcpSelect) out.push(' dhcp select global');
-      if (!vi.enabled) out.push(' shutdown');
+      out.push(...E.vlanifConfigLines(dev, vi));
+      out.push('#', 'return');
+      return out;
+    }
+
+    if (view === 'nat-group-view') {
+      const g = (dev.natAddrGroups || []).find((x) => x.id === dev.cli.natGroupId);
+      if (!g) return ['#', 'return'];
+      out.push(`nat address-group ${g.id}`);
+      for (const s of g.sections || []) out.push(` section ${s.index} ${s.start} ${s.end}`);
       out.push('#', 'return');
       return out;
     }
@@ -1829,9 +2209,8 @@
       const a = dev.acl.find((x) => x.id === dev.cli.aclId);
       if (!a) return ['#', 'return'];
       out.push(`acl number ${a.id}`);
-      for (const r of a.rules) {
-        out.push(` rule ${r.ruleId} ${r.action} source ${r.src || '0.0.0.0'} ${r.srcWildcard || '0.0.0.0'}`);
-      }
+      if (a.desc) out.push(` description ${a.desc}`);
+      for (const r of a.rules) out.push(' ' + E.aclRuleText(r));
       out.push('#', 'return');
       return out;
     }
@@ -2233,6 +2612,84 @@
     return out;
   }
 
+  /* --------------------------- display acl / nat / port-group --------------------------- */
+
+  function cmdDisplayAcl(dev, arg) {
+    if (!dev.acl.length) return ['Error: The ACL does not exist.'];
+    const list = dev.acl.filter(
+      (a) => !arg || String(arg).toLowerCase() === 'all' || String(a.id) === String(arg)
+    );
+    if (!list.length) return ['Error: The ACL does not exist.'];
+    const out = [];
+    for (const a of list) {
+      const kind = a.id >= 2000 && a.id <= 2999 ? 'Basic' : 'Advanced';
+      out.push(`${kind} ACL ${a.id}, ${a.rules.length} rule${a.rules.length === 1 ? '' : 's'}`);
+      out.push("Acl's step is 5");
+      for (const r of a.rules) out.push(' ' + E.aclRuleText(r));
+      // 列出被哪些接口引用，帮学生定位「规则配了但没生效」
+      const refs = (dev.aclBindings || []).filter((b) => b.aclId === a.id);
+      for (const b of refs) {
+        const p = b.portId ? E.Net.getPort(dev, b.portId) : null;
+        const name = p ? p.name : b.vlanifId != null ? `Vlanif${b.vlanifId}` : '?';
+        out.push(`  已应用：interface ${name} (${b.direction})`);
+      }
+      const nats = dev.ports.filter((p) => p.nat && p.nat.aclId === a.id);
+      for (const p of nats) out.push(`  已应用：interface ${p.name} (nat outbound)`);
+    }
+    return out;
+  }
+
+  function cmdDisplayNatSession(dev) {
+    const list = dev.natSessions || [];
+    if (!list.length) return ['  The number of NAT sessions is 0.'];
+    const out = [`  The number of NAT sessions is ${list.length}.`, ''];
+    out.push(padEnd('Protocol', 10) + padEnd('InsideAddr:Port', 23) + padEnd('OutsideAddr:Port', 24) + 'DestAddr:Port');
+    out.push('-'.repeat(79));
+    for (const s of list) {
+      out.push(
+        padEnd(s.proto, 10) +
+          padEnd(`${s.inside}:${s.insidePort}`, 23) +
+          padEnd(`${s.outside}:${s.outsidePort}`, 24) +
+          `${s.dest}:${s.destPort}`
+      );
+    }
+    out.push('');
+    out.push(`  转换出口：${[...new Set(list.map((s) => s.iface))].join(', ')}`);
+    return out;
+  }
+
+  function cmdDisplayNatOutbound(dev) {
+    const rows = dev.ports.filter((p) => p.nat && p.nat.aclId != null);
+    if (!rows.length) return ['  (no nat outbound configured)'];
+    const out = [padEnd('Interface', 26) + padEnd('ACL', 8) + 'Address-group'];
+    out.push('-'.repeat(52));
+    for (const p of rows) {
+      out.push(
+        padEnd(p.name, 26) +
+          padEnd(p.nat.aclId, 8) +
+          (p.nat.addrGroup != null ? String(p.nat.addrGroup) : 'Easy IP (接口地址)')
+      );
+    }
+    return out;
+  }
+
+  function cmdDisplayPortGroup(dev, name) {
+    const all = !name || String(name).toLowerCase() === 'all';
+    const list = (dev.portGroups || []).filter((g) => all || g.name === name);
+    if (!list.length) return ['(no port-group configured)'];
+    const out = [];
+    for (const g of list) {
+      out.push(`Port-group ${g.name}`);
+      for (const id of g.memberIds) {
+        const p = E.Net.getPort(dev, id);
+        if (p) out.push(`  ${p.name}`);
+      }
+      out.push(`  成员数：${g.memberIds.length}`);
+      out.push('');
+    }
+    return out;
+  }
+
   function fmtArea(id) {
     if (typeof id === 'number') return id + '.0.0.0';
     return id;
@@ -2452,6 +2909,14 @@
         return errUnrecognized('display ospf');
       case 'port-security':
         return cmdDisplayPortSecurity(dev);
+      case 'acl':
+        return cmdDisplayAcl(dev, rest[1]);
+      case 'nat':
+        if (a[2] === 'session') return cmdDisplayNatSession(dev);
+        if (a[2] === 'outbound') return cmdDisplayNatOutbound(dev);
+        return errUnrecognized('display nat');
+      case 'port-group':
+        return cmdDisplayPortGroup(dev, rest[1]);
       case 'saved-configuration':
         return dev.savedConfig ? ['#', ...dev.savedConfig, 'return'] : ['Error: The saved configuration file does not exist.'];
       default:
@@ -2697,6 +3162,13 @@
       return { lines: ['Enter system view, return user view with Ctrl+Z.'] };
     }
 
+    // 真实 VRP 允许在接口类视图里直接敲 interface 切到另一个接口，不必先 quit。
+    // VLAN 视图里则不行 —— 那里 interface 不是合法命令，真机同样报 Unrecognized。
+    if (cmd === 'interface' && ['interface-view', 'portgroup-view', 'vlanif-view', 'trunk-view'].includes(view)) {
+      resetToSystemView(dev);
+      return executeInner(dev, line);
+    }
+
     // ---- display / show ----
     // PC 没有 VRP 命令行，不支持 display
     if (cmd === 'display' || cmd === 'dis') {
@@ -2784,33 +3256,53 @@
         return { lines: [] };
       }
       if (cmd === 'undo' && args[1] === 'vlan') {
-        const n = parseInt(args[2], 10);
-        if (isNaN(n)) return errWrong(args[2]);
-        if (n === 1) return { lines: ['Error: The default VLAN cannot be deleted.'] };
+        // 支持单个删除（undo vlan 10）与批量删除（undo vlan batch 10 20 / 10 to 20）
+        const batchMode = String(args[2]).toLowerCase() === 'batch';
+        const ids = batchMode ? vlanList(args.slice(3).join(' ')) : [parseInt(args[2], 10)];
+        if (!ids || ids === 'all' || !ids.length || ids.some((n) => isNaN(n))) {
+          return errWrong(batchMode ? 'vlan batch' : args[2]);
+        }
+        if (ids.includes(1)) return { lines: ['Error: The default VLAN cannot be deleted.'] };
+
         // 有接口还挂在上面时不允许直接删，真实 VRP 也是这个行为
-        const used = dev.ports.filter((p) => E.portVlan(p) === n || (p.mode === 'trunk' && Array.isArray(p.allowedVlans) && p.allowedVlans.includes(n)));
-        if (used.length) {
+        const inUse = (n) =>
+          dev.ports.some(
+            (p) => E.portVlan(p) === n || (p.mode === 'trunk' && Array.isArray(p.allowedVlans) && p.allowedVlans.includes(n))
+          );
+        const usedVlans = ids.filter(inUse);
+        if (usedVlans.length) {
+          const used = dev.ports.filter((p) => ids.some(inUse));
           return {
             lines: [
-              `Error: VLAN ${n} is in use by ${used.length} port(s): ${used.map((p) => p.name).join(', ')}.`,
+              `Error: VLAN ${usedVlans.join(', ')} is in use by ${used.length} port(s): ${used.map((p) => p.name).join(', ')}.`,
               `// 提示：请先把这些端口的 VLAN 配置改掉，再删除该 VLAN。`
             ]
           };
         }
-        dev.vlans = dev.vlans.filter((v) => v !== n);
-        delete (dev.vlanMeta || {})[n];
+        ids.forEach((n) => {
+          dev.vlans = dev.vlans.filter((v) => v !== n);
+          delete (dev.vlanMeta || {})[n];
+        });
         return { lines: [] };
       }
       if (cmd === 'interface') {
-        if (args[1] && args[1].toLowerCase() === 'range') {
-          return [...errUnrecognized('range'), '// 提示：本模拟器不支持 interface range，请逐个进入端口配置。'];
+        const toks = joinIfaceTokens(args.slice(1));
+        if (!toks.length) return errIncomplete('interface');
+
+        // interface range ge0/0/1 to ge0/0/5 —— 临时端口组，批量下发配置
+        if (/^range$/i.test(toks[0])) {
+          const ids = expandIfaceList(dev, toks.slice(1));
+          if (!ids) {
+            return [
+              ...errWrong('range'),
+              '// 提示：批量写法为 interface range gigabitethernet 0/0/1 to gigabitethernet 0/0/5。'
+            ];
+          }
+          enterView(dev, 'portgroup-view', { ifaceIds: ids, ifaceId: ids[0], groupName: null });
+          return { lines: [] };
         }
-        // 支持 "interface vlanif 100" / "interface eth-trunk 1" 这种两段写法
-        let ifaceTok = args[1];
-        if (ifaceTok && /^(vlanif|eth-?trunk)$/i.test(ifaceTok) && args[2]) {
-          ifaceTok = ifaceTok + args[2];
-        }
-        const iface = resolveIface(dev, ifaceTok);
+
+        const iface = resolveIface(dev, toks[0]);
         if (!iface) return errWrong('interface');
         if (iface.kind === 'vlanif') {
           if (dev.l2only) {
@@ -2829,7 +3321,37 @@
           enterView(dev, 'trunk-view', { trunkId: iface.trunkId });
           return { lines: [] };
         }
-        enterView(dev, 'interface-view', { ifaceId: iface.port.id });
+        enterView(dev, 'interface-view', { ifaceId: iface.port.id, ifaceIds: [iface.port.id] });
+        return { lines: [] };
+      }
+      if (cmd === 'port-group') {
+        // 临时端口组：port-group group-member ge0/0/1 to ge0/0/8
+        if (args[1] && args[1].toLowerCase() === 'group-member') {
+          const ids = expandIfaceList(dev, joinIfaceTokens(args.slice(2)));
+          if (!ids) {
+            return [
+              ...errWrong('group-member'),
+              '// 提示：批量写法为 port-group group-member gigabitethernet 0/0/1 to gigabitethernet 0/0/8。'
+            ];
+          }
+          enterView(dev, 'portgroup-view', { ifaceIds: ids, ifaceId: ids[0], groupName: null });
+          return { lines: [] };
+        }
+        // 永久端口组：port-group <组名>
+        if (!args[1]) return errIncomplete('port-group');
+        const gname = args[1];
+        dev.portGroups = dev.portGroups || [];
+        if (!dev.portGroups.find((g) => g.name === gname)) dev.portGroups.push({ name: gname, memberIds: [] });
+        enterView(dev, 'portgroup-view', { groupName: gname, ifaceIds: [] });
+        return { lines: [] };
+      }
+      if (cmd === 'undo' && args[1] === 'port-group') {
+        if (!args[2]) return errIncomplete('undo port-group');
+        if (args[2].toLowerCase() === 'all') {
+          dev.portGroups = [];
+          return { lines: [] };
+        }
+        dev.portGroups = (dev.portGroups || []).filter((g) => g.name !== args[2]);
         return { lines: [] };
       }
       if (cmd === 'ip' && args[1] === 'route-static') {
@@ -2873,6 +3395,30 @@
         dev.dhcp.enabled = false;
         return { lines: [] };
       }
+      if (cmd === 'nat') {
+        if (args[1] !== 'address-group') {
+          return [
+            ...errWrong('nat'),
+            '// 提示：nat outbound 要在接口视图下配置；nat address-group 在系统视图下配置。'
+          ];
+        }
+        const gid = parseInt(args[2], 10);
+        if (isNaN(gid)) return errWrong(args[2]);
+        dev.natAddrGroups = dev.natAddrGroups || [];
+        if (!dev.natAddrGroups.find((g) => g.id === gid)) dev.natAddrGroups.push({ id: gid, sections: [] });
+        enterView(dev, 'nat-group-view', { natGroupId: gid });
+        return { lines: [] };
+      }
+      if (cmd === 'undo' && args[1] === 'nat' && args[2] === 'address-group') {
+        const gid = parseInt(args[3], 10);
+        if (isNaN(gid)) return errWrong(args[3]);
+        dev.natAddrGroups = (dev.natAddrGroups || []).filter((g) => g.id !== gid);
+        // 引用该地址池的 nat outbound 退回 Easy IP，避免留下悬空引用
+        dev.ports.forEach((p) => {
+          if (p.nat && p.nat.addrGroup === gid) p.nat.addrGroup = null;
+        });
+        return { lines: [] };
+      }
       if (cmd === 'ospf') {
         const pid = parseInt(args[1], 10);
         if (isNaN(pid)) return errWrong(args[1]);
@@ -2913,7 +3459,7 @@
         return errWrong('stp');
       }
       if (cmd === 'traffic-filter') {
-        return [...errWrong('traffic-filter'), '// 提示：traffic-filter 只能在接口视图下配置。'];
+        return [...errWrong('traffic-filter'), '// 提示：traffic-filter 要在接口视图或 Vlanif 视图下配置。'];
       }
       return errUnrecognized(cmd);
     }
@@ -2945,137 +3491,171 @@
       return errUnrecognized(cmd);
     }
 
-    /* ================= 接口视图 ================= */
-    if (view === 'interface-view') {
-      const p = E.Net.getPort(dev, dev.cli.ifaceId);
-      if (!p) { quitView(dev); return errUnrecognized(cmd); }
+    /* ================= 接口视图 / 端口组视图 =================
+     * 两者共用同一套命令：端口组里敲的配置会批量下发到每个成员口。
+     *   [SW1] port-group group-member ge0/0/1 to ge0/0/8   → [SW1-port-group]
+     *   [SW1] interface range ge0/0/1 to ge0/0/8           → [SW1-port-group]
+     *   [SW1] port-group 1  →  group-member ...            → [SW1-port-group-1]
+     */
+    if (view === 'interface-view' || view === 'portgroup-view') {
+      // group-member 要放在"成员为空"检查之前：永久端口组刚创建时成员是空的，
+      // 必须允许在组视图里先把成员加进来。
+      if (cmd === 'group-member') {
+        const g = (dev.portGroups || []).find((x) => x.name === dev.cli.groupName);
+        if (!g) return errUnrecognized(cmd);
+        const ids = expandIfaceList(dev, joinIfaceTokens(args.slice(1)));
+        if (!ids) {
+          return [
+            ...errWrong('group-member'),
+            '// 提示：写法为 group-member gigabitethernet 0/0/1 to gigabitethernet 0/0/8。'
+          ];
+        }
+        ids.forEach((id) => { if (!g.memberIds.includes(id)) g.memberIds.push(id); });
+        return { lines: [] };
+      }
+      if (cmd === 'undo' && args[1] === 'group-member') {
+        const g = (dev.portGroups || []).find((x) => x.name === dev.cli.groupName);
+        if (g) {
+          const ids = expandIfaceList(dev, joinIfaceTokens(args.slice(2)));
+          if (ids) g.memberIds = g.memberIds.filter((id) => !ids.includes(id));
+        }
+        return { lines: [] };
+      }
 
+      const ports = viewPorts(dev);
+      if (!ports.length) { quitView(dev); return errUnrecognized(cmd); }
       if (cmd === 'description') {
-        p.desc = args.slice(1).join(' ');
+        ports.forEach((p) => { p.desc = args.slice(1).join(' '); });
         return { lines: [] };
       }
       if (cmd === 'shutdown') {
-        p.shutdown = true;
+        ports.forEach((p) => { p.shutdown = true; });
         return { lines: [] };
       }
       if (cmd === 'undo' && args[1] === 'shutdown') {
-        p.shutdown = false;
+        ports.forEach((p) => { p.shutdown = false; });
         return { lines: [] };
       }
       if (cmd === 'port') {
         if (args[1] === 'link-type') {
           const t = args[2];
           if (!['access', 'trunk', 'hybrid'].includes(t)) return errWrong(t);
-          p.mode = t;
-          if (t === 'trunk') p.allowedVlans = 'all';
-          if (t === 'access') p.allowedVlans = 'all';
+          ports.forEach((p) => {
+            p.mode = t;
+            if (t === 'trunk' || t === 'access') p.allowedVlans = 'all';
+          });
           return { lines: [] };
         }
         if (args[1] === 'default' && args[2] === 'vlan') {
           const n = parseInt(args[3], 10);
           if (isNaN(n) || n < 1 || n > 4094) return errWrong(args[3]);
           if (!dev.vlans.includes(n)) dev.vlans.push(n);
-          p.vlan = n;
+          ports.forEach((p) => { p.vlan = n; });
           return { lines: [] };
         }
         if (args[1] === 'trunk' && args[2] === 'allow-pass' && args[3] === 'vlan') {
           const list = vlanList(args.slice(4).join(' '));
           if (!list) return errWrong('port trunk allow-pass vlan');
-          p.allowedVlans = list;
           if (list !== 'all') list.forEach((v) => { if (!dev.vlans.includes(v)) dev.vlans.push(v); });
+          ports.forEach((p) => { p.allowedVlans = list; });
           return { lines: [] };
         }
         if (args[1] === 'hybrid') {
           const n = parseInt(args[3], 10);
           if (isNaN(n)) return errWrong('port hybrid');
-          p.vlan = n;
           if (!dev.vlans.includes(n)) dev.vlans.push(n);
+          ports.forEach((p) => { p.vlan = n; });
           return { lines: [] };
         }
         return errWrong('port');
       }
       if (cmd === 'undo' && args[1] === 'port') {
         if (args[2] === 'trunk' && args[3] === 'allow-pass') {
-          p.allowedVlans = [];
+          ports.forEach((p) => { p.allowedVlans = []; });
           return { lines: [] };
         }
         if (args[2] === 'default') {
-          p.vlan = 1;
+          ports.forEach((p) => { p.vlan = 1; });
           return { lines: [] };
         }
         return errWrong('undo port');
       }
       if (cmd === 'ip' && args[1] === 'address') {
-        if (p.mode !== 'routed') {
+        if (ports.some((p) => p.mode !== 'routed')) {
           return { lines: ['Error: Wrong parameter found at \'^\' position.', '// 提示：只有路由口才能直接配 IP，请先 undo portswitch，或在 Vlanif 接口下配置。'] };
         }
         const ip = args[2];
         const mask = parseMask(args[3]);
         if (!E.isValidIp(ip) || mask == null) return errWrong(!E.isValidIp(ip) ? ip : args[3]);
-        p.ip = ip;
-        p.mask = mask;
+        ports.forEach((p) => { p.ip = ip; p.mask = mask; });
         return { lines: [] };
       }
       if (cmd === 'undo' && args[1] === 'ip' && args[2] === 'address') {
-        p.ip = null;
-        p.mask = null;
+        ports.forEach((p) => { p.ip = null; p.mask = null; });
         return { lines: [] };
       }
       if (cmd === 'undo' && args[1] === 'portswitch') {
-        p.mode = 'routed';
+        ports.forEach((p) => { p.mode = 'routed'; });
         return { lines: [] };
       }
       if (cmd === 'eth-trunk') {
         const n = parseInt(args[1], 10);
         if (isNaN(n)) return errWrong(args[1]);
-        p.trunkId = n;
-        if (p.trunkMode == null) p.trunkMode = 'lacp';
+        ports.forEach((p) => {
+          p.trunkId = n;
+          if (p.trunkMode == null) p.trunkMode = 'lacp';
+        });
         return { lines: [] };
       }
       if (cmd === 'undo' && args[1] === 'eth-trunk') {
-        p.trunkId = null;
+        ports.forEach((p) => { p.trunkId = null; });
         return { lines: [] };
       }
       if (cmd === 'mode') {
-        if (args[1] === 'lacp-static') { p.trunkMode = 'lacp'; return { lines: [] }; }
-        if (args[1] === 'manual') { p.trunkMode = 'manual'; return { lines: [] }; }
-        return errWrong('mode');
+        if (!['lacp-static', 'manual'].includes(args[1])) return errWrong(args[1]);
+        if (args[1] === 'manual' && args[2] !== 'load-balance') return errWrong('mode');
+        ports.forEach((p) => { p.trunkMode = args[1] === 'manual' ? 'manual' : 'lacp'; });
+        return { lines: [] };
       }
       if (cmd === 'stp') {
         if (args[1] === 'edged-port') {
-          p.stpEdged = args[2] === 'enable' || args[2] === undefined;
+          const v = args[2] === 'enable' || args[2] === undefined;
+          ports.forEach((p) => { p.stpEdged = v; });
           return { lines: [] };
         }
         return errWrong('stp');
       }
       if (cmd === 'undo' && args[1] === 'stp' && args[2] === 'edged-port') {
-        p.stpEdged = false;
+        ports.forEach((p) => { p.stpEdged = false; });
         return { lines: [] };
       }
       if (cmd === 'bpdu-protection' || (cmd === 'stp' && args[1] === 'bpdu-protection')) {
-        p.bpduProtect = true;
+        ports.forEach((p) => { p.bpduProtect = true; });
         return { lines: [] };
       }
       if (cmd === 'undo' && args[1] === 'bpdu-protection') {
-        p.bpduProtect = false;
+        ports.forEach((p) => { p.bpduProtect = false; });
         return { lines: [] };
       }
       if (cmd === 'port-security') {
-        if (args[1] === 'enable') { p.portSec.enabled = true; return { lines: [] }; }
+        if (args[1] === 'enable') {
+          ports.forEach((p) => { p.portSec.enabled = true; });
+          return { lines: [] };
+        }
         if (args[1] === 'max-mac-num') {
           const n = parseInt(args[2], 10);
           if (isNaN(n) || n < 1) return errWrong(args[2]);
-          p.portSec.maxMac = n;
+          ports.forEach((p) => { p.portSec.maxMac = n; });
           return { lines: [] };
         }
         return errWrong('port-security');
       }
       if (cmd === 'undo' && args[1] === 'port-security') {
-        if (args[2] === 'enable') p.portSec.enabled = false;
+        if (args[2] === 'enable') ports.forEach((p) => { p.portSec.enabled = false; });
         return { lines: [] };
       }
       if (cmd === 'dhcp' && args[1] === 'select') {
-        p.dhcpSelect = true;
+        ports.forEach((p) => { p.dhcpSelect = true; });
         return { lines: [] };
       }
       if (cmd === 'traffic-filter') {
@@ -3084,15 +3664,40 @@
         const aclId = aclIdx > 0 ? parseInt(args[aclIdx + 1], 10) : NaN;
         if (!['inbound', 'outbound'].includes(dir) || isNaN(aclId)) return errWrong(!['inbound', 'outbound'].includes(dir) ? dir : args[aclIdx + 1]);
         if (!dev.acl.find((a) => a.id === aclId)) {
-          return { lines: [`Error: ACL ${aclId} does not exist.`, `// 提示：请先在系统视图执行 acl ${aclId} 创建该 ACL。`] };
+          return { lines: [`Error: ACL ${aclId} does not exist.`, `// 提示：请先在系统视图执行 acl number ${aclId} 创建该 ACL。`] };
         }
-        dev.aclBindings = dev.aclBindings.filter((b) => !(b.portId === p.id && b.direction === dir));
-        dev.aclBindings.push({ portId: p.id, direction: dir, aclId });
+        ports.forEach((p) => {
+          dev.aclBindings = dev.aclBindings.filter((b) => !(b.portId === p.id && b.direction === dir));
+          dev.aclBindings.push({ portId: p.id, direction: dir, aclId });
+        });
         return { lines: [] };
       }
       if (cmd === 'undo' && args[1] === 'traffic-filter') {
         const dir = args[2];
-        dev.aclBindings = dev.aclBindings.filter((b) => !(b.portId === p.id && b.direction === dir));
+        ports.forEach((p) => {
+          dev.aclBindings = dev.aclBindings.filter((b) => !(b.portId === p.id && b.direction === dir));
+        });
+        return { lines: [] };
+      }
+      if (cmd === 'nat') {
+        if (args[1] !== 'outbound') {
+          return [...errWrong('nat'), '// 提示：接口下 NAT 的写法为 nat outbound <ACL编号> [address-group <编号>]。'];
+        }
+        const aclId = parseInt(args[2], 10);
+        if (isNaN(aclId)) return errWrong(args[2]);
+        if (!dev.acl.find((a) => a.id === aclId)) {
+          return { lines: [`Error: ACL ${aclId} does not exist.`, '// 提示：nat outbound 要用 ACL 指定需要转换的内网流量，请先创建该 ACL。'] };
+        }
+        const gi = args.findIndex((a) => a.toLowerCase() === 'address-group');
+        const ag = gi > 0 ? parseInt(args[gi + 1], 10) : null;
+        if (ag != null && !(dev.natAddrGroups || []).find((g) => g.id === ag)) {
+          return { lines: [`Error: NAT address-group ${ag} does not exist.`, `// 提示：请先在系统视图执行 nat address-group ${ag} 创建公网地址池。`] };
+        }
+        ports.forEach((p) => { p.nat = { aclId, addrGroup: ag }; });
+        return { lines: [] };
+      }
+      if (cmd === 'undo' && args[1] === 'nat' && args[2] === 'outbound') {
+        ports.forEach((p) => { p.nat = null; });
         return { lines: [] };
       }
       return errUnrecognized(cmd);
@@ -3121,6 +3726,48 @@
       if (cmd === 'undo' && args[1] === 'shutdown') { vi.enabled = true; return { lines: [] }; }
       if (cmd === 'dhcp' && args[1] === 'select') { vi.dhcpSelect = true; return { lines: [] }; }
       if (cmd === 'undo' && args[1] === 'dhcp' && args[2] === 'select') { vi.dhcpSelect = false; return { lines: [] }; }
+      // Vlanif 上应用 ACL：过滤该 VLAN 内主机进出三层的流量（最常用的 ACL 应用方式）
+      if (cmd === 'traffic-filter') {
+        const dir = args[1];
+        const aclIdx = args.findIndex((a) => a.toLowerCase() === 'acl');
+        const aclId = aclIdx > 0 ? parseInt(args[aclIdx + 1], 10) : NaN;
+        if (!['inbound', 'outbound'].includes(dir) || isNaN(aclId)) return errWrong(!['inbound', 'outbound'].includes(dir) ? dir : args[aclIdx + 1]);
+        if (!dev.acl.find((a) => a.id === aclId)) {
+          return { lines: [`Error: ACL ${aclId} does not exist.`, `// 提示：请先在系统视图执行 acl number ${aclId} 创建该 ACL。`] };
+        }
+        dev.aclBindings = dev.aclBindings.filter((b) => !(b.vlanifId === vi.vlanId && b.direction === dir));
+        dev.aclBindings.push({ vlanifId: vi.vlanId, direction: dir, aclId });
+        return { lines: [] };
+      }
+      if (cmd === 'undo' && args[1] === 'traffic-filter') {
+        dev.aclBindings = dev.aclBindings.filter((b) => !(b.vlanifId === vi.vlanId && b.direction === args[2]));
+        return { lines: [] };
+      }
+      return errUnrecognized(cmd);
+    }
+
+    /* ================= NAT 公网地址池视图 ================= */
+    if (view === 'nat-group-view') {
+      const g = (dev.natAddrGroups || []).find((x) => x.id === dev.cli.natGroupId);
+      if (!g) { quitView(dev); return errUnrecognized(cmd); }
+
+      if (cmd === 'section') {
+        const index = parseInt(args[1], 10);
+        const start = args[2];
+        const end = args[3];
+        if (isNaN(index)) return errWrong(args[1]);
+        if (!E.isValidIp(start)) return errWrong(start);
+        if (!E.isValidIp(end)) return errWrong(end);
+        g.sections = g.sections.filter((s) => s.index !== index);
+        g.sections.push({ index, start, end });
+        g.sections.sort((a, b) => a.index - b.index);
+        return { lines: [] };
+      }
+      if (cmd === 'undo' && args[1] === 'section') {
+        const index = parseInt(args[2], 10);
+        g.sections = g.sections.filter((s) => s.index !== index);
+        return { lines: [] };
+      }
       return errUnrecognized(cmd);
     }
 
@@ -3201,24 +3848,32 @@
       if (!acl) { quitView(dev); return errUnrecognized(cmd); }
 
       if (cmd === 'rule') {
-        const ruleId = parseInt(args[1], 10);
-        const action = args[2];
-        if (isNaN(ruleId) || !['permit', 'deny'].includes(action)) return errWrong(!['permit', 'deny'].includes(action) ? action : args[1]);
-        const rule = { ruleId, action, src: null, srcWildcard: null };
-        const si = args.findIndex((a) => a.toLowerCase() === 'source');
-        if (si > 0) {
-          if (!E.isValidIp(args[si + 1])) return errWrong(args[si + 1]);
-          rule.src = args[si + 1];
-          rule.srcWildcard = E.isValidIp(args[si + 2]) ? args[si + 2] : '0.0.0.0';
-        }
-        acl.rules = acl.rules.filter((r) => r.ruleId !== ruleId);
+        const parsed = parseAclRule(args.slice(1));
+        if (parsed.err) return parsed.err;
+        const rule = parsed.rule;
+        acl.rules = acl.rules.filter((r) => r.ruleId !== rule.ruleId);
         acl.rules.push(rule);
         acl.rules.sort((x, y) => x.ruleId - y.ruleId);
         return { lines: [] };
       }
       if (cmd === 'undo' && args[1] === 'rule') {
+        if (String(args[2]).toLowerCase() === 'all') {
+          acl.rules = [];
+          return { lines: [] };
+        }
         const ruleId = parseInt(args[2], 10);
+        if (isNaN(ruleId)) return errWrong(args[2]);
         acl.rules = acl.rules.filter((r) => r.ruleId !== ruleId);
+        return { lines: [] };
+      }
+      if (cmd === 'description') {
+        acl.desc = args.slice(1).join(' ');
+        return { lines: [] };
+      }
+      if (cmd === 'step') {
+        const n = parseInt(args[1], 10);
+        if (isNaN(n)) return errWrong(args[1]);
+        acl.step = n;
         return { lines: [] };
       }
       return errUnrecognized(cmd);
@@ -3274,10 +3929,12 @@
     'system-view': '系统视图',
     'vlan-view': 'VLAN 视图',
     'interface-view': '接口视图',
+    'portgroup-view': '端口组视图',
     'vlanif-view': 'Vlanif 视图',
     'trunk-view': 'Eth-Trunk 视图',
     'pool-view': '地址池视图',
     'acl-view': 'ACL 视图',
+    'nat-group-view': 'NAT 地址池视图',
     'ospf-view': 'OSPF 视图',
     'ospf-area-view': 'OSPF 区域视图'
   };
@@ -3312,6 +3969,9 @@
         'display ospf peer brief      查看 OSPF 邻居',
         'display ospf interface       查看 OSPF 接口状态',
         'display ip pool              查看 DHCP 地址池',
+        'display acl all              查看所有 ACL 规则',
+        'display nat session all      查看 NAT 地址转换表项',
+        'display port-group all       查看永久端口组',
         'ping <ip>                    连通性测试',
         'tracert <ip>                 路由跟踪',
         'save                         保存配置（会先问 y/n，再问文件名）'
@@ -3321,12 +3981,17 @@
         'vlan <id>                    创建并进入 VLAN 视图',
         'vlan batch <ids>             批量创建 VLAN（不进入视图）',
         'undo vlan <id>               删除 VLAN',
+        'undo vlan batch <ids>        批量删除 VLAN',
         'interface <接口名>           进入接口视图',
+        'interface range <起> to <止>   批量进入多个端口（临时端口组）',
+        'port-group group-member <起> to <止>  批量进入多个端口',
+        'port-group <组名>            创建永久端口组，再 group-member 加成员',
         'ip route-static <目的> <掩码> <下一跳>   配置静态路由',
         'ip pool <名字>               创建 DHCP 地址池',
         'dhcp enable                  开启 DHCP 服务',
+        'nat address-group <编号>     创建 NAT 公网地址池',
         'ospf <进程号> router-id <id> 开启 OSPF',
-        'acl number <3000-3999>       创建高级 ACL',
+        'acl number <2000-3999>       创建 ACL（2000-2999 基本 / 3000-3999 高级）',
         'stp mode rstp                设置生成树模式',
         'stp priority <4096的倍数>    设置桥优先级'
       ],
@@ -3347,12 +4012,25 @@
         'stp edged-port enable        配置边缘端口',
         'port-security enable         开启端口安全',
         'port-security max-mac-num <n>  限制 MAC 数量',
-        'traffic-filter inbound acl <编号>  应用 ACL',
+        'traffic-filter inbound acl <编号>  应用 ACL 过滤',
+        'nat outbound <ACL编号>       出口做 NAT（Easy IP）',
         'display this                 查看本接口配置'
+      ],
+      'portgroup-view': [
+        '（这里的命令会批量下发到端口组内每个成员口）',
+        'group-member <起> to <止>    永久端口组里添加成员口',
+        'shutdown / undo shutdown     批量关闭 / 开启',
+        'port link-type access|trunk  批量设置端口类型',
+        'port default vlan <id>       批量划入 VLAN',
+        'port trunk allow-pass vlan <列表|all>  批量放行 VLAN',
+        'description <描述>           批量设置描述',
+        'display this                 查看组内各端口的配置',
+        'quit                         退出端口组（临时端口组随即消失）'
       ],
       'vlanif-view': [
         'ip address <ip> <掩码>       配置 VLAN 三层网关地址',
         'dhcp select global           指定使用全局地址池',
+        'traffic-filter inbound acl <编号>   在 VLAN 网关上下发 ACL',
         'description <描述>           接口描述',
         'shutdown / undo shutdown     关闭 / 开启接口',
         'display this                 查看本接口配置'
@@ -3372,8 +4050,15 @@
         'display this                 查看本地址池配置'
       ],
       'acl-view': [
-        'rule <序号> permit|deny source <ip> <通配符>    配置规则',
+        'rule <序号> permit|deny [ip] source <ip> <反掩码> [destination <ip> <反掩码>]',
+        'rule 5 deny ip source 192.168.10.0 0.0.0.255 destination 192.168.20.0 0.0.0.255',
+        'rule 10 permit ip            放行其余流量（ACL 末尾缺省是拒绝所有）',
+        'undo rule <序号> | undo rule all    删除规则',
         'display this                 查看本 ACL 配置'
+      ],
+      'nat-group-view': [
+        'section <序号> <起始IP> <结束IP>   指定可用的公网地址范围',
+        'display this                 查看本地址池配置'
       ],
       'ospf-view': [
         'router-id <ip>               指定 Router ID',
@@ -3408,7 +4093,365 @@
     helpLines,
     computeMacTable,
     viewChain,
+    viewPorts,
+    expandIfaceList,
+    resetCli,
     VIEW_LABEL
+  });
+})(window);
+
+</script>
+<script>
+/* =========================================================================
+ * NE_HWSIM —— 华为 VRP 网络实训模拟器
+ * 模块：配置导入（把「导出配置」生成的 running-config 文本重放回设备）
+ *
+ * Copyright (c) 2026 新易科技工作室 NewE
+ * 作者：Liuyi  <yimr@sohu.com>
+ * 协议：MIT License
+ *
+ * 本项目为独立的非官方教学演示工具，与华为技术有限公司无任何关联。
+ * ========================================================================= */
+(function (global) {
+  'use strict';
+
+  const E = global.NE;
+
+  /* ------------------------------ 文本格式 ------------------------------
+   * 导出文件长这样（每个设备一段）：
+   *
+   *   配置导出时间：2026/10/8 下午10:00
+   *
+   *   ==================================================================
+   *   设备：SW1（S5700-28TP-EI）
+   *   ==================================================================
+   *   #
+   *   sysname SW1
+   *   ...
+   * ---------------------------------------------------------------------- */
+
+  /** 设备段表头：设备：SW1（S5700-28TP-EI） */
+  const RE_HEAD = /^\s*设备\s*[:：]\s*(.+?)\s*[（(]\s*([^（()）]*?)\s*[)）]\s*$/;
+  /** 段间分隔线 ====== */
+  const RE_SEP = /^\s*={6,}\s*$/;
+  /** 导出时间戳行 */
+  const RE_STAMP = /^\s*(配置导出时间|导出时间|生成时间)\s*[:：]/;
+  /** 纯分段符（VRP 里 # 表示一段配置结束） */
+  const RE_META = /^(#+|!)$/;
+  /** 会进入子视图的命令：遇到它说明上一段配置结束了 */
+  const RE_VIEW_START = /^(vlan\s+\d+|interface\s+\S+|port-group\s+\S+|acl\s+(?:number\s+)?\d+|nat\s+address-group\s+\d+)$/i;
+
+  /** 回显里是否出现错误行 */
+  function isError(lines) {
+    return (lines || []).some((l) => /^Error[: ]/.test(String(l).trim()));
+  }
+
+  /** 型号字符串 → 设备库 key（先按模板精确匹配，再按关键字兜底） */
+  function modelToKey(model) {
+    const m = String(model == null ? '' : model).trim();
+    if (!m) return null;
+    const T = E.TEMPLATES || {};
+    for (const k of Object.keys(T)) {
+      if (T[k].model === m) return k;
+    }
+    const up = m.toUpperCase();
+    if (/S37\d\d|S27\d\d/.test(up)) return 'S3700';
+    if (/S57\d\d|S67\d\d|S127\d\d/.test(up)) return 'S5700';
+    if (/^AR\d/.test(up) || up.includes('ROUTER') || /^NE\d/.test(up)) return 'AR6121';
+    if (up === 'PC' || up.includes('HOST') || up.includes('WINDOWS')) return 'PC';
+    return null;
+  }
+
+  /* ------------------------------ 解析 ------------------------------ */
+
+  /**
+   * 把导出文本拆成若干设备段。
+   * 有「设备：xxx（型号）」表头的走分段模式；
+   * 完全没有表头时（例如直接从终端复制的 current-configuration），整份当成一段匿名配置。
+   */
+  function parse(text) {
+    const lines = String(text == null ? '' : text).replace(/\r\n?/g, '\n').split('\n');
+    const blocks = [];
+    const orphans = [];
+    let cur = null;
+    let headered = false;
+
+    for (const raw of lines) {
+      const t = raw.trim();
+      if (RE_SEP.test(t) || RE_STAMP.test(t)) continue;
+      const hm = t.match(RE_HEAD);
+      if (hm) {
+        headered = true;
+        cur = { hostname: hm[1], model: hm[2], lines: [] };
+        blocks.push(cur);
+        continue;
+      }
+      if (cur) cur.lines.push(raw);
+      else orphans.push(raw);
+    }
+
+    if (!headered) {
+      const keep = orphans.filter((l) => {
+        const t = l.trim();
+        return t && !RE_SEP.test(t) && !RE_STAMP.test(t);
+      });
+      if (keep.length) blocks.push({ hostname: null, model: null, lines: keep });
+    }
+
+    return { blocks: blocks.filter((b) => b.lines.some((l) => l.trim())), headered };
+  }
+
+  /* ------------------------------ 重放计划 ------------------------------ */
+
+  /** ACL / NAT 地址池这类「被别的配置引用」的定义段：必须比引用者先重放 */
+  const RE_DEFINITION = /^(acl\s+(?:number\s+)?\d+|nat\s+address-group\s+\d+)$/i;
+
+  /**
+   * running-config 里 ACL、NAT 地址池都排在 interface 段落之后，
+   * 但 traffic-filter / nat outbound 会校验「引用的对象是否存在」，
+   * 照原顺序逐行重放必然报 "does not exist"。所以把定义段整体提到最前面，
+   * 原位置只留一个 # 分段符，保持其余段落的切分不变。
+   */
+  function hoistDefinitions(src) {
+    const head = [];
+    const rest = [];
+    let i = 0;
+    while (i < src.length) {
+      if (RE_DEFINITION.test(src[i])) {
+        while (i < src.length && !RE_META.test(src[i])) head.push(src[i++]);
+        if (i < src.length) i++; // 吃掉定义段末尾的 #
+        rest.push('#');
+        continue;
+      }
+      rest.push(src[i++]);
+    }
+    return { head, rest };
+  }
+
+  /**
+   * 把一份 running-config 变成可以喂给 E.execute 的命令序列。
+   * running-config 是「结果快照」，没有视图层级信息，所以这里要按段落补回
+   * quit / return / system-view，否则重放到第二个段落就会因为停在旧视图里而报错。
+   */
+  function plan(dev, lines) {
+    const cmds = [];
+    const unknown = [];
+    const src = (lines || []).map((l) => String(l).trim()).filter(Boolean);
+
+    /* --- PC 没有 VRP 命令行：导出的是 ip address / ip gateway 两行，要合并成一条 ip 命令 --- */
+    if (dev.type === 'pc') {
+      let ip = null;
+      let mask = null;
+      let gw = null;
+      const flush = () => {
+        if (ip && mask) cmds.push(`ip ${ip} ${mask}${gw ? ' ' + gw : ''}`);
+        ip = mask = gw = null;
+      };
+      for (const t of src) {
+        if (RE_META.test(t) || /^sysname\b/i.test(t)) continue; // 主机名由设备本身维护，重放会覆盖成导出时的名字
+        let m = t.match(/^ip\s+address\s+(\S+)\s+(\S+)$/i);
+        if (m) {
+          flush();
+          ip = m[1];
+          mask = m[2];
+          continue;
+        }
+        m = t.match(/^ip\s+gateway\s+(\S+)$/i);
+        if (m) {
+          gw = m[1];
+          continue;
+        }
+        m = t.match(/^ip\s+(\S+)\s+(\S+)(?:\s+(\S+))?$/i); // 已经是 ip <地址> <掩码> [网关] 形式
+        if (m) {
+          flush();
+          ip = m[1];
+          mask = m[2];
+          gw = m[3] || null;
+          continue;
+        }
+        unknown.push(t);
+      }
+      flush();
+      return { cmds, unknown };
+    }
+
+    let inView = false; // 是否正停在 vlan / interface / acl / port-group / nat address-group 这类子视图里
+    let inSystem = false; // 是否已在系统视图
+
+    // 回用户视图：VRP 的 return 从任意深度都能一步回用户视图，不用逐级 quit
+    const toUser = () => {
+      if (!inView && !inSystem) return;
+      cmds.push('return');
+      inView = false;
+      inSystem = false;
+    };
+    // 回系统视图：子视图里退一级就回到系统视图，否则从用户视图进系统视图
+    const toSystem = () => {
+      if (inView) {
+        cmds.push('quit');
+        inView = false;
+        return;
+      }
+      if (!inSystem) {
+        cmds.push('system-view');
+        inSystem = true;
+      }
+    };
+
+    const hoisted = hoistDefinitions(src);
+    for (const t of hoisted.head.concat(hoisted.rest)) {
+      if (RE_META.test(t) || /^return$/i.test(t)) {
+        toUser(); // 一个 # 代表一段配置结束，先退回用户视图再看下一段
+        continue;
+      }
+      // port-group group-member 是临时端口组命令，不会进入命名端口组视图
+      if (RE_VIEW_START.test(t) && !/^port-group\s+group-member\b/i.test(t)) {
+        toSystem();
+        cmds.push(t);
+        inView = true;
+        continue;
+      }
+      if (!inSystem) toSystem();
+      cmds.push(t);
+    }
+    toUser();
+    return { cmds, unknown };
+  }
+
+  /* ------------------------------ 应用 ------------------------------ */
+
+  /**
+   * 把配置文本应用到拓扑上。
+   *  · 有同名设备 → 直接配到那台设备上
+   *  · 没有同名设备 → 按表头里的型号新建一台（摆放在现有设备下方）
+   *  · 文本没有表头 → 配到 opts.target 指定的设备上（一般传当前打开的设备）
+   *
+   * 注意：导出的是「设备配置」，不含连线。导入只会还原地址、VLAN、ACL、NAT 这些配置，
+   * 线缆仍需在画布上自己连。
+   */
+  function applyConfigText(text, opts) {
+    const o = opts || {};
+    const parsed = parse(text);
+    if (!parsed.blocks.length) {
+      return {
+        ok: false,
+        message:
+          '没有从文件里找到可识别的配置内容。请选择由「导出配置」生成的文件，或任意 VRP 的 current-configuration 文本。',
+        results: []
+      };
+    }
+
+    // 无表头的裸配置：只有画布上恰好一台设备时才敢推断目标
+    let target = o.target || null;
+    if (!parsed.headered && !target && E.Net.devices.length === 1) target = E.Net.devices[0];
+    // 既没有设备表头、又不知道配给谁 → 直接说清楚，别让用户对着「已跳过」发呆
+    if (!parsed.headered && !target) {
+      return {
+        ok: false,
+        message:
+          '文件里没有「设备：xxx（型号）」这样的表头，无法判断这份配置该配到哪台设备上。' +
+          '请先双击一台设备打开它的命令行，再重新导入；或者导入由「导出配置」生成的完整文件。',
+        results: []
+      };
+    }
+
+    const results = [];
+    let created = 0;
+    let cursor = 0;
+    const startY = E.Net.devices.length ? Math.max(...E.Net.devices.map((d) => d.y)) + 190 : 60;
+    const place = () => {
+      const x = 60 + (cursor % 4) * 300;
+      const y = startY + Math.floor(cursor / 4) * 220;
+      cursor++;
+      return { x, y };
+    };
+
+    for (const b of parsed.blocks) {
+      let dev = null;
+      let isNew = false;
+      if (b.hostname) dev = E.Net.devices.find((d) => d.hostname === b.hostname) || null;
+      if (!dev && !b.hostname) dev = target;
+
+      if (!dev) {
+        const key = modelToKey(b.model);
+        if (!key) {
+          results.push({
+            hostname: b.hostname || '(未命名)',
+            model: b.model || '',
+            isNew: false,
+            total: 0,
+            applied: 0,
+            failed: [],
+            unknown: [],
+            skip: b.hostname
+              ? `无法识别型号${b.model ? '「' + b.model + '」' : ''}，且拓扑里没有叫「${b.hostname}」的设备，已跳过。`
+              : '文件没有设备表头，也没指定要配到哪台设备上，已跳过。'
+          });
+          continue;
+        }
+        const pos = place();
+        dev = E.Net.addDevice(key, pos.x, pos.y);
+        if (b.hostname) dev.hostname = b.hostname;
+        isNew = true;
+        created++;
+      }
+
+      const p = plan(dev, b.lines);
+      const failed = [];
+      let applied = 0;
+      for (const c of p.cmds) {
+        let r;
+        try {
+          r = E.execute(dev, c);
+        } catch (err) {
+          r = { lines: ['Error: ' + err.message] };
+        }
+        if (isError(r.lines)) failed.push({ cmd: c, lines: r.lines });
+        else applied++;
+      }
+
+      // 收尾：不管重放停在哪个视图，都回到用户视图；交互式等待状态也要清掉，
+      // 否则导入完设备会卡在「等 y/n」上。
+      if (typeof E.resetCli === 'function') E.resetCli(dev);
+      else {
+        dev.cli.view = 'user-view';
+        dev.cli.stack = [];
+        dev.cli.pending = null;
+      }
+
+      results.push({
+        hostname: dev.hostname,
+        model: dev.model,
+        isNew,
+        total: p.cmds.length,
+        applied,
+        failed,
+        unknown: p.unknown,
+        skip: ''
+      });
+    }
+
+    const bad = results.reduce((n, r) => n + r.failed.length, 0);
+    const skipped = results.filter((r) => r.skip).length;
+    return {
+      ok: true,
+      headered: parsed.headered,
+      results,
+      created,
+      bad,
+      skipped,
+      message:
+        `共处理 ${results.length} 段配置` +
+        (created ? `，新建 ${created} 台设备` : '') +
+        (bad ? `，${bad} 条命令未生效` : '，全部命令生效') +
+        (skipped ? `，${skipped} 段已跳过` : '') +
+        '。'
+    };
+  }
+
+  global.NE = global.NE || {};
+  Object.assign(global.NE, {
+    Import: { parse, plan, applyConfigText, modelToKey }
   });
 })(window);
 
@@ -3433,12 +4476,14 @@
   /* ------------------------------ 布局常量 ------------------------------ */
   const COLS = 14;
   const CARD_W = 260;
+  const PC_W = 126; // PC 只有一个网口，卡片只有交换机的一半宽
+  const PC_COLS = 4; // 列数少一点，单口才不至于挤成一个小方块
   const PAD_X = 13;
   const GAP = 3;
   const PORT_H = 14;
   const HEAD_H = 46;
   const PORTS_PAD_TOP = 6;
-  const COL_W = (CARD_W - 2 * PAD_X - (COLS - 1) * GAP) / COLS;
+  const BORDER = 1; // .card 的 border 宽度。box-sizing 是 border-box，算端口坐标时必须减掉
 
   /* ------------------------------ 运行时状态 ------------------------------ */
   const UI = {
@@ -3466,18 +4511,42 @@
   }
 
   /* ------------------------------ 坐标换算 ------------------------------ */
+  /* PC 只有一个网口：卡片既矮又窄，端口网格的列数也跟着少 */
+  function cardW(dev) {
+    return dev.type === 'pc' ? PC_W : CARD_W;
+  }
+  function colsOf(dev) {
+    return dev.type === 'pc' ? PC_COLS : COLS;
+  }
+  function colW(dev) {
+    const n = colsOf(dev);
+    return (cardW(dev) - 2 * BORDER - 2 * PAD_X - (n - 1) * GAP) / n;
+  }
+  function headH(dev) {
+    return dev.type === 'pc' ? 30 : HEAD_H;
+  }
+  function portsPadTop(dev) {
+    return dev.type === 'pc' ? 4 : PORTS_PAD_TOP;
+  }
+  function cardBottomPad(dev) {
+    return dev.type === 'pc' ? 7 : 12;
+  }
+
   function portCenter(dev, idx) {
-    const col = idx % COLS;
-    const row = Math.floor(idx / COLS);
+    const cols = colsOf(dev);
+    const w = colW(dev);
+    const col = idx % cols;
+    const row = Math.floor(idx / cols);
     return {
-      x: dev.x + PAD_X + col * (COL_W + GAP) + COL_W / 2,
-      y: dev.y + HEAD_H + PORTS_PAD_TOP + row * (PORT_H + GAP) + PORT_H / 2
+      x: dev.x + BORDER + PAD_X + col * (w + GAP) + w / 2,
+      y: dev.y + BORDER + headH(dev) + portsPadTop(dev) + row * (PORT_H + GAP) + PORT_H / 2
     };
   }
 
   function cardHeight(dev) {
-    const rows = Math.ceil(dev.ports.length / COLS) || 1;
-    return HEAD_H + PORTS_PAD_TOP + rows * PORT_H + (rows - 1) * GAP + 12;
+    const cols = colsOf(dev);
+    const rows = Math.ceil(dev.ports.length / cols) || 1;
+    return 2 * BORDER + headH(dev) + portsPadTop(dev) + rows * PORT_H + (rows - 1) * GAP + cardBottomPad(dev);
   }
 
   function screenToWorld(sx, sy) {
@@ -3511,7 +4580,8 @@
     $('palette').querySelectorAll('.pal').forEach((b) => {
       b.onclick = () => {
         const w = screenToWorld(window.innerWidth / 2, window.innerHeight / 2);
-        const d = E.Net.addDevice(b.dataset.k, Math.round(w.x - CARD_W / 2 + Math.random() * 60), Math.round(w.y - 60 + Math.random() * 40));
+        const half = b.dataset.k === 'PC' ? PC_W : CARD_W;
+        const d = E.Net.addDevice(b.dataset.k, Math.round(w.x - half / 2 + Math.random() * 60), Math.round(w.y - 60 + Math.random() * 40));
         autoName(d);
         render();
         toast(`已添加 ${d.hostname}`, 'good');
@@ -3533,10 +4603,10 @@
 
     for (const d of E.Net.devices) {
       const el = document.createElement('div');
-      el.className = 'card' + (UI.selDev === d.id ? ' sel' : '');
+      el.className = 'card' + (UI.selDev === d.id ? ' sel' : '') + (d.type === 'pc' ? ' compact' : '');
       el.style.left = d.x + 'px';
       el.style.top = d.y + 'px';
-      el.style.width = CARD_W + 'px';
+      el.style.width = cardW(d) + 'px';
       el.dataset.id = d.id;
 
       const tagTxt = d.type === 'pc' ? 'PC' : d.type === 'router' ? 'Router' : d.key === 'S3700' ? 'L2 Switch' : 'L3 Switch';
@@ -3549,7 +4619,7 @@
           <span class="tag">${tagTxt}</span>
           <span class="x" title="删除设备">×</span>
         </div>
-        <div class="ports" style="grid-template-columns:repeat(${COLS},1fr)"></div>`;
+        <div class="ports" style="grid-template-columns:repeat(${colsOf(d)},1fr)"></div>`;
 
       const portsEl = el.querySelector('.ports');
       d.ports.forEach((p, i) => {
@@ -3711,10 +4781,37 @@
   }
 
   /* ------------------------------ 终端 ------------------------------ */
+  /**
+   * 展开 / 收起下方命令行面板。
+   * 收起时不清掉标签页，所以再点一次「命令行」能回到原来的会话。
+   */
+  function setTermOpen(on) {
+    $('term').classList.toggle('open', !!on);
+    if (!on) $('term').classList.remove('max');
+    syncTermBtn();
+    if (on) setTimeout(() => $('cmd').focus(), 60);
+  }
+
+  function termIsOpen() {
+    return $('term').classList.contains('open');
+  }
+
+  /** 让顶栏按钮的样式跟上当前展开状态 */
+  function syncTermBtn() {
+    const b = $('btnTerm');
+    if (!b) return;
+    const on = termIsOpen();
+    b.classList.toggle('on', on);
+    b.textContent = on ? '命令行 ⌄' : '命令行 ⌃';
+    b.title = on ? '收起下方命令行面板（Ctrl+`）' : '展开下方命令行面板（Ctrl+`）';
+  }
+
   function openConsole(dev) {
     if (!UI.tabs.includes(dev.id)) UI.tabs.push(dev.id);
     UI.activeTab = dev.id;
     $('term').classList.add('open');
+    $('term').classList.remove('max');
+    syncTermBtn();
     renderConsole();
     setTimeout(() => $('cmd').focus(), 60);
   }
@@ -3722,7 +4819,11 @@
   function closeConsole(id) {
     UI.tabs = UI.tabs.filter((t) => t !== id);
     if (UI.activeTab === id) UI.activeTab = UI.tabs[UI.tabs.length - 1] || null;
-    if (!UI.tabs.length) $('term').classList.remove('open');
+    if (!UI.tabs.length) {
+      $('term').classList.remove('open');
+      $('term').classList.remove('max');
+    }
+    syncTermBtn();
     renderConsole();
   }
 
@@ -3752,6 +4853,7 @@
       `<div class="sp">
          <button class="btn" id="btnClearLog" title="清屏">清屏</button>
          <button class="btn" id="btnMax" title="最大化 / 还原">⤢</button>
+         <button class="btn" id="btnFold" title="收起命令行面板（Ctrl+\`）">⌄ 收起</button>
        </div>`;
 
     tabsEl.querySelectorAll('.tab').forEach((t) => {
@@ -3778,6 +4880,7 @@
     tabsEl.querySelector('#btnMax').onclick = () => {
       $('term').classList.toggle('max');
     };
+    tabsEl.querySelector('#btnFold').onclick = () => setTermOpen(false);
 
     const d = activeDev();
     if (!d) return;
@@ -3887,13 +4990,15 @@
   }
 
   const CANDIDATES = {
-    'user-view': ['system-view', 'display version', 'display current-configuration', 'display ip interface brief', 'display interface ', 'display port vlan', 'display vlan', 'display ip routing-table', 'display mac-address', 'display arp', 'display stp brief', 'display eth-trunk', 'display ospf peer brief', 'display ospf interface', 'display ip pool', 'ping ', 'tracert ', 'save', 'help'],
-    'system-view': ['sysname ', 'vlan ', 'vlan batch ', 'interface ', 'ip route-static ', 'ip pool ', 'dhcp enable', 'ospf 1 router-id ', 'acl number 3000', 'stp mode rstp', 'stp priority ', 'display current-configuration', 'display this', 'save', 'quit', 'return'],
+    'user-view': ['system-view', 'display version', 'display current-configuration', 'display ip interface brief', 'display interface ', 'display port vlan', 'display vlan', 'display ip routing-table', 'display mac-address', 'display arp', 'display stp brief', 'display eth-trunk', 'display ospf peer brief', 'display ospf interface', 'display ip pool', 'display acl all', 'display nat session all', 'display port-group all', 'ping ', 'tracert ', 'save', 'help'],
+    'system-view': ['sysname ', 'vlan ', 'vlan batch ', 'interface ', 'interface range GigabitEthernet0/0/1 to GigabitEthernet0/0/5', 'port-group group-member GigabitEthernet0/0/1 to GigabitEthernet0/0/8', 'port-group 1', 'ip route-static ', 'ip pool ', 'dhcp enable', 'nat address-group 1', 'ospf 1 router-id ', 'acl number 2000', 'acl number 3000', 'stp mode rstp', 'stp priority ', 'display current-configuration', 'display this', 'save', 'quit', 'return'],
     'vlan-view': ['description ', 'name ', 'display this', 'display vlan', 'quit', 'return'],
-    'interface-view': ['description ', 'shutdown', 'undo shutdown', 'port link-type access', 'port link-type trunk', 'port default vlan ', 'port trunk allow-pass vlan ', 'undo portswitch', 'ip address ', 'eth-trunk 1', 'stp edged-port enable', 'port-security enable', 'port-security max-mac-num 2', 'traffic-filter inbound acl ', 'display this', 'display interface ', 'quit', 'return'],
-    'vlanif-view': ['ip address ', 'dhcp select global', 'description ', 'shutdown', 'undo shutdown', 'display this', 'quit', 'return'],
+    'interface-view': ['description ', 'shutdown', 'undo shutdown', 'port link-type access', 'port link-type trunk', 'port default vlan ', 'port trunk allow-pass vlan ', 'undo portswitch', 'ip address ', 'eth-trunk 1', 'stp edged-port enable', 'port-security enable', 'port-security max-mac-num 2', 'traffic-filter inbound acl 3000', 'nat outbound 2000', 'display this', 'display interface ', 'quit', 'return'],
+    'portgroup-view': ['group-member GigabitEthernet0/0/1 to GigabitEthernet0/0/8', 'description ', 'shutdown', 'undo shutdown', 'port link-type access', 'port link-type trunk', 'port default vlan ', 'port trunk allow-pass vlan ', 'stp edged-port enable', 'port-security enable', 'display this', 'quit', 'return'],
+    'vlanif-view': ['ip address ', 'dhcp select global', 'traffic-filter inbound acl 3000', 'description ', 'shutdown', 'undo shutdown', 'display this', 'quit', 'return'],
     'pool-view': ['network ', 'gateway-list ', 'dns-list ', 'excluded-ip-address ', 'lease day 1', 'display this', 'quit', 'return'],
-    'acl-view': ['rule 5 permit source ', 'rule 10 deny source ', 'display this', 'quit', 'return'],
+    'acl-view': ['rule 5 deny ip source 192.168.10.0 0.0.0.255 destination 192.168.20.0 0.0.0.255', 'rule 10 permit ip', 'rule 5 permit source ', 'undo rule 5', 'display this', 'quit', 'return'],
+    'nat-group-view': ['section 0 ', 'display this', 'quit', 'return'],
     'ospf-view': ['router-id ', 'area 0', 'display this', 'quit', 'return'],
     'ospf-area-view': ['network ', 'display this', 'quit', 'return'],
     'trunk-view': ['mode lacp-static', 'mode manual load-balance', 'ip address ', 'display this', 'quit', 'return']
@@ -4266,6 +5371,87 @@
         'PC 需要和 DHCP 服务器在同一广播域（同一 VLAN / 同一二层网络）。',
         '如果拿不到地址，按顺序检查：dhcp enable → ip pool 配置 → 接口 dhcp select global → 链路与 VLAN。'
       ]
+    },
+    {
+      id: 'acl',
+      name: '实验七 · ACL 访问控制',
+      level: '进阶',
+      desc: '1 台三层交换机 + 3 台 PC（VLAN 10 / 20 / 30）。用高级 ACL 禁止 VLAN 10 访问 VLAN 20，但仍允许访问 VLAN 30。',
+      build() {
+        const sw = mk('S5700', 340, 70, 'SW1');
+        const p1 = mk('PC', 70, 340, 'PC1');
+        const p2 = mk('PC', 340, 340, 'PC2');
+        const p3 = mk('PC', 610, 340, 'PC3');
+        setPort(p1, 0, { ip: '192.168.10.10', mask: 24, gateway: '192.168.10.1' });
+        setPort(p2, 0, { ip: '192.168.20.10', mask: 24, gateway: '192.168.20.1' });
+        setPort(p3, 0, { ip: '192.168.30.10', mask: 24, gateway: '192.168.30.1' });
+        link(p1, 0, sw, 0);
+        link(p2, 0, sw, 1);
+        link(p3, 0, sw, 2);
+        setPort(sw, 0, { mode: 'access', vlan: 10 });
+        setPort(sw, 1, { mode: 'access', vlan: 20 });
+        setPort(sw, 2, { mode: 'access', vlan: 30 });
+        [10, 20, 30].forEach((v) => {
+          if (!sw.vlans.includes(v)) sw.vlans.push(v);
+        });
+        // VLAN 与三层网关已经配好，本实验的重点是 ACL
+        [[10, '192.168.10.1'], [20, '192.168.20.1'], [30, '192.168.30.1']].forEach(([v, ip]) => {
+          sw.vlanifs.push({ vlanId: v, enabled: true, ip, mask: 24, desc: '', dhcpSelect: false });
+        });
+        return { focus: sw };
+      },
+      goals: [
+        '先在 PC1 上 <code>ping 192.168.20.10</code> 和 <code>ping 192.168.30.10</code>，确认两条路现在都通',
+        '创建高级 ACL：<code>acl number 3000</code> → <code>rule 5 deny ip source 192.168.10.0 0.0.0.255 destination 192.168.20.0 0.0.0.255</code>',
+        '补一条放行规则：<code>rule 10 permit ip</code>（否则 ACL 末尾的缺省规则会把其余流量全部丢掉）',
+        '在 VLAN 网关上下发：<code>interface Vlanif10</code> → <code>traffic-filter inbound acl 3000</code>',
+        '回到 PC1 再 ping 一次：192.168.20.10 应该不通了，192.168.30.10 仍然通',
+        '在交换机上 <code>display acl 3000</code> 查看规则与它被应用在哪个接口'
+      ],
+      tips: [
+        'ACL 是「匹配即停」：从上往下逐条比对，命中第一条就按它的 permit / deny 处理，所以放行规则要写在拒绝规则后面。',
+        'ACL 末尾有一条隐含的「拒绝所有」，只要包没命中任何 permit 就会被丢弃 —— 这就是为什么只写 deny 规则会让网络整体瘫痪。',
+        '高级 ACL 用 3000-3999，可以同时匹配源和目的地址；基本 ACL 用 2000-2999，只能匹配源地址。',
+        'ACL 本身只是一张规则表，必须被 traffic-filter（或 nat outbound）引用后才真正生效。',
+        '绑定在 Vlanif 上过滤的是该 VLAN 主机进出三层的流量；绑定在物理口上只过滤从那个口进来的流量。'
+      ]
+    },
+    {
+      id: 'nat',
+      name: '实验八 · NAT 网络地址转换',
+      level: '进阶',
+      desc: '内网 PC + 出口路由器 + 模拟 ISP。用 Easy IP 让私网主机借用出口公网地址访问 Internet。',
+      build() {
+        const p1 = mk('PC', 70, 340, 'PC1');
+        const r1 = mk('AR6121', 300, 110, 'R1');
+        const r2 = mk('AR6121', 600, 110, 'R2');
+        const p2 = mk('PC', 800, 340, 'PC2');
+        setPort(p1, 0, { ip: '192.168.1.10', mask: 24, gateway: '192.168.1.1' });
+        setPort(p2, 0, { ip: '8.8.8.2', mask: 24, gateway: '8.8.8.1' });
+        link(p1, 0, r1, 0);
+        link(r1, 1, r2, 0);
+        link(r2, 1, p2, 0);
+        setPort(r1, 0, { ip: '192.168.1.1', mask: 24 });
+        setPort(r1, 1, { ip: '200.1.1.1', mask: 24 });
+        setPort(r2, 0, { ip: '200.1.1.2', mask: 24 });
+        setPort(r2, 1, { ip: '8.8.8.1', mask: 24 });
+        return { focus: r1 };
+      },
+      goals: [
+        '确认接口地址：R1 的 GE0/0/0 = 192.168.1.1/24（内网网关），GE0/0/1 = 200.1.1.1/24（公网出口）',
+        '在 R1 上配置默认路由指向 ISP：<code>ip route-static 0.0.0.0 0 200.1.1.2</code>',
+        '先在 PC1 上 <code>ping 8.8.8.2</code>，看提示 —— 私网地址直接出公网会被丢弃',
+        '创建 ACL 指定需要转换的内网流量：<code>acl number 2000</code> → <code>rule 5 permit source 192.168.1.0 0.0.0.255</code>',
+        '在出口接口启用 Easy IP：<code>interface GigabitEthernet0/0/1</code> → <code>nat outbound 2000</code>',
+        '再 ping 一次 8.8.8.2，应该通了；然后在 R1 上 <code>display nat session all</code> 查看地址转换表项'
+      ],
+      tips: [
+        '私网地址（10./172.16-31./192.168.）在公网上不可路由，所以出公网前必须做 NAT 转换 —— 转换后源地址变成出口的公网地址。',
+        'Easy IP 直接借用出口接口的地址做转换，是家庭宽带和小型企业最常见的做法；也可以用 <code>nat address-group</code> 指定公网地址池。',
+        'NAT 里的 ACL 和过滤用的 ACL 作用不同：它只是「挑选哪些流量需要转换」，没匹配到的流量不做转换。',
+        'R2 模拟运营商设备，它上面不需要、也不应该有到 192.168.1.0/24 的路由 —— 这正是 NAT 要解决的问题。',
+        '转换结果会记录在会话表里，<code>display nat session all</code> 能看到「内网地址:端口 → 公网地址:端口」。'
+      ]
     }
   ];
 
@@ -4316,7 +5502,7 @@
     const devs = E.Net.devices;
     if (devs.length) {
       const minX = Math.min(...devs.map((d) => d.x));
-      const maxX = Math.max(...devs.map((d) => d.x)) + CARD_W;
+      const maxX = Math.max(...devs.map((d) => d.x + cardW(d)));
       const minY = Math.min(...devs.map((d) => d.y));
       const maxY = Math.max(...devs.map((d) => d.y)) + 180;
       const rect = $('stage').getBoundingClientRect();
@@ -4382,6 +5568,8 @@
           <div class="lv3"><code>[SW1-vlan10]</code><span>vlan 10 进入 VLAN 视图</span></div>
           <div class="lv3"><code>[SW1-GigabitEthernet0/0/1]</code><span>interface GE0/0/1 进入接口视图</span></div>
           <div class="lv3"><code>[SW1-Vlanif10]</code><span>interface Vlanif10</span></div>
+          <div class="lv3"><code>[SW1-port-group]</code><span>interface range / port-group group-member（批量配置端口）</span></div>
+          <div class="lv3"><code>[SW1-acl-adv-3000]</code><span>acl number 3000</span></div>
           <div class="lv3"><code>[SW1-ospf-1]</code><span>ospf 1</span></div>
           <div class="lv4"><code>[SW1-ospf-1-area-0.0.0.0]</code><span>area 0（再深一层）</span></div>
         </div>
@@ -4401,7 +5589,9 @@
           <div class="r"><b>OSPF</b><span><code>ospf 1 router-id 1.1.1.1</code> → <code>area 0</code> → <code>network 10.0.0.0 0.0.0.255</code></span></div>
           <div class="r"><b>DHCP</b><span><code>dhcp enable</code> · <code>ip pool pool1</code> · <code>network 192.168.10.0 mask 24</code> · <code>gateway-list 192.168.10.1</code> · 接口下 <code>dhcp select global</code></span></div>
           <div class="r"><b>查看</b><span><code>display this</code> · <code>display ip interface brief</code> · <code>display interface GE0/0/1</code> · <code>display port vlan</code> · <code>display vlan</code> · <code>display ip routing-table</code> · <code>display mac-address</code> · <code>display stp brief</code> · <code>display ospf peer brief</code> · <code>display ospf interface</code></span></div>
-          <div class="r"><b>ACL</b><span><code>acl number 3000</code> → <code>rule 5 deny source 192.168.10.0 0.0.0.255</code>；再在接口下 <code>traffic-filter inbound acl 3000</code></span></div>
+          <div class="r"><b>批量配端口</b><span>端口多的时候不用一个个进：<code>interface range GigabitEthernet0/0/1 to GigabitEthernet0/0/5</code>，或者 <code>port-group group-member GE0/0/1 to GE0/0/8</code>，都会进入端口组视图 <code>[SW1-port-group]</code>，之后敲的命令会批量下发到组内每个口。</span></div>
+          <div class="r"><b>ACL</b><span><code>acl number 3000</code> → <code>rule 5 deny ip source 192.168.10.0 0.0.0.255 destination 192.168.20.0 0.0.0.255</code> → <code>rule 10 permit ip</code>；再到 <code>interface Vlanif10</code> 下 <code>traffic-filter inbound acl 3000</code>。注意 ACL 末尾缺省是「拒绝所有」，别只写 deny。</span></div>
+          <div class="r"><b>NAT</b><span><code>acl number 2000</code> → <code>rule 5 permit source 192.168.1.0 0.0.0.255</code>；再到出口接口 <code>nat outbound 2000</code>（Easy IP，借用接口公网地址）。用 <code>display nat session all</code> 看转换表项。</span></div>
           <div class="r"><b>保存</b><span><code>save</code> 会先问 <code>Are you sure to continue? (y/n)</code> 再问文件名，直接回车用默认的 <code>vrpcfg.zip</code></span></div>
           <div class="r"><b>报错怎么读</b><span>错误行上面的 <code>^</code> 指出了出错的位置，例如 <code>vlan 9999</code> 的 <code>^</code> 会指在 <code>9999</code> 下面</span></div>
           <div class="r"><b>小技巧</b><span>输入 <code>?</code> 看当前视图可用命令；按 <code>Tab</code> 自动补全；↑ ↓ 翻历史命令</span></div>
@@ -4412,6 +5602,20 @@
           <div class="r"><b>缩放</b><span>按住 Ctrl 滚动滚轮</span></div>
           <div class="r"><b>删除</b><span>点设备右上角 × ，或右键设备；选中后按 Delete 键</span></div>
           <div class="r"><b>端口颜色</b><span>灰＝未连线，绿＝已连通，红＝已 shutdown，紫＝Trunk 口，黄＝当前选中待连线</span></div>
+        </div>
+        <h4 class="sec">命令行的展开与收起</h4>
+        <p class="hint">
+          下方命令行面板挡着画布的时候，点顶栏的 <code>命令行</code> 按钮即可收起，再点一次展开。
+          也可以在面板右上角点 <code>⌄ 收起</code>，或用快捷键 <code>Ctrl + \`</code>。
+          收起不会丢掉会话，展开后还是原来的标签页和提示符。
+        </p>
+        <h4 class="sec">配置的导出与导入</h4>
+        <div class="kv">
+          <div class="r"><b>导出配置</b><span>把每台设备的 <code>running-config</code> 导出成一个 .txt 文件，可以直接当作业提交。</span></div>
+          <div class="r"><b>导入配置</b><span>选一个由「导出配置」生成的文件（或任意 VRP 的 <code>current-configuration</code> 文本），模拟器会把里面的命令逐条重放回设备。<br />
+            画布上有同名设备 → 直接配到那台设备上；没有 → 按表头里的型号自动新建一台。<br />
+            导入结束会弹出一份报告，列出每台设备生效了多少条、哪些命令没生效以及原因。</span></div>
+          <div class="r"><b>注意</b><span>导出的是「设备配置」而不是「拓扑」，文件里不含连线。地址、VLAN、Trunk、ACL、NAT、路由这些配置会原样还原，但线缆要在画布上自己连回去。</span></div>
         </div>
       </div>`;
     openModal(html);
@@ -4424,7 +5628,11 @@
       toast('当前没有设备可导出', 'bad');
       return;
     }
-    const parts = ['配置导出时间：' + new Date().toLocaleString(), ''];
+    const parts = [
+      '配置导出时间：' + new Date().toLocaleString(),
+      '（本文件可以用模拟器的「导入配置」原样读回：它会按下面的设备表头逐台重放这些命令）',
+      ''
+    ];
     for (const d of E.Net.devices) {
       parts.push('='.repeat(66));
       parts.push(`设备：${d.hostname}（${d.model}）`);
@@ -4439,7 +5647,96 @@
     a.download = '网络设备配置_' + new Date().toISOString().slice(0, 10) + '.txt';
     a.click();
     setTimeout(() => URL.revokeObjectURL(url), 3000);
-    toast('配置已导出', 'good');
+    toast('配置已导出，可用「导入配置」再读回来', 'good');
+  }
+
+  /* ------------------------------ 导入配置 ------------------------------ */
+  /**
+   * 导入「导出配置」生成的文件：把里面的每一段 running-config 重放回设备。
+   *  · 拓扑里有同名设备 → 直接配到那台设备上
+   *  · 没有同名设备     → 按表头里的型号自动新建一台
+   *  · 文件没有表头     → 配到当前打开的那台设备上
+   */
+  function importConfigFile(file) {
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = () => importConfigText(String(reader.result || ''), file.name);
+    reader.onerror = () => toast('文件读取失败', 'bad');
+    reader.readAsText(file, 'utf-8');
+  }
+
+  function importConfigText(text, fileName) {
+    const res = E.Import.applyConfigText(text, { target: activeDev() });
+    if (res.ok) {
+      // 新建了设备 → 把自动命名计数器抬高，避免以后手动加设备时重名
+      for (const d of E.Net.devices) {
+        const base = d.type === 'pc' ? 'PC' : d.type === 'router' ? 'R' : 'SW';
+        const n = parseInt(String(d.hostname).replace(/^\D+/, ''), 10);
+        if (!isNaN(n)) nameSeq[base] = Math.max(nameSeq[base] || 0, n);
+      }
+      E.recomputeOspf();
+      E.recomputeStp();
+      persist();
+      render();
+      renderConsole();
+    }
+    showImportResult(res, fileName);
+    if (res.ok) toast(res.bad ? '导入完成，有部分命令未生效' : '配置导入成功', res.bad ? 'bad' : 'good');
+    return res;
+  }
+
+  function showImportResult(res, fileName) {
+    const head = res.ok
+      ? `${res.message}${fileName ? `（来源：${esc(fileName)}）` : ''}`
+      : res.message;
+
+    const rows = (res.results || [])
+      .map((r) => {
+        if (r.skip) {
+          return `<div class="improw">
+            <div class="imph"><b>${esc(r.hostname)}</b><span class="impm">${esc(r.model || '')}</span>
+              <span class="tag2 skip">跳过</span></div>
+            <div class="implist"><div class="e">${esc(r.skip)}</div></div>
+          </div>`;
+        }
+        const detail = [];
+        for (const f of r.failed) {
+          detail.push(
+            `<div><code>${esc(f.cmd)}</code><div class="e">${esc(
+              (f.lines || []).filter((l) => l.trim()).join('\n')
+            )}</div></div>`
+          );
+        }
+        for (const u of r.unknown || []) {
+          detail.push(`<div><code>${esc(u)}</code><div class="e">该行不是可识别的设备配置，已忽略。</div></div>`);
+        }
+        return `<div class="improw">
+          <div class="imph">
+            <b>${esc(r.hostname)}</b><span class="impm">${esc(r.model || '')}</span>
+            <span class="tag2 ${r.isNew ? 'new' : ''}">${r.isNew ? '新建设备' : '已有设备'}</span>
+            <span class="impn ${r.failed.length ? 'bad' : ''}">${r.applied}/${r.total} 条生效</span>
+          </div>
+          ${detail.length ? `<div class="implist">${detail.join('')}</div>` : ''}
+        </div>`;
+      })
+      .join('');
+
+    const html = `
+      <div class="mh">
+        <h2>导入配置${res.ok ? '' : '失败'}</h2>
+        <button class="btn" id="mClose">关闭</button>
+      </div>
+      <div class="mb">
+        <p class="hint">${head}</p>
+        ${rows ? `<div class="imp">${rows}</div>` : ''}
+        <h4 class="sec">请注意</h4>
+        <p class="hint">
+          导出的是「设备配置」，不包含连线。地址、VLAN、Trunk、ACL、NAT、路由等配置会原样还原，
+          但线缆需要在画布上自己连回去（拖一个端口到另一个端口即可）。
+        </p>
+      </div>`;
+    openModal(html);
+    $('mClose').onclick = closeModal;
   }
 
   /* ------------------------------ 启动 ------------------------------ */
@@ -4451,6 +5748,20 @@
     $('btnLab').onclick = showLabs;
     $('btnHelp').onclick = showHelp;
     $('btnSave').onclick = exportConfig;
+    $('btnImport').onclick = () => $('fileImport').click();
+    $('fileImport').onchange = (ev) => {
+      const f = ev.target.files && ev.target.files[0];
+      // 清空 value，这样连续导入同一个文件也能触发 change
+      ev.target.value = '';
+      importConfigFile(f);
+    };
+    $('btnTerm').onclick = () => {
+      if (!UI.tabs.length) {
+        toast('先双击一台设备打开命令行');
+        return;
+      }
+      setTermOpen(!termIsOpen());
+    };
     $('btnClear').onclick = () => {
       if (confirm('确定清空当前拓扑吗？此操作不可撤销。')) {
         clearAll();
@@ -4462,6 +5773,11 @@
     };
     document.addEventListener('keydown', (ev) => {
       if (ev.key === 'Escape') closeModal();
+      // Ctrl+` 展开 / 收起命令行面板
+      if (ev.ctrlKey && ev.key === '`') {
+        ev.preventDefault();
+        if (UI.tabs.length) setTermOpen(!termIsOpen());
+      }
     });
 
     const restored = restore();
@@ -4481,6 +5797,7 @@
       loadLab('vlan-basic');
       toast('已加载「实验一 · VLAN 基础」，点击「开始配置」即可');
     }
+    syncTermBtn();
   }
 
   // 对外可编程接口：便于自动化测试与二次集成（NE.UI.openConsole(dev) 等）
@@ -4490,6 +5807,11 @@
   UI.loadLab = loadLab;
   UI.clearAll = clearAll;
   UI.toast = toast;
+  UI.setTermOpen = setTermOpen;
+  UI.termIsOpen = termIsOpen;
+  UI.importConfigText = importConfigText;
+  UI.cardW = cardW;
+  UI.cardHeight = cardHeight;
 
   global.NE = global.NE || {};
   global.NE.UI = UI;

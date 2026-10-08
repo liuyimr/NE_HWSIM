@@ -4,6 +4,7 @@
 # 浏览器测试残留（含 Cookies / Login Data，绝对不能提交）
 .edgeprofile*/
 .edgeprofile-*/
+.smoke-profile/
 _chrome*/
 _firefox*/
 
