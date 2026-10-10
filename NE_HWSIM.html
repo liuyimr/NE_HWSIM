@@ -1,6 +1,7 @@
 <!DOCTYPE html>
 <!--
   NE_HWSIM —— 华为 VRP 网络实训模拟器（单文件版）
+  版本：v1.2.0
 
   Copyright (c) 2026 新易科技工作室 NewE
   作者：Liuyi  <yimr@sohu.com>
@@ -94,6 +95,20 @@
   }
   .stage-inner{position:absolute;inset:0;transform-origin:0 0}
   svg.wires{position:absolute;inset:0;width:100%;height:100%;pointer-events:none;overflow:visible}
+
+  /* ---------- 连线（可选中 / 可删除 / 可拖拽改接） ---------- */
+  /* 父级 svg 是 pointer-events:none，靠子元素自己把事件要回来：这样画布空白处仍能拖动平移 */
+  .wire{stroke-width:2;opacity:.85;pointer-events:none}
+  .wire-hit{stroke:transparent;stroke-width:12;pointer-events:stroke;cursor:pointer}
+  .wire-g:hover .wire{stroke-width:3;opacity:1}
+  .wire-g.sel .wire{stroke:var(--cy);stroke-width:3;opacity:1;stroke-dasharray:none}
+  .wire-rubber{stroke:var(--cy);stroke-width:2;stroke-dasharray:5 4;opacity:.9;pointer-events:none}
+  .wire-x{opacity:0;pointer-events:none;cursor:pointer;transition:opacity .12s}
+  .wire-g:hover .wire-x,.wire-g.sel .wire-x{opacity:1;pointer-events:auto}
+  .wire-x circle{fill:var(--bg2);stroke:var(--rd);stroke-width:1}
+  .wire-x path{stroke:var(--rd);stroke-width:1.5;stroke-linecap:round;fill:none}
+  .wire-x:hover circle{fill:#2d1618}
+  .wire-x:hover path{stroke:#ff8078}
 
   .card{
     position:absolute;background:var(--bg2);border:1px solid var(--line);
@@ -222,6 +237,16 @@
   .kv{display:flex;flex-direction:column;gap:8px}
   .kv .r{display:flex;gap:10px;font-size:12.5px;line-height:1.7}
   .kv .r b{flex:0 0 92px;color:var(--tx2);font-weight:500}
+  .mb a{color:#79b8ff;text-decoration:none;word-break:break-all}
+  .mb a:hover{text-decoration:underline}
+  .mb code{font-family:var(--mono);background:#0d1117;border:1px solid var(--line);padding:0 5px;border-radius:4px;color:#79b8ff}
+
+  /* ---------- 关于 ---------- */
+  .about{display:flex;flex-direction:column;align-items:center;gap:7px;padding:2px 0 4px}
+  .about-logo{width:152px;height:auto;display:block}
+  .about-name{font-size:15px;font-weight:600;display:flex;align-items:baseline;gap:8px;flex-wrap:wrap;justify-content:center}
+  .about-name span{font-size:12px;font-weight:400;color:var(--tx2)}
+  .about-ver{font-size:12px;color:var(--tx3);font-family:var(--mono)}
   h4.sec{font-size:12px;color:var(--tx3);letter-spacing:.7px;margin:16px 0 9px;text-transform:uppercase}
   h4.sec:first-child{margin-top:0}
   .mb .hint{font-size:12.5px;line-height:1.7;color:var(--tx2);margin:0 0 10px}
@@ -279,6 +304,7 @@
       <button class="btn" id="btnLab">实训实验</button>
       <button class="btn" id="btnTerm" title="展开 / 收起下方命令行面板（Ctrl+`）">命令行 ⌃</button>
       <button class="btn" id="btnHelp">帮助</button>
+      <button class="btn" id="btnAbout">关于</button>
       <button class="btn" id="btnSave">导出配置</button>
       <button class="btn" id="btnImport">导入配置</button>
       <button class="btn" id="btnClear">清空</button>
@@ -295,7 +321,8 @@
         2. 拖动图标摆放位置<br />
         3. 点一个灰口，再点另一个灰口 → 连线<br />
         4. 双击设备打开命令行<br />
-        5. 右键设备可删除
+        5. 右键设备可删除<br />
+        <b>连错了：</b>点连线选中后按 Delete，或点线上的 ×，或右键连线；也可以直接拖动线的端点改接到别的口。
       </div>
     </aside>
 
@@ -4480,6 +4507,19 @@
   const E = global.NE;
   const $ = (id) => document.getElementById(id);
 
+  /* ------------------------------ 版本信息 ------------------------------ */
+  /* 版本号的唯一来源：改这一处即可。
+     build.mjs 会把它读出来写进产物开头的注释，所以交付文件本身也能看出是哪个版本。 */
+  const APP_VERSION = '1.2.0';
+  const APP_INFO = {
+    studio: '新易科技工作室 NewE',
+    author: 'Liuyi',
+    email: 'yimr@sohu.com',
+    city: '福州',
+    repo: 'https://github.com/liuyimr/NE_HWSIM',
+    online: 'https://liuyimr.github.io/NE_HWSIM/NE_HWSIM.html'
+  };
+
   /* ------------------------------ 布局常量 ------------------------------ */
   const COLS = 14;
   const CARD_W = 260;
@@ -4498,6 +4538,8 @@
     panX: 0,
     panY: 0,
     selDev: null,
+    selCable: null, // 当前选中的连线（可 Delete 删除）
+    replug: null, // 正在拖拽改接的连线 { id, end:'a'|'b', x, y }
     pend: null, // { devId, portId }
     tabs: [],
     activeTab: null,
@@ -4639,6 +4681,13 @@
           ev.stopPropagation();
           onPortClick(d, p);
         };
+        // 双击已连线的端口 = 快速断开（比"选中连线再删"顺手）
+        pe.ondblclick = (ev) => {
+          ev.stopPropagation();
+          UI.pend = null;
+          if (p.cableId) removeCable(p.cableId);
+        };
+        pe.oncontextmenu = (ev) => ev.stopPropagation();
         portsEl.appendChild(pe);
       });
 
@@ -4689,6 +4738,14 @@
     return rows.join('  |  ');
   }
 
+  /**
+   * 画连线。每条线由三层组成：
+   *   .wire      看得见的线（本身不可点，避免挡住设备卡片）
+   *   .wire-hit  加粗的透明命中区 —— 唯一可点的部分
+   *   .wire-x    悬停 / 选中时浮现的删除按钮
+   * 父级 <svg class="wires"> 是 pointer-events:none，靠子元素自己把事件要回来，
+   * 这样画布空白处仍然能拖动平移。
+   */
   function renderWires() {
     const svg = $('wires');
     let html = '';
@@ -4701,11 +4758,58 @@
       if (ia < 0 || ib < 0) continue;
       const pa = portCenter(a, ia);
       const pb = portCenter(b, ib);
+
+      // 正在拖拽改接的这一条：不画原线，改画一条跟随鼠标的示意线
+      if (UI.replug && UI.replug.id === c.id) {
+        const fixedIdx = UI.replug.end === 'a' ? ib : ia;
+        const fixedDev = UI.replug.end === 'a' ? b : a;
+        const fp = portCenter(fixedDev, fixedIdx);
+        html += `<line class="wire-rubber" x1="${fp.x}" y1="${fp.y}"
+          x2="${UI.replug.x}" y2="${UI.replug.y}" vector-effect="non-scaling-stroke"/>`;
+        continue;
+      }
+
       const alive = !a.ports[ia].shutdown && !b.ports[ib].shutdown;
-      html += `<line x1="${pa.x}" y1="${pa.y}" x2="${pb.x}" y2="${pb.y}"
-        stroke="${alive ? '#3fb950' : '#6e7681'}" stroke-width="2" vector-effect="non-scaling-stroke" opacity="0.85"/>`;
+      const sel = UI.selCable === c.id ? ' sel' : '';
+      const mx = (pa.x + pb.x) / 2;
+      const my = (pa.y + pb.y) / 2;
+      const label = `${a.hostname} ${a.ports[ia].name} ↔ ${b.hostname} ${b.ports[ib].name}`;
+      html += `<g class="wire-g${sel}" data-cable="${c.id}">
+        <line class="wire" x1="${pa.x}" y1="${pa.y}" x2="${pb.x}" y2="${pb.y}"
+          stroke="${alive ? '#3fb950' : '#6e7681'}" vector-effect="non-scaling-stroke"/>
+        <line class="wire-hit" x1="${pa.x}" y1="${pa.y}" x2="${pb.x}" y2="${pb.y}"
+          vector-effect="non-scaling-stroke"><title>${esc(label)} —— 点击选中 / 拖动改接 / 右键删除</title></line>
+        <g class="wire-x" data-del="${c.id}" transform="translate(${mx},${my})">
+          <circle r="7.5" vector-effect="non-scaling-stroke"/>
+          <path d="M-2.7 -2.7 L2.7 2.7" vector-effect="non-scaling-stroke"/>
+          <path d="M2.7 -2.7 L-2.7 2.7" vector-effect="non-scaling-stroke"/>
+          <title>删除这条连线</title>
+        </g>
+      </g>`;
     }
     svg.innerHTML = html;
+    bindWires();
+  }
+
+  /** 连线是 innerHTML 重建的，事件得每次重新绑 */
+  function bindWires() {
+    const svg = $('wires');
+    for (const hit of svg.querySelectorAll('.wire-hit')) {
+      const id = hit.parentNode.dataset.cable;
+      hit.onmousedown = (ev) => startCableDrag(ev, id);
+      hit.oncontextmenu = (ev) => {
+        ev.preventDefault();
+        ev.stopPropagation();
+        removeCable(id);
+      };
+    }
+    for (const x of svg.querySelectorAll('.wire-x')) {
+      x.onmousedown = (ev) => ev.stopPropagation();
+      x.onclick = (ev) => {
+        ev.stopPropagation();
+        removeCable(x.dataset.del);
+      };
+    }
   }
 
   /* ------------------------------ 拖动 ------------------------------ */
@@ -4772,6 +4876,139 @@
     persist();
     render();
     toast(`${from.hostname} ${fromPort.name} ↔ ${dev.hostname} ${port.name} 连接成功`, 'good');
+  }
+
+  /**
+   * 删除一条连线。
+   * 这里**故意不加二次确认**：删线只断开物理连接，两端设备的配置一条都不会丢，
+   * 想恢复的话点两个端口就接回来了 —— 和设备删除（会丢配置，所以有确认）不是一回事。
+   */
+  function removeCable(id) {
+    const c = E.Net.getCable(id);
+    if (!c) return;
+    const a = E.Net.getDevice(c.aDeviceId);
+    const b = E.Net.getDevice(c.bDeviceId);
+    const pa = a && E.Net.getPort(a, c.aPortId);
+    const pb = b && E.Net.getPort(b, c.bPortId);
+    const label = pa && pb ? `${a.hostname} ${pa.name} ↔ ${b.hostname} ${pb.name}` : '连线';
+    E.Net.removeCable(id);
+    if (UI.selCable === id) UI.selCable = null;
+    UI.pend = null;
+    E.recomputeOspf();
+    E.recomputeStp();
+    persist();
+    render();
+    toast('已断开 ' + label, 'good');
+  }
+
+  /** 鼠标位置下面是哪个端口（拖拽改接时用来找落点） */
+  function portUnderPoint(x, y) {
+    const el = document.elementFromPoint(x, y);
+    if (!el || !el.classList || !el.classList.contains('port')) return null;
+    const card = el.closest('.card');
+    if (!card) return null;
+    const dev = E.Net.getDevice(card.dataset.id);
+    if (!dev) return null;
+    const idx = [...card.querySelectorAll('.port')].indexOf(el);
+    if (idx < 0 || !dev.ports[idx]) return null;
+    return { dev, port: dev.ports[idx] };
+  }
+
+  /** 把一条连线的一端改接到另一个端口上（先摘下来再接，失败就原样接回去） */
+  function moveCableEnd(cable, end, dev, port) {
+    if (UI.replug) UI.replug = null;
+    if (!cable || !dev || !port) return render();
+    if (port.cableId === cable.id) return render(); // 拖回原处，等于没动
+    if (port.cableId) {
+      toast(`${dev.hostname} 的 ${port.name} 已被占用`, 'bad');
+      return render();
+    }
+    const ends = {
+      a: { devId: cable.aDeviceId, portId: cable.aPortId },
+      b: { devId: cable.bDeviceId, portId: cable.bPortId }
+    };
+    const keep = end === 'a' ? ends.b : ends.a;
+    const keepDev = E.Net.getDevice(keep.devId);
+    const keepPort = keepDev && E.Net.getPort(keepDev, keep.portId);
+    if (!keepDev || !keepPort) return render();
+
+    E.Net.removeCable(cable.id);
+    const res = E.Net.addCable(keepDev, keepPort, dev, port);
+    if (!res.ok) {
+      // 接不上就把原来那条恢复，不能让学生的线凭空消失
+      const da = E.Net.getDevice(ends.a.devId);
+      const db = E.Net.getDevice(ends.b.devId);
+      if (da && db) E.Net.addCable(da, E.Net.getPort(da, ends.a.portId), db, E.Net.getPort(db, ends.b.portId));
+      toast(res.message, 'bad');
+      return render();
+    }
+    E.recomputeOspf();
+    E.recomputeStp();
+    persist();
+    UI.selCable = null;
+    render();
+    toast(`已改接到 ${dev.hostname} ${port.name}`, 'good');
+  }
+
+  /**
+   * 在连线上按下鼠标：不动就是「选中」，拖动就是「把这一端改接到别处」。
+   * 拖哪一端，看鼠标离哪个端点近。
+   */
+  function startCableDrag(ev, id) {
+    if (ev.button !== 0) return;
+    ev.preventDefault();
+    ev.stopPropagation();
+    const c = E.Net.getCable(id);
+    if (!c) return;
+    const a = E.Net.getDevice(c.aDeviceId);
+    const b = E.Net.getDevice(c.bDeviceId);
+    if (!a || !b) return;
+    const ia = a.ports.findIndex((p) => p.id === c.aPortId);
+    const ib = b.ports.findIndex((p) => p.id === c.bPortId);
+    if (ia < 0 || ib < 0) return;
+
+    let ctm;
+    try { ctm = $('wires').getScreenCTM(); } catch (e) { ctm = null; }
+    let end = 'a';
+    if (ctm) {
+      const pa = portCenter(a, ia);
+      const pb = portCenter(b, ib);
+      const sa = new DOMPoint(pa.x, pa.y).matrixTransform(ctm);
+      const sb = new DOMPoint(pb.x, pb.y).matrixTransform(ctm);
+      const da = Math.hypot(ev.clientX - sa.x, ev.clientY - sa.y);
+      const db = Math.hypot(ev.clientX - sb.x, ev.clientY - sb.y);
+      end = da <= db ? 'a' : 'b';
+    }
+
+    const sx = ev.clientX;
+    const sy = ev.clientY;
+    let moved = false;
+
+    const onMove = (e) => {
+      if (!moved && Math.hypot(e.clientX - sx, e.clientY - sy) < 5) return;
+      moved = true;
+      UI.selCable = null;
+      const w = screenToWorld(e.clientX, e.clientY);
+      UI.replug = { id, end, x: w.x, y: w.y };
+      renderWires();
+    };
+    const onUp = (e) => {
+      document.removeEventListener('mousemove', onMove);
+      document.removeEventListener('mouseup', onUp);
+      if (!moved) {
+        UI.replug = null;
+        UI.selCable = id;
+        UI.selDev = null;
+        render();
+        return;
+      }
+      const target = portUnderPoint(e.clientX, e.clientY);
+      UI.replug = null;
+      if (target) moveCableEnd(c, end, target.dev, target.port);
+      else render();
+    };
+    document.addEventListener('mousemove', onMove);
+    document.addEventListener('mouseup', onUp);
   }
 
   function removeDevice(dev) {
@@ -5062,6 +5299,7 @@
       if (ev.button === 1 || ev.button === 0) {
         UI.pend = null;
         UI.selDev = null;
+        UI.selCable = null;
         render();
         const sx = ev.clientX;
         const sy = ev.clientY;
@@ -5094,13 +5332,25 @@
       applyTransform();
     }, { passive: false });
     document.addEventListener('keydown', (ev) => {
+      // 正在命令行里打字时不要抢 Delete / Backspace（否则按退格会把选中的设备或连线删掉）
+      const tag = document.activeElement && document.activeElement.tagName;
+      if (tag === 'INPUT' || tag === 'TEXTAREA') return;
       if (ev.key === 'Escape') {
         UI.pend = null;
+        UI.replug = null;
+        UI.selCable = null;
         render();
       }
-      if (ev.key === 'Delete' && UI.selDev) {
-        const d = E.Net.getDevice(UI.selDev);
-        if (d) removeDevice(d);
+      if (ev.key === 'Delete' || ev.key === 'Backspace') {
+        if (UI.selCable) {
+          ev.preventDefault();
+          removeCable(UI.selCable);
+          return;
+        }
+        if (UI.selDev) {
+          const d = E.Net.getDevice(UI.selDev);
+          if (d) removeDevice(d);
+        }
       }
     });
   }
@@ -5610,6 +5860,9 @@
         <div class="kv">
           <div class="r"><b>平移</b><span>在空白处按住鼠标拖动</span></div>
           <div class="r"><b>缩放</b><span>按住 Ctrl 滚动滚轮</span></div>
+          <div class="r"><b>连线</b><span>点一个灰口，再点另一个灰口</span></div>
+          <div class="r"><b>断开连线</b><span><b>点连线选中后按 Delete</b>；或点线上的 ×；或右键连线；或双击已连线的端口</span></div>
+          <div class="r"><b>改接</b><span>在连线上按住拖动 → 拖到另一个空闲端口松手，就把那一端改接过去了</span></div>
           <div class="r"><b>删除</b><span>点设备右上角 × ，或右键设备；选中后按 Delete 键</span></div>
           <div class="r"><b>端口颜色</b><span>灰＝未连线，绿＝已连通，红＝已 shutdown，紫＝Trunk 口，黄＝当前选中待连线</span></div>
         </div>
@@ -5627,6 +5880,55 @@
             导入结束会弹出一份报告，列出每台设备生效了多少条、哪些命令没生效以及原因。</span></div>
           <div class="r"><b>注意</b><span>导出的是「设备配置」而不是「拓扑」，文件里不含连线。地址、VLAN、Trunk、ACL、NAT、路由这些配置会原样还原，但线缆要在画布上自己连回去。</span></div>
         </div>
+      </div>`;
+    openModal(html);
+    $('mClose').onclick = closeModal;
+  }
+
+  /* ------------------------------ 关于 ------------------------------ */
+  function showAbout() {
+    const html = `
+      <div class="mh">${LOGO_TAG}
+        <h2>关于</h2>
+        <button class="btn" id="mClose">关闭</button>
+      </div>
+      <div class="mb">
+        <div class="about">
+          <svg class="about-logo" viewBox="0 0 820 232" role="img" aria-label="NewE"><use href="#neweLogo" /></svg>
+          <div class="about-name">NE_HWSIM<span>华为 VRP 网络实训模拟器</span></div>
+          <div class="about-ver">版本 v${APP_VERSION}</div>
+        </div>
+
+        <h4 class="sec">作者</h4>
+        <div class="kv">
+          <div class="r"><b>工作室</b><span>${APP_INFO.studio}</span></div>
+          <div class="r"><b>作者</b><span>${APP_INFO.author}（${APP_INFO.city}）</span></div>
+          <div class="r"><b>邮箱</b><span><a href="mailto:${APP_INFO.email}">${APP_INFO.email}</a></span></div>
+        </div>
+
+        <h4 class="sec">这个程序</h4>
+        <div class="kv">
+          <div class="r"><b>形态</b><span>单个 HTML 文件，双击即用。没有后端、没有账号、<b>不联网、不采集任何数据</b> —— 断网也能正常跑。</span></div>
+          <div class="r"><b>内置</b><span>8 个实训实验 · 4 种设备（S5700 / S3700 / AR6121 / PC）· 华为 VRP 命令行</span></div>
+          <div class="r"><b>许可</b><span><b>MIT License</b> —— 可以自由使用、修改、商用，甚至不用告诉我</span></div>
+        </div>
+
+        <h4 class="sec">在线版与源码</h4>
+        <div class="kv">
+          <div class="r"><b>在线试玩</b><span><a href="${APP_INFO.online}" target="_blank" rel="noopener">${APP_INFO.online}</a></span></div>
+          <div class="r"><b>项目主页</b><span><a href="${APP_INFO.repo}" target="_blank" rel="noopener">${APP_INFO.repo}</a></span></div>
+          <div class="r"><b>反馈</b><span>发现 Bug，或想要某个特定实验，欢迎在项目主页提 Issue</span></div>
+        </div>
+
+        <h4 class="sec">免责声明</h4>
+        <p class="hint">
+          本项目为<b>非官方</b>教学演示工具，与华为技术有限公司（Huawei Technologies Co., Ltd.）
+          <b>无任何关联</b>，未获得其任何形式的授权、赞助或背书。
+          “Huawei”“HUAWEI”“VRP”“eNSP” 等为其各自权利人的商标或注册商标；本项目中出现这些名称，
+          仅用于说明所模拟的命令语法风格。<br />
+          模拟器的命令回显（例如 <code>display version</code> 的输出格式）为<b>自行编写的模拟内容</b>，
+          不包含华为公司的任何源代码、固件、文档或二进制文件。
+        </p>
       </div>`;
     openModal(html);
     $('mClose').onclick = closeModal;
@@ -5757,6 +6059,7 @@
 
     $('btnLab').onclick = showLabs;
     $('btnHelp').onclick = showHelp;
+    $('btnAbout').onclick = showAbout;
     $('btnSave').onclick = exportConfig;
     $('btnImport').onclick = () => $('fileImport').click();
     $('fileImport').onchange = (ev) => {
@@ -5822,6 +6125,9 @@
   UI.importConfigText = importConfigText;
   UI.cardW = cardW;
   UI.cardHeight = cardHeight;
+  UI.showAbout = showAbout;
+  UI.version = APP_VERSION;
+  UI.info = APP_INFO;
 
   global.NE = global.NE || {};
   global.NE.UI = UI;

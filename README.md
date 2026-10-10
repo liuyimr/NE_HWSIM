@@ -3,7 +3,7 @@
 **一个 HTML 文件，双击就能练华为交换机 / 路由器命令 —— 不用装 eNSP，不用装 GNS3，不联网也能用。**
 
 [![在线试玩](https://img.shields.io/badge/%E5%9C%A8%E7%BA%BF%E8%AF%95%E7%8E%A9-GitHub%20Pages-orange)](https://liuyimr.github.io/NE_HWSIM/NE_HWSIM.html)
-![单文件](https://img.shields.io/badge/%E5%8D%95%E6%96%87%E4%BB%B6-244%20KB-brightgreen)
+![单文件](https://img.shields.io/badge/%E5%8D%95%E6%96%87%E4%BB%B6-257%20KB-brightgreen)
 ![无需安装](https://img.shields.io/badge/%E6%97%A0%E9%9C%80%E5%AE%89%E8%A3%85-%E5%8F%8C%E5%87%BB%E5%8D%B3%E7%94%A8-success)
 ![离线可用](https://img.shields.io/badge/%E7%A6%BB%E7%BA%BF%E5%8F%AF%E7%94%A8-100%25-informational)
 ![许可证](https://img.shields.io/badge/license-MIT-blue)
@@ -33,7 +33,7 @@
 
 给**网络课老师**和**备考华为认证的同学**做的一个练习工具。
 
-eNSP 要装 VirtualBox，GNS3 要配镜像，虚拟机镜像动辄几个 GB，还得看电脑配置。很多学生卡在第一步就放弃了，然后就没有然后。NE_HWSIM 的判断是：**先把门槛降到零** —— 一个 244 KB 的 HTML 文件，发过去、双击、开始敲命令，整个过程不需要任何解释。
+eNSP 要装 VirtualBox，GNS3 要配镜像，虚拟机镜像动辄几个 GB，还得看电脑配置。很多学生卡在第一步就放弃了，然后就没有然后。NE_HWSIM 的判断是：**先把门槛降到零** —— 一个 257 KB 的 HTML 文件，发过去、双击、开始敲命令，整个过程不需要任何解释。
 
 它**不是**真机的替代品，也跑不了复杂的园区网。它解决的是一个很具体的问题：**让学生能在自己的笔记本上、离线、零安装地，把 VLAN / Trunk / OSPF / ACL / NAT 这些命令反复敲到熟。**
 
@@ -47,6 +47,7 @@ eNSP 要装 VirtualBox，GNS3 要配镜像，虚拟机镜像动辄几个 GB，�
 - **8 个现成实训实验**：拓扑一键加载，附实验目标 + 操作提示（见下表）
 - **批量配端口**：`interface range ge 0/0/1 to ge 0/0/5`、`port-group group-member ... to ...`（临时端口组）、`port-group 1`（命名端口组，写进配置）三种真机写法都有
 - **拖拽搭拓扑**：4 种设备随便拖，点两个端口就完成连线；线缆颜色直接反映状态（灰＝未连线，绿＝已连通，红＝shutdown，紫＝Trunk）
+- **连线可删、可改接**：点一下选中后按 `Delete`、点线中点浮现的 `×`、右键，或**双击已连线的端口**都能断开；**在连线上按住拖动就能把那一端改接到别的空闲端口**，不用先删再连（改接失败会自动回滚，不会把线弄丢）
 - **配置导入 / 导出**：导出成 txt 交给老师检查；也能再读回来。画布上没有的设备会**按型号自动新建**，导入后弹报告逐条列出哪些生效、哪些没生效、报错原文是什么
 - **进度自动保存**：关掉浏览器再打开，拓扑和配置都还在
 - **单文件、零依赖**：没有后端、没有账号、不联网、不采集任何数据
@@ -80,7 +81,7 @@ eNSP 要装 VirtualBox，GNS3 要配镜像，虚拟机镜像动辄几个 GB，�
 | | **NE_HWSIM** | eNSP | GNS3 | Cisco Packet Tracer |
 |---|---|---|---|---|
 | 安装 | **双击 HTML，零安装** | 需装 VirtualBox + eNSP | 需装虚拟机 + 导入镜像 | 需注册 Cisco 账号 |
-| 体积 | **244 KB** | 数 GB | 数 GB | 数百 MB |
+| 体积 | **257 KB** | 数 GB | 数 GB | 数百 MB |
 | 联网 | **可完全离线** | 首次需下载镜像 | 需下载镜像 | 需登录 |
 | 命令语法 | 华为 VRP | 华为 VRP | 多厂商 | Cisco IOS |
 | 上手门槛 | **极低** | 中（装环境容易失败） | 高 | 中 |
@@ -124,6 +125,9 @@ A：可以。**MIT 许可证**，随便用，商用也行，改了也不用告�
 **Q：支持 Cisco 命令吗？**
 A：不支持，只做华为 VRP 语法。想练 Cisco 请用 Packet Tracer。
 
+**Q：我怎么知道手上这个文件是哪个版本？**
+A：点顶栏 **「关于」**，里面写着版本号；用记事本打开文件，**开头的注释里也有**（比如 `版本：v1.2.0`）。下载单个 HTML 文件就能自带版本信息，不用去比对文件大小。
+
 ---
 
 ## 给老师
@@ -139,6 +143,15 @@ A：不支持，只做华为 VRP 语法。想练 Cisco 请用 Packet Tracer。
 ---
 
 ## 最近更新
+
+**v1.2.0**
+
+- **连线可以删除和改接了** —— 之前连错了只能把设备删掉重来。现在：
+  点一下选中（按 `Delete`）、点线中点的 `×`、右键、**双击已连线的端口**，四种方式都能断开；
+  **在线上按住拖动可以直接把那一端改接到别的空闲端口**，改接失败会自动回滚
+- 顶栏新增 **「关于」** 按钮：版本号、作者与联系方式、许可协议、在线版与源码链接
+- **产物自带版本号**：构建时把版本写进文件头的注释，所以发出去的单个 HTML 本身就能看出是第几版
+- 命令行输入框里的 `Delete` / `Backspace` 不再误删画布上的设备或连线
 
 **v1.1.1**
 
@@ -174,6 +187,8 @@ A：不支持，只做华为 VRP 语法。想练 Cisco 请用 Packet Tracer。
 
 做工业自动控制与楼宇智能化的，这个是给网络教学做的小工具。
 
+> 程序里点顶栏 **「关于」** 也能看到版本号、作者与许可信息。当前版本 **v1.2.0**。
+
 ---
 
 ## 许可
@@ -201,7 +216,7 @@ MIT License —— 随便用，商用也行，改了也不用说。详见 [LICEN
 
 **NE_HWSIM — a Huawei VRP network lab simulator that fits in one HTML file.**
 
-A single 244 KB HTML file. Double-click it and you get a drag-and-drop network topology builder plus a
+A single 257 KB HTML file. Double-click it and you get a drag-and-drop network topology builder plus a
 faithful Huawei VRP CLI (user view → system view → interface view → VLAN view → port-group view → ACL view
 → NAT address-pool view → OSPF area view), with authentic `^` error markers and `save` interaction.
 
@@ -210,6 +225,8 @@ faithful Huawei VRP CLI (user view → system view → interface view → VLAN v
 - **8 built-in hands-on labs** for HCIA / HCIP practice: VLAN, Trunk, inter-VLAN routing, static routing,
   OSPF, DHCP, **ACL**, **NAT**.
 - Batch port configuration (`interface range`, `port-group`), config export / import, auto-save to browser storage.
+- **Cables can be deleted or re-plugged** — click to select and press `Delete`, click the `×` on the cable,
+  right-click, or double-click a connected port; or just **drag a cable end onto another free port** to re-route it.
 - Devices: S5700 (L3 switch), S3700 (L2 switch), AR6121 (router), PC.
 
 **Try it online:** <https://liuyimr.github.io/NE_HWSIM/NE_HWSIM.html> ·
