@@ -3,7 +3,7 @@
 **一个 HTML 文件，双击就能练华为交换机 / 路由器命令 —— 不用装 eNSP，不用装 GNS3，不联网也能用。**
 
 [![在线试玩](https://img.shields.io/badge/%E5%9C%A8%E7%BA%BF%E8%AF%95%E7%8E%A9-GitHub%20Pages-orange)](https://liuyimr.github.io/NE_HWSIM/NE_HWSIM.html)
-![单文件](https://img.shields.io/badge/%E5%8D%95%E6%96%87%E4%BB%B6-257%20KB-brightgreen)
+![单文件](https://img.shields.io/badge/%E5%8D%95%E6%96%87%E4%BB%B6-282%20KB-brightgreen)
 ![无需安装](https://img.shields.io/badge/%E6%97%A0%E9%9C%80%E5%AE%89%E8%A3%85-%E5%8F%8C%E5%87%BB%E5%8D%B3%E7%94%A8-success)
 ![离线可用](https://img.shields.io/badge/%E7%A6%BB%E7%BA%BF%E5%8F%AF%E7%94%A8-100%25-informational)
 ![许可证](https://img.shields.io/badge/license-MIT-blue)
@@ -33,7 +33,7 @@
 
 给**网络课老师**和**备考华为认证的同学**做的一个练习工具。
 
-eNSP 要装 VirtualBox，GNS3 要配镜像，虚拟机镜像动辄几个 GB，还得看电脑配置。很多学生卡在第一步就放弃了，然后就没有然后。NE_HWSIM 的判断是：**先把门槛降到零** —— 一个 257 KB 的 HTML 文件，发过去、双击、开始敲命令，整个过程不需要任何解释。
+eNSP 要装 VirtualBox，GNS3 要配镜像，虚拟机镜像动辄几个 GB，还得看电脑配置。很多学生卡在第一步就放弃了，然后就没有然后。NE_HWSIM 的判断是：**先把门槛降到零** —— 一个 282 KB 的 HTML 文件，发过去、双击、开始敲命令，整个过程不需要任何解释。
 
 它**不是**真机的替代品，也跑不了复杂的园区网。它解决的是一个很具体的问题：**让学生能在自己的笔记本上、离线、零安装地，把 VLAN / Trunk / OSPF / ACL / NAT 这些命令反复敲到熟。**
 
@@ -48,9 +48,38 @@ eNSP 要装 VirtualBox，GNS3 要配镜像，虚拟机镜像动辄几个 GB，�
 - **批量配端口**：`interface range ge 0/0/1 to ge 0/0/5`、`port-group group-member ... to ...`（临时端口组）、`port-group 1`（命名端口组，写进配置）三种真机写法都有
 - **拖拽搭拓扑**：4 种设备随便拖，点两个端口就完成连线；线缆颜色直接反映状态（灰＝未连线，绿＝已连通，红＝shutdown，紫＝Trunk）
 - **连线可删、可改接**：点一下选中后按 `Delete`、点线中点浮现的 `×`、右键，或**双击已连线的端口**都能断开；**在连线上按住拖动就能把那一端改接到别的空闲端口**，不用先删再连（改接失败会自动回滚，不会把线弄丢）
+- **手机 / 平板也能用**：窄屏自动换竖版布局（设备库搬到底部横条），所有操作都有对应的手指手势 —— 拖动设备、双指捏合缩放、长按删除、连点两下开命令行（见下）
 - **配置导入 / 导出**：导出成 txt 交给老师检查；也能再读回来。画布上没有的设备会**按型号自动新建**，导入后弹报告逐条列出哪些生效、哪些没生效、报错原文是什么
 - **进度自动保存**：关掉浏览器再打开，拓扑和配置都还在
 - **单文件、零依赖**：没有后端、没有账号、不联网、不采集任何数据
+
+---
+
+## 手机 / 平板也能用
+
+同一份 HTML 文件，手机上打开就会自动切成竖版：设备库从左侧栏搬到底部一条横条，
+画布占满整个宽度，顶栏只留「实训实验 / 命令行 / 更多 ⋯」。
+
+<img src="screenshot-mobile.png" width="300" alt="NE_HWSIM 手机版：顶部三个按钮，中间是拓扑画布，底部是设备库横条">
+
+**功能一个不少，只是手势不一样：**
+
+| 操作 | 电脑 | 手机 / 平板 |
+|---|---|---|
+| 移动设备 | 按住卡片拖动 | 手指按住卡片拖动 |
+| 平移画布 | 空白处按住拖动 | 单指拖动空白处 |
+| 缩放 | `Ctrl` + 滚轮 | **双指捏合**；或右下角的 `＋` / `－` / `⛶` |
+| 连线 | 点两个灰口 | 轻点两个灰口 |
+| 打开命令行 | 双击设备 | **连点两下**设备 |
+| 删除设备 | 右键，或选中按 `Delete` | **长按**卡片；或点右上角 `×` |
+| 删除连线 | 点选中按 `Delete` / 点中点 `×` / 右键 | 轻点选中 → 点中点 `×`；或**连点两下**端口；或**长按**连线 |
+| 改接 | 在连线上按住拖动 | 手指按住连线拖动 |
+| 看端口详情 | 鼠标悬停 | **长按**端口 |
+
+卡片和端口在手机上也自动放大一档（端口高度 14px → 19px），方便手指点按。
+横屏手机会把顶栏和设备条压扁，把高度让给画布。
+
+> 手机上不需要装 App —— 把这个 HTML 文件传到手机（微信 / QQ / 网盘都行），用浏览器打开即可。
 
 ---
 
@@ -81,7 +110,7 @@ eNSP 要装 VirtualBox，GNS3 要配镜像，虚拟机镜像动辄几个 GB，�
 | | **NE_HWSIM** | eNSP | GNS3 | Cisco Packet Tracer |
 |---|---|---|---|---|
 | 安装 | **双击 HTML，零安装** | 需装 VirtualBox + eNSP | 需装虚拟机 + 导入镜像 | 需注册 Cisco 账号 |
-| 体积 | **257 KB** | 数 GB | 数 GB | 数百 MB |
+| 体积 | **282 KB** | 数 GB | 数 GB | 数百 MB |
 | 联网 | **可完全离线** | 首次需下载镜像 | 需下载镜像 | 需登录 |
 | 命令语法 | 华为 VRP | 华为 VRP | 多厂商 | Cisco IOS |
 | 上手门槛 | **极低** | 中（装环境容易失败） | 高 | 中 |
@@ -102,6 +131,10 @@ eNSP 要装 VirtualBox，GNS3 要配镜像，虚拟机镜像动辄几个 GB，�
 **`display` 系列**：`display vlan` · `display interface` · `display port vlan` · `display ip interface brief` · `display ip routing-table` · `display mac-address` · `display arp` · `display stp brief` · `display ospf peer brief` · `display ospf interface` · `display acl` · `display nat session all` · `display port-group all` · `display eth-trunk` · `display ip pool` · `display this`（任意视图可用）· `display current-configuration`
 
 **设备型号**：S5700（三层交换机）· S3700（二层交换机）· AR6121（路由器）· PC
+
+**运行环境**：电脑上用 Chrome / Edge / Firefox / Safari 双击打开即可，不需要服务器；
+手机 / 平板上同样一个文件，用系统浏览器打开就行（iOS Safari 13+ / Android Chrome）；
+窄屏（≤760px）自动切竖版布局，横屏手机自动压缩顶栏把高度让给画布。
 
 ---
 
@@ -125,8 +158,13 @@ A：可以。**MIT 许可证**，随便用，商用也行，改了也不用告�
 **Q：支持 Cisco 命令吗？**
 A：不支持，只做华为 VRP 语法。想练 Cisco 请用 Packet Tracer。
 
+**Q：手机上能用吗？**
+A：能。把同一个 HTML 文件传到手机（微信 / QQ / 网盘都行），用手机浏览器打开就会自动切成竖版：
+设备库在屏幕底部、画布占满宽度。手指拖动设备、双指捏合缩放、连点两下开命令行、长按删除设备、
+长按端口看详情 —— 功能一个不少，只是手势不一样（见上面「手机 / 平板也能用」的对照表）。
+
 **Q：我怎么知道手上这个文件是哪个版本？**
-A：点顶栏 **「关于」**，里面写着版本号；用记事本打开文件，**开头的注释里也有**（比如 `版本：v1.2.0`）。下载单个 HTML 文件就能自带版本信息，不用去比对文件大小。
+A：点顶栏 **「关于」**，里面写着版本号；用记事本打开文件，**开头的注释里也有**（比如 `版本：v1.3.0`）。下载单个 HTML 文件就能自带版本信息，不用去比对文件大小。
 
 ---
 
@@ -143,6 +181,20 @@ A：点顶栏 **「关于」**，里面写着版本号；用记事本打开文�
 ---
 
 ## 最近更新
+
+**v1.3.0**
+
+- **手机 / 平板适配** —— 之前在手机上**根本拖不动设备**（界面用的是鼠标事件，
+  而手机上抬手前不会连续触发 `mousemove`）。现在所有交互统一走 Pointer Events，
+  触摸端补齐了缺失的能力：**双指捏合缩放**、**连点两下开命令行**、**长按删除**（代替右键）、
+  **长按端口看详情**（触摸屏没有"鼠标悬停"）
+- **窄屏自动切竖版布局**：设备库从左侧栏搬到**底部一条横条**，画布占满整个宽度，
+  顶栏 7 个按钮收成「实训实验 / 命令行 / 更多 ⋯」；命令行输入框字号加大
+  （否则 iOS 聚焦时会自动放大整页），弹窗铺满整屏；卡片与端口自动放大一档，方便手指点按
+- 画布右下角新增 **＋ / － / ⛶** 缩放按钮（只在触摸设备显示，桌面保持原样，有滚轮就够）
+- 修掉一个潜藏的布局问题：**顶栏内容一旦比屏幕宽，手机浏览器会把整个视口缩小放大，
+  导致界面全乱**。窄屏隐藏品牌文字后恢复正常
+- 顺带把卡片几何统一成一组 CSS 变量（原来 JS 和 CSS 各写一份，改一处连线就会偏离端口中心）
 
 **v1.2.0**
 
@@ -187,7 +239,7 @@ A：点顶栏 **「关于」**，里面写着版本号；用记事本打开文�
 
 做工业自动控制与楼宇智能化的，这个是给网络教学做的小工具。
 
-> 程序里点顶栏 **「关于」** 也能看到版本号、作者与许可信息。当前版本 **v1.2.0**。
+> 程序里点顶栏 **「关于」** 也能看到版本号、作者与许可信息。当前版本 **v1.3.0**。
 
 ---
 
@@ -216,7 +268,7 @@ MIT License —— 随便用，商用也行，改了也不用说。详见 [LICEN
 
 **NE_HWSIM — a Huawei VRP network lab simulator that fits in one HTML file.**
 
-A single 257 KB HTML file. Double-click it and you get a drag-and-drop network topology builder plus a
+A single 282 KB HTML file. Double-click it and you get a drag-and-drop network topology builder plus a
 faithful Huawei VRP CLI (user view → system view → interface view → VLAN view → port-group view → ACL view
 → NAT address-pool view → OSPF area view), with authentic `^` error markers and `save` interaction.
 
@@ -227,6 +279,9 @@ faithful Huawei VRP CLI (user view → system view → interface view → VLAN v
 - Batch port configuration (`interface range`, `port-group`), config export / import, auto-save to browser storage.
 - **Cables can be deleted or re-plugged** — click to select and press `Delete`, click the `×` on the cable,
   right-click, or double-click a connected port; or just **drag a cable end onto another free port** to re-route it.
+- **Works on phones and tablets too** — the same single HTML file. On a narrow screen the layout switches
+  to portrait (device palette moves to a bottom strip), and every action has a touch gesture: drag devices,
+  pinch to zoom, double-tap to open the CLI, long-press to delete.
 - Devices: S5700 (L3 switch), S3700 (L2 switch), AR6121 (router), PC.
 
 **Try it online:** <https://liuyimr.github.io/NE_HWSIM/NE_HWSIM.html> ·

@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <!--
   NE_HWSIM —— 华为 VRP 网络实训模拟器（单文件版）
-  版本：v1.2.0
+  版本：v1.3.0
 
   Copyright (c) 2026 新易科技工作室 NewE
   作者：Liuyi  <yimr@sohu.com>
@@ -15,7 +15,7 @@
 <html lang="zh-CN">
 <head>
 <meta charset="UTF-8" />
-<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
 <title>NE_HWSIM · 华为 VRP 网络实训模拟器</title>
 <style>
   :root{
@@ -23,6 +23,14 @@
     --tx:#e6edf3; --tx2:#8b949e; --tx3:#6e7681;
     --cy:#2f81f7; --gr:#3fb950; --or:#d29922; --rd:#f85149; --pu:#a371f7;
     --mono:"Consolas","Cascadia Mono","JetBrains Mono",Menlo,monospace;
+    /* 卡片几何：JS 的 portCenter()/cardHeight() 也从这里读，两边只有这一个来源。
+       手机（<=760px）那组数值在下面的媒体查询里改 —— 改完 JS 自动跟着走，
+       以前 JS 和 CSS 各写一份，改一处连线就会偏离端口中心。 */
+    --card-w:260px; --card-w-pc:126px;
+    --pad-x:13px; --gap:3px; --port-h:14px;
+    --head-h:46px; --head-h-pc:30px;
+    --ports-pt:6px; --ports-pt-pc:4px;
+    --ports-pb:12px; --ports-pb-pc:7px;
   }
   *{box-sizing:border-box;margin:0;padding:0}
   html,body{height:100%}
@@ -31,21 +39,29 @@
     font-family:"Microsoft YaHei","PingFang SC","Segoe UI",sans-serif;
     font-size:13px;overflow:hidden;
     -webkit-font-smoothing:antialiased;
+    /* 手机上按住卡片会弹出「复制/搜索」气泡、点一下会有灰色高亮块，都比较碍事 */
+    -webkit-tap-highlight-color:transparent;
+    -webkit-touch-callout:none;
+    overscroll-behavior:none;
   }
   button{font-family:inherit;font-size:13px;cursor:pointer;border:none;background:none;color:inherit}
   input,select{font-family:inherit;font-size:13px}
 
   /* ---------- 布局 ---------- */
-  .app{display:flex;flex-direction:column;height:100vh}
+  /* 100dvh：手机浏览器地址栏会伸缩，用 vh 会让底部按钮被挡住 */
+  .app{display:flex;flex-direction:column;height:100vh;height:100dvh}
   .topbar{
     height:48px;flex:0 0 48px;display:flex;align-items:center;gap:14px;
     padding:0 14px;background:var(--bg2);border-bottom:1px solid var(--line);
+    min-width:0; /* 顶栏内容不能把页面撑宽（手机上会被浏览器判定为"需要缩小显示"） */
   }
-  .brand{display:flex;align-items:center;gap:10px;font-weight:700;letter-spacing:.3px}
-  /* NewE 标识：内联 SVG（保证单文件 0 外部引用），矢量描摹自官方 LOGO */
+  .brand{display:flex;align-items:center;gap:10px;font-weight:700;letter-spacing:.3px;min-width:0}
+  /* NewE 标识：内联 SVG（保证单文件 0 外部引用），矢量描摹自官方 LOGO。
+     注意它的宽度是按 viewBox 比例算出来的：height 24px → 宽约 85px，别按 24 估。 */
   .brand .brand-logo{height:27px;width:auto;display:block;flex:0 0 auto}
-  .brand small{font-weight:400;color:var(--tx3);font-size:11px;margin-left:2px}
-  .tb-actions{margin-left:auto;display:flex;gap:8px;align-items:center}
+  .brand .brand-name{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .brand small{font-weight:400;color:var(--tx3);font-size:11px;margin-left:2px;white-space:nowrap}
+  .tb-actions{margin-left:auto;display:flex;gap:8px;align-items:center;flex:0 0 auto}
   .btn{
     padding:6px 12px;border-radius:6px;border:1px solid var(--line);
     background:var(--bg3);color:var(--tx);transition:.15s;white-space:nowrap;
@@ -59,7 +75,7 @@
   .btn.on{border-color:var(--cy);color:#79b8ff;background:#12233b}
   .btn.on:hover{background:#16304f}
 
-  .main{flex:1;display:flex;min-height:0}
+  .main{flex:1;display:flex;min-height:0;min-width:0}
 
   /* ---------- 左栏 ---------- */
   .side{
@@ -92,9 +108,27 @@
   /* ---------- 画布 ---------- */
   .stage{flex:1;position:relative;overflow:hidden;background:
     radial-gradient(circle at 1px 1px,#22282f 1px,transparent 0) 0 0/22px 22px;
+    /* 触摸端：画布自己处理单指平移 / 双指缩放，别让浏览器抢去做页面滚动或双击放大 */
+    touch-action:none;
   }
   .stage-inner{position:absolute;inset:0;transform-origin:0 0}
   svg.wires{position:absolute;inset:0;width:100%;height:100%;pointer-events:none;overflow:visible}
+
+  /* ---------- 右下角缩放按钮 ---------- */
+  /* 触摸设备没法用滚轮，才需要这几个按钮；鼠标设备（能悬停 + 精细指针）藏起来，桌面保持干净 */
+  .zoombar{
+    position:absolute;right:10px;bottom:10px;display:flex;flex-direction:column;gap:6px;z-index:6;
+  }
+  @media (hover: hover) and (pointer: fine){
+    .zoombar{display:none}
+  }
+  .zoombar button{
+    width:38px;height:38px;border-radius:9px;border:1px solid var(--line);background:rgba(22,27,34,.92);
+    color:var(--tx2);font-size:16px;line-height:1;display:flex;align-items:center;justify-content:center;
+    backdrop-filter:blur(3px);
+  }
+  .zoombar button:hover{border-color:var(--cy);color:var(--tx)}
+  .zoombar button:active{background:#1f2733}
 
   /* ---------- 连线（可选中 / 可删除 / 可拖拽改接） ---------- */
   /* 父级 svg 是 pointer-events:none，靠子元素自己把事件要回来：这样画布空白处仍能拖动平移 */
@@ -105,6 +139,8 @@
   .wire-rubber{stroke:var(--cy);stroke-width:2;stroke-dasharray:5 4;opacity:.9;pointer-events:none}
   .wire-x{opacity:0;pointer-events:none;cursor:pointer;transition:opacity .12s}
   .wire-g:hover .wire-x,.wire-g.sel .wire-x{opacity:1;pointer-events:auto}
+  /* 内层 <g> 才有 transform，外层那个 translate() 是定位用的，不能被 CSS 覆盖掉 */
+  .wire-x-in{transform:scale(1);transform-origin:0 0}
   .wire-x circle{fill:var(--bg2);stroke:var(--rd);stroke-width:1}
   .wire-x path{stroke:var(--rd);stroke-width:1.5;stroke-linecap:round;fill:none}
   .wire-x:hover circle{fill:#2d1618}
@@ -113,12 +149,12 @@
   .card{
     position:absolute;background:var(--bg2);border:1px solid var(--line);
     border-radius:10px;user-select:none;box-shadow:0 6px 22px rgba(0,0,0,.45);
-    transition:border-color .15s, box-shadow .15s;
+    transition:border-color .15s, box-shadow .15s;touch-action:none;
   }
   .card:hover{border-color:#4b5563}
   .card.sel{border-color:var(--cy);box-shadow:0 0 0 2px rgba(47,129,247,.28),0 6px 22px rgba(0,0,0,.5)}
   .card .head{
-    height:46px;padding:7px 11px 0;cursor:move;display:flex;align-items:flex-start;gap:8px;
+    height:var(--head-h);padding:7px 11px 0;cursor:move;display:flex;align-items:flex-start;gap:8px;
   }
   .card .head .nm{font-size:12.5px;font-weight:600;line-height:1.3;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
   .card .head .md{font-size:10px;color:var(--tx3);line-height:1.5;margin-top:1px}
@@ -130,17 +166,17 @@
     margin-left:auto;color:var(--tx3);font-size:15px;line-height:1;padding:2px 4px;border-radius:4px;
   }
   .card .head .x:hover{color:var(--rd);background:#2d1618}
-  .ports{display:grid;gap:3px;padding:6px 13px 12px}
+  .ports{display:grid;gap:var(--gap);padding:var(--ports-pt) var(--pad-x) var(--ports-pb)}
   /* PC 只有一个网口，卡片既矮又窄（宽度由 JS 按设备类型给），头部元素跟着收紧 */
-  .card.compact .head{height:30px;padding:0 10px;gap:6px;align-items:center}
+  .card.compact .head{height:var(--head-h-pc);padding:0 10px;gap:6px;align-items:center}
   .card.compact .head .md{display:none}
   .card.compact .head .nm{font-size:12px}
   .card.compact .head .tag{font-size:9.5px;padding:0 5px}
   .card.compact .head .x{padding:2px 2px}
-  .card.compact .ports{padding:4px 13px 7px}
+  .card.compact .ports{padding:var(--ports-pt-pc) var(--pad-x) var(--ports-pb-pc)}
   .port{
-    height:14px;border-radius:3px;background:#30363d;border:1px solid #3d444d;
-    cursor:crosshair;position:relative;transition:.12s;
+    height:var(--port-h);border-radius:3px;background:#30363d;border:1px solid #3d444d;
+    cursor:crosshair;position:relative;transition:.12s;touch-action:none;
   }
   .port:hover{background:var(--cy);border-color:#79b8ff;transform:scale(1.16);z-index:3}
   .port.up{background:#1f6f36;border-color:#2ea043}
@@ -160,12 +196,13 @@
   }
   .empty b{font-size:15px;color:var(--tx2);font-weight:600}
   .empty p{font-size:12px;line-height:1.9}
+  .empty .empty-tip{color:var(--tx3);opacity:.85}
   .empty .empty-logo{width:172px;height:auto;opacity:.92;margin-bottom:2px}
 
   /* ---------- 终端 ---------- */
   .term{
     flex:0 0 0;height:0;background:var(--bg2);border-top:1px solid var(--line);
-    display:flex;flex-direction:column;overflow:hidden;transition:height .18s ease;
+    display:flex;flex-direction:column;overflow:hidden;transition:height .18s ease;min-width:0;
   }
   .term.open{flex:0 0 336px;height:336px}
   .term.max{flex:0 0 62vh;height:62vh}
@@ -283,7 +320,108 @@
   .toast.on{opacity:1;transform:translateX(-50%) translateY(0)}
   .toast.bad{border-color:#8b3a3a;color:#ffb3ae}
   .toast.good{border-color:#2ea043;color:#8ee99b}
-  @media(max-width:900px){
+
+  /* ---------- 窄屏顶栏的「更多」菜单 ---------- */
+  /* 宽屏走 .only-wide（全部按钮直接显示），窄屏走 .only-narrow（收进菜单） */
+  .only-narrow{display:none}
+  .moremenu{
+    position:absolute;top:52px;right:10px;z-index:120;min-width:158px;
+    background:var(--bg2);border:1px solid var(--line);border-radius:10px;padding:6px;
+    box-shadow:0 12px 34px rgba(0,0,0,.6);display:none;flex-direction:column;
+  }
+  .moremenu.on{display:flex}
+  .moremenu button{
+    display:block;width:100%;text-align:left;padding:11px 12px;border-radius:7px;
+    font-size:13.5px;color:var(--tx);
+  }
+  .moremenu button:active,.moremenu button:hover{background:#22272e}
+  .moremenu hr{border:none;border-top:1px solid var(--line);margin:5px 2px}
+
+  /* ==================== 窄屏 / 手机（<=760px，或矮视口的横屏手机） ==================== */
+  /* 横屏手机宽 844、高只有 390：宽度过了 760，但仍然是手机，也得走竖版布局 */
+  @media (max-width:760px), (max-width:1024px) and (max-height:520px){
+    /* 卡片放大一档：端口从 14px 高加到 19px，手指点得中；JS 会跟着读这组变量 */
+    :root{
+      --card-w:300px; --card-w-pc:132px;
+      --port-h:19px; --gap:4px; --pad-x:12px;
+      --head-h:50px; --head-h-pc:36px;
+      --ports-pt:7px; --ports-pt-pc:5px;
+      --ports-pb:14px; --ports-pb-pc:9px;
+    }
+    body{font-size:14px}
+
+    /* 顶栏：品牌只留标识（NewE 图形本身已经是品牌），其余按钮收进「更多」。
+       这里必须保证内容 <= 屏宽：一旦撑宽，手机浏览器会把整个视口放大来"装下"，
+       表现就是所有东西都变小、位置全乱。 */
+    .topbar{height:46px;flex-basis:46px;gap:8px;padding:0 10px;overflow:hidden}
+    .brand{gap:7px}
+    .brand .brand-logo{height:24px}
+    .brand .brand-name{display:none}
+    .brand small{display:none}
+    .tb-actions{gap:6px}
+    .tb-actions .btn{padding:8px 10px;font-size:13px}
+    .only-wide{display:none}
+    .only-narrow{display:inline-flex}
+
+    /* 主区改成上下：画布在上，设备库在下面一条横条里 */
+    .main{flex-direction:column}
+    .stage{order:1;flex:1 1 auto;min-height:0}
+    .side{
+      order:2;width:100%;flex:0 0 auto;flex-direction:row;align-items:stretch;
+      border-right:none;border-top:1px solid var(--line);overflow-x:auto;overflow-y:hidden;
+    }
+    .side h3{display:none}
+    .side .hint{display:none} /* 太长，窄屏不占地方；帮助弹窗里有完整说明 */
+    .palette{flex-direction:row;gap:8px;padding:7px 10px}
+    .pal{
+      flex-direction:column;gap:2px;padding:7px 10px;min-width:72px;
+      justify-content:center;align-items:center;text-align:center;
+    }
+    .pal .ic{width:26px;height:26px;font-size:14px}
+    .pal .tx b{font-size:12px;white-space:nowrap}
+    /* 型号那行在小屏上一换行，整个设备条就高一截，得不偿失 —— 直接省掉 */
+    .pal .tx span{display:none}
+
+    /* 命令行：展开放大一些，输入框字号 >=16px，否则 iOS 聚焦时会自动放大整页 */
+    .term.open{flex:0 0 48dvh;height:48dvh}
+    .term.max{flex:0 0 76dvh;height:76dvh}
+    .tabs{min-height:40px;overflow-x:auto}
+    .tab{padding:10px 12px;font-size:12.5px}
+    .tabs .sp .btn{padding:5px 9px}
+    .screen{
+      font-size:12.5px;padding:8px 10px 12px;-webkit-overflow-scrolling:touch;
+      /* 窄屏上按空格换行即可 —— break-all 会把 FWD 断成 F / WD，看表格很难受 */
+      word-break:normal;overflow-wrap:break-word;
+    }
+    .inrow{padding:7px 10px}
+    .inrow .pr{font-size:14px}
+    .inrow input{font-size:16px;padding:5px 0}
+
+    /* 弹窗铺满，别在窄屏上两边留一堆空 */
+    .mask{padding:0;align-items:stretch}
+    .modal{max-width:none;width:100%;max-height:none;height:100%;border-radius:0;border:none}
+    .modal .mh{padding:13px 14px;position:sticky;top:0;background:var(--bg2);z-index:2}
+    .modal .mb{padding:14px}
+    .labgrid{grid-template-columns:1fr}
+    .kv .r{flex-direction:column;gap:2px}
+    .kv .r b{flex:none}
+    .card .head .x{font-size:17px;padding:4px 6px}
+    .wire-x-in{transform:scale(1.35)}
+    .zoombar button{width:42px;height:42px;font-size:17px}
+    .toast{bottom:auto;top:54px;max-width:88vw;font-size:13px}
+  }
+
+  /* 横屏手机：顶栏和设备条都压扁，把高度让给画布 */
+  @media(max-width:900px) and (max-height:480px){
+    .topbar{height:40px;flex-basis:40px}
+    .palette{padding:5px 8px}
+    .pal{padding:5px 9px;min-width:70px}
+    .pal .tx span{display:none}
+    .zoombar button{width:34px;height:34px}
+  }
+
+  /* 平板 / 小窗（还没有窄到要用手机布局）：侧栏收窄一点 */
+  @media(min-width:761px) and (max-width:900px){
     .side{width:154px;flex-basis:154px}
     .labgrid{grid-template-columns:1fr}
   }
@@ -297,18 +435,30 @@
   <div class="topbar">
     <div class="brand">
       <svg class="brand-logo" viewBox="0 0 820 232" role="img" aria-label="NewE"><use href="#neweLogo" /></svg>
-      NE_HWSIM
+      <span class="brand-name">NE_HWSIM</span>
       <small>华为 VRP 交换机 / 路由器实训模拟器</small>
     </div>
     <div class="tb-actions">
       <button class="btn" id="btnLab">实训实验</button>
       <button class="btn" id="btnTerm" title="展开 / 收起下方命令行面板（Ctrl+`）">命令行 ⌃</button>
-      <button class="btn" id="btnHelp">帮助</button>
-      <button class="btn" id="btnAbout">关于</button>
-      <button class="btn" id="btnSave">导出配置</button>
-      <button class="btn" id="btnImport">导入配置</button>
-      <button class="btn" id="btnClear">清空</button>
+      <button class="btn only-wide" id="btnHelp">帮助</button>
+      <button class="btn only-wide" id="btnAbout">关于</button>
+      <button class="btn only-wide" id="btnSave">导出配置</button>
+      <button class="btn only-wide" id="btnImport">导入配置</button>
+      <button class="btn only-wide" id="btnClear">清空</button>
+      <button class="btn only-narrow" id="btnMore" aria-haspopup="true" aria-expanded="false">更多 ⋯</button>
     </div>
+  </div>
+
+  <!-- 窄屏顶栏放不下时，其余操作收在这里 -->
+  <div class="moremenu" id="moreMenu">
+    <button data-act="help">帮助</button>
+    <button data-act="about">关于</button>
+    <hr />
+    <button data-act="save">导出配置</button>
+    <button data-act="import">导入配置</button>
+    <hr />
+    <button data-act="clear">清空拓扑</button>
   </div>
 
   <div class="main">
@@ -318,11 +468,12 @@
       <div class="hint">
         <b>怎么用：</b><br />
         1. 点左侧设备加入拓扑<br />
-        2. 拖动图标摆放位置<br />
+        2. <b>按住卡片拖动</b>摆放位置<br />
         3. 点一个灰口，再点另一个灰口 → 连线<br />
         4. 双击设备打开命令行<br />
         5. 右键设备可删除<br />
-        <b>连错了：</b>点连线选中后按 Delete，或点线上的 ×，或右键连线；也可以直接拖动线的端点改接到别的口。
+        <b>连错了：</b>点连线选中后按 Delete，或点线上的 ×，或右键连线；也可以直接拖动线的端点改接到别的口。<br />
+        <b>手机上：</b>手指拖卡片=移动；拖空白=平移；两指捏合=缩放；双击=打开命令行；长按=删除；右下角有缩放按钮。
       </div>
     </aside>
 
@@ -333,8 +484,15 @@
         <div class="empty" id="empty">
           <svg class="empty-logo" viewBox="0 0 820 232" role="img" aria-label="NewE"><use href="#neweLogo" /></svg>
           <b>画布是空的</b>
-          <p>从左侧点选设备加入拓扑，或打开「实训实验」直接加载一套现成的实验环境。</p>
+          <p>从「设备库」点选设备加入拓扑，或打开「实训实验」直接加载一套现成的实验环境。<br />
+             <span class="empty-tip">按住卡片可拖动摆放，拖空白处可平移画布</span></p>
         </div>
+      </div>
+      <!-- 触摸端没有滚轮，用这三个按钮缩放 / 复位视图 -->
+      <div class="zoombar" id="zoomBar">
+        <button id="btnZoomIn" title="放大" aria-label="放大">＋</button>
+        <button id="btnZoomOut" title="缩小" aria-label="缩小">－</button>
+        <button id="btnZoomFit" title="适应画布" aria-label="适应画布">⛶</button>
       </div>
     </div>
   </div>
@@ -4510,7 +4668,7 @@
   /* ------------------------------ 版本信息 ------------------------------ */
   /* 版本号的唯一来源：改这一处即可。
      build.mjs 会把它读出来写进产物开头的注释，所以交付文件本身也能看出是哪个版本。 */
-  const APP_VERSION = '1.2.0';
+  const APP_VERSION = '1.3.0';
   const APP_INFO = {
     studio: '新易科技工作室 NewE',
     author: 'Liuyi',
@@ -4520,17 +4678,45 @@
     online: 'https://liuyimr.github.io/NE_HWSIM/NE_HWSIM.html'
   };
 
-  /* ------------------------------ 布局常量 ------------------------------ */
+  /* ------------------------------ 布局尺寸 ------------------------------ */
+  /* 尺寸的唯一来源是 index.html 里的 CSS 变量（--card-w / --port-h / --head-h ...）。
+     移动端的媒体查询只改那几个变量，JS 这边跟着变，两边不会各写一套导致连线端点错位。
+     （过去 JS 和 CSS 各写一份，改一处就会让连线偏离端口中心。） */
   const COLS = 14;
-  const CARD_W = 260;
-  const PC_W = 126; // PC 只有一个网口，卡片只有交换机的一半宽
-  const PC_COLS = 4; // 列数少一点，单口才不至于挤成一个小方块
-  const PAD_X = 13;
-  const GAP = 3;
-  const PORT_H = 14;
-  const HEAD_H = 46;
-  const PORTS_PAD_TOP = 6;
+  const PC_COLS = 4; // PC 只有一个网口，列数少一点，单口才不至于挤成一个小方块
   const BORDER = 1; // .card 的 border 宽度。box-sizing 是 border-box，算端口坐标时必须减掉
+
+  const M_FALLBACK = {
+    cardW: 260, pcW: 126, padX: 13, gap: 3, portH: 14,
+    headH: 46, headHPc: 30, portsPadTop: 6, portsPadTopPc: 4, cardBottomPad: 12, cardBottomPadPc: 7
+  };
+  let M = null; // 缓存的尺寸表
+  function metrics() {
+    if (M) return M;
+    const cs = getComputedStyle(document.documentElement);
+    const px = (name, dft) => {
+      const v = parseFloat(cs.getPropertyValue(name));
+      return Number.isFinite(v) ? v : dft;
+    };
+    M = {
+      cardW: px('--card-w', M_FALLBACK.cardW),
+      pcW: px('--card-w-pc', M_FALLBACK.pcW),
+      padX: px('--pad-x', M_FALLBACK.padX),
+      gap: px('--gap', M_FALLBACK.gap),
+      portH: px('--port-h', M_FALLBACK.portH),
+      headH: px('--head-h', M_FALLBACK.headH),
+      headHPc: px('--head-h-pc', M_FALLBACK.headHPc),
+      portsPadTop: px('--ports-pt', M_FALLBACK.portsPadTop),
+      portsPadTopPc: px('--ports-pt-pc', M_FALLBACK.portsPadTopPc),
+      cardBottomPad: px('--ports-pb', M_FALLBACK.cardBottomPad),
+      cardBottomPadPc: px('--ports-pb-pc', M_FALLBACK.cardBottomPadPc)
+    };
+    return M;
+  }
+  /** 尺寸可能随窗口/旋屏/媒体查询变化，这些时机要丢掉缓存重新读 */
+  function invalidateMetrics() {
+    M = null;
+  }
 
   /* ------------------------------ 运行时状态 ------------------------------ */
   const UI = {
@@ -4562,40 +4748,47 @@
   /* ------------------------------ 坐标换算 ------------------------------ */
   /* PC 只有一个网口：卡片既矮又窄，端口网格的列数也跟着少 */
   function cardW(dev) {
-    return dev.type === 'pc' ? PC_W : CARD_W;
+    const m = metrics();
+    return dev.type === 'pc' ? m.pcW : m.cardW;
   }
   function colsOf(dev) {
     return dev.type === 'pc' ? PC_COLS : COLS;
   }
   function colW(dev) {
+    const m = metrics();
     const n = colsOf(dev);
-    return (cardW(dev) - 2 * BORDER - 2 * PAD_X - (n - 1) * GAP) / n;
+    return (cardW(dev) - 2 * BORDER - 2 * m.padX - (n - 1) * m.gap) / n;
   }
   function headH(dev) {
-    return dev.type === 'pc' ? 30 : HEAD_H;
+    const m = metrics();
+    return dev.type === 'pc' ? m.headHPc : m.headH;
   }
   function portsPadTop(dev) {
-    return dev.type === 'pc' ? 4 : PORTS_PAD_TOP;
+    const m = metrics();
+    return dev.type === 'pc' ? m.portsPadTopPc : m.portsPadTop;
   }
   function cardBottomPad(dev) {
-    return dev.type === 'pc' ? 7 : 12;
+    const m = metrics();
+    return dev.type === 'pc' ? m.cardBottomPadPc : m.cardBottomPad;
   }
 
   function portCenter(dev, idx) {
+    const m = metrics();
     const cols = colsOf(dev);
     const w = colW(dev);
     const col = idx % cols;
     const row = Math.floor(idx / cols);
     return {
-      x: dev.x + BORDER + PAD_X + col * (w + GAP) + w / 2,
-      y: dev.y + BORDER + headH(dev) + portsPadTop(dev) + row * (PORT_H + GAP) + PORT_H / 2
+      x: dev.x + BORDER + m.padX + col * (w + m.gap) + w / 2,
+      y: dev.y + BORDER + headH(dev) + portsPadTop(dev) + row * (m.portH + m.gap) + m.portH / 2
     };
   }
 
   function cardHeight(dev) {
+    const m = metrics();
     const cols = colsOf(dev);
     const rows = Math.ceil(dev.ports.length / cols) || 1;
-    return 2 * BORDER + headH(dev) + portsPadTop(dev) + rows * PORT_H + (rows - 1) * GAP + cardBottomPad(dev);
+    return 2 * BORDER + headH(dev) + portsPadTop(dev) + rows * m.portH + (rows - 1) * m.gap + cardBottomPad(dev);
   }
 
   function screenToWorld(sx, sy) {
@@ -4628,12 +4821,19 @@
       .join('');
     $('palette').querySelectorAll('.pal').forEach((b) => {
       b.onclick = () => {
-        const w = screenToWorld(window.innerWidth / 2, window.innerHeight / 2);
-        const half = b.dataset.k === 'PC' ? PC_W : CARD_W;
-        const d = E.Net.addDevice(b.dataset.k, Math.round(w.x - half / 2 + Math.random() * 60), Math.round(w.y - 60 + Math.random() * 40));
+        const m = metrics();
+        // 放到「当前可见画布」的中心，而不是整个窗口中心 —— 手机上有底部设备条和命令行面板，窗口中心会偏
+        const rect = $('stage').getBoundingClientRect();
+        const w = screenToWorld(rect.left + rect.width / 2, rect.top + rect.height / 2);
+        const half = b.dataset.k === 'PC' ? m.pcW : m.cardW;
+        // 加一点随机偏移，连续加多台不会完全重叠
+        const n = E.Net.devices.length;
+        const dx = (n % 3) * 34 - 34;
+        const dy = (n % 4) * 30 - 30;
+        const d = E.Net.addDevice(b.dataset.k, Math.round(w.x - half / 2 + dx), Math.round(w.y - 60 + dy));
         autoName(d);
         render();
-        toast(`已添加 ${d.hostname}`, 'good');
+        toast(`已添加 ${d.hostname}，拖动卡片摆放位置`, 'good');
       };
     });
   }
@@ -4676,42 +4876,68 @@
         pe.className = 'port ' + portClass(d, p);
         pe.title = `${p.name}\n${portTitle(d, p)}`;
         pe.innerHTML = `<span class="lab">${p.name.replace('GigabitEthernet', 'GE')}</span>`;
-        pe.onmousedown = (ev) => ev.stopPropagation();
-        pe.onclick = (ev) => {
-          ev.stopPropagation();
-          onPortClick(d, p);
-        };
-        // 双击已连线的端口 = 快速断开（比"选中连线再删"顺手）
-        pe.ondblclick = (ev) => {
-          ev.stopPropagation();
-          UI.pend = null;
-          if (p.cableId) removeCable(p.cableId);
-        };
-        pe.oncontextmenu = (ev) => ev.stopPropagation();
+        // 端口不参与卡片拖动，事件也不往卡片冒泡（否则点端口会顺手把卡片拖走）
+        pe.addEventListener('pointerdown', (ev) => ev.stopPropagation());
+        bindGestures(pe, {
+          slop: 6,
+          onTap: (ev) => {
+            ev.stopPropagation();
+            onPortClick(d, p);
+          },
+          // 双击已连线的端口 = 快速断开（比"选中连线再删"顺手）；触摸端同样支持双击
+          onDoubleTap: (ev) => {
+            ev.stopPropagation();
+            UI.pend = null;
+            if (p.cableId) removeCable(p.cableId);
+            else toast(`${p.name}：${portTitle(d, p)}`);
+          },
+          // 长按端口：触摸端没有鼠标悬停，用长按把端口详情说出来
+          onLongPress: () => toast(`${p.name} · ${portTitle(d, p)}`, '')
+        });
         portsEl.appendChild(pe);
       });
 
       const head = el.querySelector('.head');
-      head.onmousedown = (ev) => startDrag(ev, d, el);
-      head.ondblclick = () => openConsole(d);
+      // 卡片头：拖动移动设备；单击选中；双击开命令行；长按删除（触摸端没有右键）
+      bindGestures(head, {
+        onDown: (ev, ctx) => {
+          // 点右上角 × 时不启动拖动，交给那个按钮自己处理
+          if (ev.target && ev.target.classList && ev.target.classList.contains('x')) return;
+          ev.stopPropagation();
+          startDrag(ev, d, el, ctx);
+        },
+        onMove: (ev, ctx) => {
+          if (!ctx.ox && !ctx.oy && !ctx.moved) return;
+          moveDrag(d, el, ctx);
+        },
+        onUp: (ev, ctx) => endDrag(d, ctx),
+        onTap: () => selectDevice(d),
+        onDoubleTap: () => openConsole(d),
+        onLongPress: () => removeDevice(d),
+        onContextMenu: () => removeDevice(d) // 桌面右键仍是删除
+      });
       el.querySelector('.x').onclick = (ev) => {
         ev.stopPropagation();
         removeDevice(d);
       };
-      el.onclick = () => {
-        UI.selDev = d.id;
-        render();
-      };
-      el.oncontextmenu = (ev) => {
-        ev.preventDefault();
-        removeDevice(d);
-      };
+      // 点卡片空白处（端口网格的缝隙）也算选中这台设备
+      el.addEventListener('pointerdown', (ev) => {
+        if (ev.target.closest && ev.target.closest('.head,.port')) return;
+        selectDevice(d);
+      });
 
       cards.appendChild(el);
     }
 
     renderWires();
     $('empty').style.display = E.Net.devices.length ? 'none' : 'flex';
+  }
+
+  function selectDevice(dev) {
+    const changed = UI.selDev !== dev.id;
+    UI.selDev = dev.id;
+    UI.selCable = null;
+    if (changed) render();
   }
 
   function esc(s) {
@@ -4780,9 +5006,11 @@
         <line class="wire-hit" x1="${pa.x}" y1="${pa.y}" x2="${pb.x}" y2="${pb.y}"
           vector-effect="non-scaling-stroke"><title>${esc(label)} —— 点击选中 / 拖动改接 / 右键删除</title></line>
         <g class="wire-x" data-del="${c.id}" transform="translate(${mx},${my})">
-          <circle r="7.5" vector-effect="non-scaling-stroke"/>
-          <path d="M-2.7 -2.7 L2.7 2.7" vector-effect="non-scaling-stroke"/>
-          <path d="M2.7 -2.7 L-2.7 2.7" vector-effect="non-scaling-stroke"/>
+          <g class="wire-x-in">
+            <circle r="7.5" vector-effect="non-scaling-stroke"/>
+            <path d="M-2.7 -2.7 L2.7 2.7" vector-effect="non-scaling-stroke"/>
+            <path d="M2.7 -2.7 L-2.7 2.7" vector-effect="non-scaling-stroke"/>
+          </g>
           <title>删除这条连线</title>
         </g>
       </g>`;
@@ -4796,15 +5024,31 @@
     const svg = $('wires');
     for (const hit of svg.querySelectorAll('.wire-hit')) {
       const id = hit.parentNode.dataset.cable;
-      hit.onmousedown = (ev) => startCableDrag(ev, id);
-      hit.oncontextmenu = (ev) => {
-        ev.preventDefault();
-        ev.stopPropagation();
-        removeCable(id);
-      };
+      bindGestures(hit, {
+        slop: 6,
+        onDown: (ev, ctx) => {
+          ev.stopPropagation();
+          startCableDrag(ev, id, ctx);
+        },
+        onMove: (ev, ctx) => {
+          if (!ctx.moved) return;
+          ctx.lastX = ev.clientX;
+          ctx.lastY = ev.clientY;
+          moveCableDrag(ctx);
+        },
+        onUp: (ev, ctx) => {
+          ctx.lastX = ev.clientX;
+          ctx.lastY = ev.clientY;
+          endCableDrag(ctx);
+        },
+        onTap: () => selectCable(id),
+        onLongPress: () => removeCable(id),
+        onContextMenu: () => removeCable(id)
+      });
     }
     for (const x of svg.querySelectorAll('.wire-x')) {
-      x.onmousedown = (ev) => ev.stopPropagation();
+      // × 按钮：用 pointerdown 拦下来，别让它触发下面连线的拖拽
+      x.addEventListener('pointerdown', (ev) => ev.stopPropagation());
       x.onclick = (ev) => {
         ev.stopPropagation();
         removeCable(x.dataset.del);
@@ -4812,37 +5056,147 @@
     }
   }
 
-  /* ------------------------------ 拖动 ------------------------------ */
-  function startDrag(ev, dev, el) {
-    if (ev.button !== 0) return;
-    ev.preventDefault();
-    const startX = ev.clientX;
-    const startY = ev.clientY;
-    const ox = dev.x;
-    const oy = dev.y;
-    let moved = false;
+  /* ------------------------------ 指针手势 ------------------------------ */
+  /**
+   * 鼠标和触摸走同一套逻辑（Pointer Events）。
+   *
+   * 为什么必须这样：**手机上拖动不会连续触发 mousemove** —— 兼容鼠标事件只在抬手时补一次，
+   * 所以原来那套 mousedown/mousemove/mouseup 在手机上表现为「按下去没反应、松手跳一下」，
+   * 也就是「部件拖不动」。同时触摸端还缺两种能力：
+   *   · dblclick 不可靠（双击既不触发 click 也不触发 dblclick，浏览器可能在等双击缩放）
+   *   · contextmenu（右键）压根没有
+   * 所以这里把它们补成双击（doubleTap）和长按（longPress）。
+   *
+   * opt:
+   *   onDown(ev, ctx) / onMove(ev, ctx) / onUp(ev, ctx)  —— 拖动全过程（ctx 里带 dx/dy/moved）
+   *   onTap(ev)        单击（没怎么移动、也没触发长按）
+   *   onDoubleTap(ev)  双击 / 双击两下
+   *   onLongPress(ev)  长按（代替右键）
+   *   onContextMenu(ev) 鼠标右键（触摸端不会触发，触摸端用 onLongPress）
+   *   slop             判定「算不算移动」的阈值（屏幕像素）
+   */
+  const TAP_SLOP = 8;
+  const DOUBLE_TAP_MS = 320;
+  const LONG_PRESS_MS = 520;
 
-    const onMove = (e) => {
-      const dx = (e.clientX - startX) / UI.scale;
-      const dy = (e.clientY - startY) / UI.scale;
-      if (Math.abs(dx) > 2 || Math.abs(dy) > 2) moved = true;
-      dev.x = Math.round(ox + dx);
-      dev.y = Math.round(oy + dy);
-      el.style.left = dev.x + 'px';
-      el.style.top = dev.y + 'px';
-      renderWires();
-    };
-    const onUp = () => {
-      document.removeEventListener('mousemove', onMove);
-      document.removeEventListener('mouseup', onUp);
-      if (moved) {
-        persist();
-        UI.selDev = dev.id;
-        render();
+  function bindGestures(el, opt) {
+    const slop = opt.slop == null ? TAP_SLOP : opt.slop;
+    let pid = null;
+    let sx = 0;
+    let sy = 0;
+    let longTimer = null;
+    let lastTapAt = 0;
+    let longFired = false;
+    let lastType = 'mouse';
+    const ctx = { dx: 0, dy: 0, moved: false };
+
+    const clearLong = () => {
+      if (longTimer) {
+        clearTimeout(longTimer);
+        longTimer = null;
       }
     };
-    document.addEventListener('mousemove', onMove);
-    document.addEventListener('mouseup', onUp);
+    const release = (ev) => {
+      clearLong();
+      if (pid !== null) {
+        try { el.releasePointerCapture(pid); } catch (e) { /* 已自动释放 */ }
+      }
+      pid = null;
+      void ev;
+    };
+
+    el.addEventListener('pointerdown', (ev) => {
+      lastType = ev.pointerType || 'mouse';
+      if (ev.button != null && ev.button !== 0) return; // 只认左键 / 单指
+      if (pid !== null) return; // 已经有一根手指在操作这个元素
+      pid = ev.pointerId;
+      sx = ev.clientX;
+      sy = ev.clientY;
+      ctx.dx = 0;
+      ctx.dy = 0;
+      ctx.moved = false;
+      longFired = false;
+      try { el.setPointerCapture(pid); } catch (e) { /* 某些环境不支持，忽略 */ }
+      if (opt.onDown) opt.onDown(ev, ctx);
+      if (opt.onLongPress) {
+        longTimer = setTimeout(() => {
+          longTimer = null;
+          longFired = true;
+          ctx.moved = true; // 长按之后不再当成拖动/单击
+          if (opt.onUp) opt.onUp(ev, ctx);
+          opt.onLongPress(ev);
+        }, LONG_PRESS_MS);
+      }
+    });
+
+    el.addEventListener('pointermove', (ev) => {
+      if (ev.pointerId !== pid) return;
+      ctx.dx = ev.clientX - sx;
+      ctx.dy = ev.clientY - sy;
+      if (!ctx.moved && Math.hypot(ctx.dx, ctx.dy) > slop) {
+        ctx.moved = true;
+        clearLong(); // 一旦开始拖动就不再触发长按
+      }
+      if (opt.onMove) opt.onMove(ev, ctx);
+    });
+
+    const finish = (ev) => {
+      if (ev.pointerId !== pid) return;
+      const moved = ctx.moved;
+      const long = longFired;
+      release(ev);
+      if (long) return;
+      if (moved) {
+        if (opt.onUp) opt.onUp(ev, ctx);
+        return;
+      }
+      if (opt.onUp) opt.onUp(ev, ctx);
+      const now = Date.now();
+      if (opt.onDoubleTap && now - lastTapAt < DOUBLE_TAP_MS) {
+        lastTapAt = 0;
+        opt.onDoubleTap(ev);
+      } else {
+        lastTapAt = now;
+        if (opt.onTap) opt.onTap(ev);
+      }
+    };
+    el.addEventListener('pointerup', finish);
+    el.addEventListener('pointercancel', (ev) => {
+      if (ev.pointerId !== pid) return;
+      ctx.moved = true; // 当作「拖动被取消」，不做单击判定
+      release(ev);
+    });
+    // 触摸长按会弹出系统的「复制 / 搜索」菜单，一律禁掉。
+    // 鼠标右键则交给 onContextMenu（触摸端已经用 longPress 覆盖，不重复触发）。
+    el.addEventListener('contextmenu', (ev) => {
+      ev.preventDefault();
+      ev.stopPropagation();
+      if (opt.onContextMenu && lastType !== 'touch') opt.onContextMenu(ev);
+    });
+  }
+
+  /* ------------------------------ 拖动 ------------------------------ */
+  /** 拖动设备卡片（鼠标左键拖 / 手指拖，走同一套 pointer 事件） */
+  function startDrag(ev, dev, el, ctx) {
+    ctx.ox = dev.x;
+    ctx.oy = dev.y;
+    void ev;
+    void el;
+  }
+
+  function moveDrag(dev, el, ctx) {
+    dev.x = Math.round(ctx.ox + ctx.dx / UI.scale);
+    dev.y = Math.round(ctx.oy + ctx.dy / UI.scale);
+    el.style.left = dev.x + 'px';
+    el.style.top = dev.y + 'px';
+    renderWires();
+  }
+
+  function endDrag(dev, ctx) {
+    if (!ctx.moved) return;
+    persist();
+    UI.selDev = dev.id;
+    render();
   }
 
   /* ------------------------------ 连线 ------------------------------ */
@@ -4951,64 +5305,59 @@
   }
 
   /**
-   * 在连线上按下鼠标：不动就是「选中」，拖动就是「把这一端改接到别处」。
-   * 拖哪一端，看鼠标离哪个端点近。
+   * 在连线上按下：不动就是「选中」，拖动就是「把这一端改接到别处」。
+   * 拖哪一端看指针离哪个端点近。鼠标和手指走同一套（拖动靠 pointermove）。
    */
-  function startCableDrag(ev, id) {
-    if (ev.button !== 0) return;
-    ev.preventDefault();
-    ev.stopPropagation();
+  function startCableDrag(ev, id, ctx) {
     const c = E.Net.getCable(id);
-    if (!c) return;
+    if (!c) return false;
     const a = E.Net.getDevice(c.aDeviceId);
     const b = E.Net.getDevice(c.bDeviceId);
-    if (!a || !b) return;
+    if (!a || !b) return false;
     const ia = a.ports.findIndex((p) => p.id === c.aPortId);
     const ib = b.ports.findIndex((p) => p.id === c.bPortId);
-    if (ia < 0 || ib < 0) return;
+    if (ia < 0 || ib < 0) return false;
 
-    let ctm;
-    try { ctm = $('wires').getScreenCTM(); } catch (e) { ctm = null; }
     let end = 'a';
-    if (ctm) {
-      const pa = portCenter(a, ia);
-      const pb = portCenter(b, ib);
-      const sa = new DOMPoint(pa.x, pa.y).matrixTransform(ctm);
-      const sb = new DOMPoint(pb.x, pb.y).matrixTransform(ctm);
-      const da = Math.hypot(ev.clientX - sa.x, ev.clientY - sa.y);
-      const db = Math.hypot(ev.clientX - sb.x, ev.clientY - sb.y);
-      end = da <= db ? 'a' : 'b';
-    }
-
-    const sx = ev.clientX;
-    const sy = ev.clientY;
-    let moved = false;
-
-    const onMove = (e) => {
-      if (!moved && Math.hypot(e.clientX - sx, e.clientY - sy) < 5) return;
-      moved = true;
-      UI.selCable = null;
-      const w = screenToWorld(e.clientX, e.clientY);
-      UI.replug = { id, end, x: w.x, y: w.y };
-      renderWires();
-    };
-    const onUp = (e) => {
-      document.removeEventListener('mousemove', onMove);
-      document.removeEventListener('mouseup', onUp);
-      if (!moved) {
-        UI.replug = null;
-        UI.selCable = id;
-        UI.selDev = null;
-        render();
-        return;
+    try {
+      const ctm = $('wires').getScreenCTM();
+      if (ctm) {
+        const sa = new DOMPoint(portCenter(a, ia).x, portCenter(a, ia).y).matrixTransform(ctm);
+        const sb = new DOMPoint(portCenter(b, ib).x, portCenter(b, ib).y).matrixTransform(ctm);
+        const da = Math.hypot(ev.clientX - sa.x, ev.clientY - sa.y);
+        const db = Math.hypot(ev.clientX - sb.x, ev.clientY - sb.y);
+        end = da <= db ? 'a' : 'b';
       }
-      const target = portUnderPoint(e.clientX, e.clientY);
-      UI.replug = null;
-      if (target) moveCableEnd(c, end, target.dev, target.port);
-      else render();
-    };
-    document.addEventListener('mousemove', onMove);
-    document.addEventListener('mouseup', onUp);
+    } catch (e) { /* 取不到 CTM 就默认拖 a 端 */ }
+
+    ctx.cable = c;
+    ctx.end = end;
+    return true;
+  }
+
+  function moveCableDrag(ctx) {
+    if (!ctx.cable) return;
+    UI.selCable = null;
+    const w = screenToWorld(ctx.lastX, ctx.lastY);
+    UI.replug = { id: ctx.cable.id, end: ctx.end, x: w.x, y: w.y };
+    renderWires();
+  }
+
+  function endCableDrag(ctx) {
+    if (!ctx.cable) return;
+    const target = ctx.moved ? portUnderPoint(ctx.lastX, ctx.lastY) : null;
+    const c = ctx.cable;
+    const end = ctx.end;
+    UI.replug = null;
+    if (target) moveCableEnd(c, end, target.dev, target.port);
+    else render();
+  }
+
+  function selectCable(id) {
+    UI.replug = null;
+    UI.selCable = id;
+    UI.selDev = null;
+    render();
   }
 
   function removeDevice(dev) {
@@ -5197,6 +5546,20 @@
   /* ------------------------------ 命令输入 ------------------------------ */
   function setupInput() {
     const inp = $('cmd');
+    // 手机上点一下终端区域就聚焦输入框（不然要去戳那条很窄的输入行）
+    $('screen').addEventListener('click', () => {
+      if (narrow()) inp.focus();
+    });
+    inp.addEventListener('focus', () => {
+      // 手机软键盘会顶掉半个屏幕，聚焦时把面板放到最大，并滚到能看到输入行
+      if (!narrow()) return;
+      $('term').classList.add('max');
+      setTimeout(() => {
+        inp.scrollIntoView({ block: 'nearest' });
+        const sc = $('screen');
+        sc.scrollTop = sc.scrollHeight;
+      }, 260);
+    });
     inp.addEventListener('keydown', (ev) => {
       const d = activeDev();
       if (!d) return;
@@ -5292,44 +5655,147 @@
   }
 
   /* ------------------------------ 画布平移缩放 ------------------------------ */
+  /** 以画布坐标 (mx,my) 为锚点缩放到 next（锚点下的内容保持不动） */
+  function zoomAt(mx, my, next) {
+    const old = UI.scale;
+    const s = Math.min(MAX_SCALE, Math.max(MIN_SCALE, next));
+    if (s === old) return;
+    UI.panX = mx - (mx - UI.panX) * (s / old);
+    UI.panY = my - (my - UI.panY) * (s / old);
+    UI.scale = s;
+    applyTransform();
+  }
+  /** 屏幕中心缩放（给缩放按钮用） */
+  function zoomBy(factor) {
+    const rect = $('stage').getBoundingClientRect();
+    zoomAt(rect.width / 2, rect.height / 2, UI.scale * factor);
+    persist();
+  }
+  /** 把所有设备统统一屏放好（加载实验、旋转屏幕、点「适应画布」都走这里） */
+  function fitView() {
+    const devs = E.Net.devices;
+    if (!devs.length) return;
+    const minX = Math.min(...devs.map((d) => d.x));
+    const maxX = Math.max(...devs.map((d) => d.x + cardW(d)));
+    const minY = Math.min(...devs.map((d) => d.y));
+    const maxY = Math.max(...devs.map((d) => d.y)) + 180;
+    const rect = $('stage').getBoundingClientRect();
+    if (rect.width < 10 || rect.height < 10) return;
+    const s = Math.min(1.1, Math.min(rect.width / (maxX - minX + 80), rect.height / (maxY - minY + 80)));
+    // 手机上屏幕窄，自动适应容易把拓扑压得看不清端口；给一个不要太小的下限
+    UI.scale = Math.min(1.1, Math.max(narrow() ? 0.45 : 0.35, s));
+    UI.panX = (rect.width - (maxX - minX) * UI.scale) / 2 - minX * UI.scale;
+    UI.panY = (rect.height - (maxY - minY) * UI.scale) / 2 - minY * UI.scale;
+    applyTransform();
+  }
+
+  /** 当前是不是窄屏 / 手机 —— 和 index.html 的媒体查询用同一套条件，避免两处不一致。
+      条件：宽度 <=760px，或者是「矮视口 + 触摸」（横屏手机 844×390 这种）。 */
+  const NARROW_MQ = '(max-width: 760px), (max-width: 1024px) and (max-height: 520px)';
+  function narrow() {
+    return window.matchMedia(NARROW_MQ).matches;
+  }
+
+  const MIN_SCALE = 0.2;
+  const MAX_SCALE = 2.6;
+
   function setupStage() {
     const stage = $('stage');
-    stage.addEventListener('mousedown', (ev) => {
-      if (ev.target !== stage && ev.target.id !== 'stageInner' && ev.target.tagName !== 'svg') return;
-      if (ev.button === 1 || ev.button === 0) {
+
+    /* 单指 / 左键按住空白处 = 平移画布；两指捏合 = 缩放。
+       触摸端以前完全没有处理：手指拖动既不会平移也不会滚动，看着就像"卡住了"。 */
+    const live = new Map(); // pointerId -> 最新坐标
+    let mode = null;
+    let g = null;
+
+    const blank = (t) => t === stage || t.id === 'stageInner' || (t.tagName && t.tagName.toLowerCase() === 'svg');
+
+    const beginPan = (ev) => {
+      const rect = stage.getBoundingClientRect();
+      mode = 'pan';
+      g = { x: ev.clientX, y: ev.clientY, panX: UI.panX, panY: UI.panY, rect };
+    };
+    const beginPinch = () => {
+      const rect = stage.getBoundingClientRect();
+      const [p1, p2] = [...live.values()];
+      const mx = (p1.x + p2.x) / 2 - rect.left;
+      const my = (p1.y + p2.y) / 2 - rect.top;
+      // 两指中点对应的世界坐标，缩放过程中保持它不动
+      const wx = (mx - UI.panX) / UI.scale;
+      const wy = (my - UI.panY) / UI.scale;
+      mode = 'pinch';
+      g = { dist: Math.max(1, Math.hypot(p2.x - p1.x, p2.y - p1.y)), wx, wy, rect };
+    };
+
+    stage.addEventListener('pointerdown', (ev) => {
+      if (ev.pointerType !== 'touch' && ev.button !== 0 && ev.button !== 1) return;
+      live.set(ev.pointerId, { x: ev.clientX, y: ev.clientY });
+      try { stage.setPointerCapture(ev.pointerId); } catch (e) { /* 忽略 */ }
+
+      if (live.size === 1) {
+        if (!blank(ev.target)) {
+          live.delete(ev.pointerId);
+          return;
+        }
         UI.pend = null;
         UI.selDev = null;
         UI.selCable = null;
         render();
-        const sx = ev.clientX;
-        const sy = ev.clientY;
-        const ox = UI.panX;
-        const oy = UI.panY;
-        const mv = (e) => {
-          UI.panX = ox + (e.clientX - sx);
-          UI.panY = oy + (e.clientY - sy);
-          applyTransform();
-        };
-        const up = () => {
-          document.removeEventListener('mousemove', mv);
-          document.removeEventListener('mouseup', up);
-        };
-        document.addEventListener('mousemove', mv);
-        document.addEventListener('mouseup', up);
+        beginPan(ev);
+      } else if (live.size === 2) {
+        UI.pend = null;
+        UI.selDev = null;
+        UI.selCable = null;
+        render();
+        beginPinch();
       }
     });
+
+    stage.addEventListener('pointermove', (ev) => {
+      if (!live.has(ev.pointerId)) return;
+      live.set(ev.pointerId, { x: ev.clientX, y: ev.clientY });
+      if (mode === 'pan' && live.size === 1 && g) {
+        UI.panX = g.panX + (ev.clientX - g.x);
+        UI.panY = g.panY + (ev.clientY - g.y);
+        applyTransform();
+      } else if (mode === 'pinch' && live.size >= 2 && g) {
+        const [p1, p2] = [...live.values()];
+        const dist = Math.hypot(p2.x - p1.x, p2.y - p1.y);
+        const mx = (p1.x + p2.x) / 2 - g.rect.left;
+        const my = (p1.y + p2.y) / 2 - g.rect.top;
+        const next = Math.min(MAX_SCALE, Math.max(MIN_SCALE, UI.scale * (dist / g.dist)));
+        UI.scale = next;
+        // 锚在世界坐标 (wx,wy) 上，同时跟随中点移动（等于双指平移 + 缩放）
+        UI.panX = mx - g.wx * next;
+        UI.panY = my - g.wy * next;
+        applyTransform();
+      }
+    });
+
+    const lift = (ev) => {
+      live.delete(ev.pointerId);
+      try { stage.releasePointerCapture(ev.pointerId); } catch (e) { /* 忽略 */ }
+      if (live.size === 0) {
+        mode = null;
+        g = null;
+        persist();
+      } else if (live.size === 1) {
+        // 从双指变单指：接着平移，不要跳
+        const [only] = [...live.values()];
+        mode = 'pan';
+        g = { x: only.x, y: only.y, panX: UI.panX, panY: UI.panY, rect: stage.getBoundingClientRect() };
+      }
+    };
+    stage.addEventListener('pointerup', lift);
+    stage.addEventListener('pointercancel', lift);
+
     stage.addEventListener('wheel', (ev) => {
       if (!ev.ctrlKey && !ev.metaKey) return;
       ev.preventDefault();
       const rect = stage.getBoundingClientRect();
       const mx = ev.clientX - rect.left;
       const my = ev.clientY - rect.top;
-      const old = UI.scale;
-      const next = Math.min(2, Math.max(0.35, old * (ev.deltaY < 0 ? 1.12 : 0.89)));
-      UI.panX = mx - (mx - UI.panX) * (next / old);
-      UI.panY = my - (my - UI.panY) * (next / old);
-      UI.scale = next;
-      applyTransform();
+      zoomAt(mx, my, UI.scale * (ev.deltaY < 0 ? 1.12 : 0.89));
     }, { passive: false });
     document.addEventListener('keydown', (ev) => {
       // 正在命令行里打字时不要抢 Delete / Backspace（否则按退格会把选中的设备或连线删掉）
@@ -5758,20 +6224,8 @@
     const info = lab.build() || {};
     E.recomputeOspf();
     E.recomputeStp();
-    // 视图居中
-    const devs = E.Net.devices;
-    if (devs.length) {
-      const minX = Math.min(...devs.map((d) => d.x));
-      const maxX = Math.max(...devs.map((d) => d.x + cardW(d)));
-      const minY = Math.min(...devs.map((d) => d.y));
-      const maxY = Math.max(...devs.map((d) => d.y)) + 180;
-      const rect = $('stage').getBoundingClientRect();
-      const s = Math.min(1.1, Math.min(rect.width / (maxX - minX + 80), rect.height / (maxY - minY + 80)));
-      UI.scale = Math.max(0.35, s);
-      UI.panX = (rect.width - (maxX - minX) * UI.scale) / 2 - minX * UI.scale;
-      UI.panY = (rect.height - (maxY - minY) * UI.scale) / 2 - minY * UI.scale;
-      applyTransform();
-    }
+    // 适应画布：把所有设备一屏放好
+    fitView();
     UI.currentLab = lab;
     persist();
     render();
@@ -5856,15 +6310,30 @@
           <div class="r"><b>报错怎么读</b><span>错误行上面的 <code>^</code> 指出了出错的位置，例如 <code>vlan 9999</code> 的 <code>^</code> 会指在 <code>9999</code> 下面</span></div>
           <div class="r"><b>小技巧</b><span>输入 <code>?</code> 看当前视图可用命令；按 <code>Tab</code> 自动补全；↑ ↓ 翻历史命令</span></div>
         </div>
-        <h4 class="sec">画布操作</h4>
+        <h4 class="sec">画布操作 · 电脑</h4>
         <div class="kv">
           <div class="r"><b>平移</b><span>在空白处按住鼠标拖动</span></div>
-          <div class="r"><b>缩放</b><span>按住 Ctrl 滚动滚轮</span></div>
+          <div class="r"><b>缩放</b><span>按住 Ctrl 滚动滚轮；或用画布右下角的 ＋ / － / ⛶</span></div>
+          <div class="r"><b>移动设备</b><span>按住设备卡片头部拖动</span></div>
           <div class="r"><b>连线</b><span>点一个灰口，再点另一个灰口</span></div>
-          <div class="r"><b>断开连线</b><span><b>点连线选中后按 Delete</b>；或点线上的 ×；或右键连线；或双击已连线的端口</span></div>
+          <div class="r"><b>断开连线</b><span>点连线选中后按 Delete；或点线上的 ×；或右键连线；或双击已连线的端口</span></div>
           <div class="r"><b>改接</b><span>在连线上按住拖动 → 拖到另一个空闲端口松手，就把那一端改接过去了</span></div>
-          <div class="r"><b>删除</b><span>点设备右上角 × ，或右键设备；选中后按 Delete 键</span></div>
+          <div class="r"><b>打开命令行</b><span>双击设备卡片</span></div>
+          <div class="r"><b>删除设备</b><span>点设备右上角 ×，或右键设备；选中后按 Delete 键</span></div>
           <div class="r"><b>端口颜色</b><span>灰＝未连线，绿＝已连通，红＝已 shutdown，紫＝Trunk 口，黄＝当前选中待连线</span></div>
+        </div>
+        <h4 class="sec">画布操作 · 手机 / 平板（触摸）</h4>
+        <div class="kv">
+          <div class="r"><b>移动设备</b><span>手指按住卡片头部拖动</span></div>
+          <div class="r"><b>平移画布</b><span>单指拖动空白处</span></div>
+          <div class="r"><b>缩放</b><span>两指捏合；或用画布右下角的 ＋ / － / ⛶（⛶ 是「适应画布」）</span></div>
+          <div class="r"><b>连线</b><span>轻点一个灰口，再轻点另一个灰口</span></div>
+          <div class="r"><b>断开连线</b><span>轻点连线选中 → 点中点浮现的 ×；或<b>连点两下</b>已连线的端口；或<b>长按</b>连线</span></div>
+          <div class="r"><b>改接</b><span>手指按住连线拖动 → 拖到另一个空闲端口松手</span></div>
+          <div class="r"><b>打开命令行</b><span><b>连点两下</b>设备卡片（点一下是选中）</span></div>
+          <div class="r"><b>删除设备</b><span>点卡片右上角 ×；或<b>长按</b>卡片头部</span></div>
+          <div class="r"><b>看端口详情</b><span>长按端口（手机的触摸屏没有"鼠标悬停"，用小气泡显示状态）</span></div>
+          <div class="r"><b>顶部按钮</b><span>窄屏只留「实训实验 / 命令行 / 更多 ⋯」，其余在「更多」里</span></div>
         </div>
         <h4 class="sec">命令行的展开与收起</h4>
         <p class="hint">
@@ -6057,11 +6526,24 @@
     setupStage();
     setupInput();
 
-    $('btnLab').onclick = showLabs;
-    $('btnHelp').onclick = showHelp;
-    $('btnAbout').onclick = showAbout;
-    $('btnSave').onclick = exportConfig;
-    $('btnImport').onclick = () => $('fileImport').click();
+    const acts = {
+      lab: showLabs,
+      help: showHelp,
+      about: showAbout,
+      save: exportConfig,
+      import: () => $('fileImport').click(),
+      clear: () => {
+        if (confirm('确定清空当前拓扑吗？此操作不可撤销。')) {
+          clearAll();
+          toast('拓扑已清空');
+        }
+      }
+    };
+    $('btnLab').onclick = acts.lab;
+    $('btnHelp').onclick = acts.help;
+    $('btnAbout').onclick = acts.about;
+    $('btnSave').onclick = acts.save;
+    $('btnImport').onclick = acts.import;
     $('fileImport').onchange = (ev) => {
       const f = ev.target.files && ev.target.files[0];
       // 清空 value，这样连续导入同一个文件也能触发 change
@@ -6075,23 +6557,70 @@
       }
       setTermOpen(!termIsOpen());
     };
-    $('btnClear').onclick = () => {
-      if (confirm('确定清空当前拓扑吗？此操作不可撤销。')) {
-        clearAll();
-        toast('拓扑已清空');
-      }
+    $('btnClear').onclick = acts.clear;
+
+    // 窄屏下顶栏放不下 7 个按钮，收进「更多」菜单
+    const more = $('btnMore');
+    const moreMenu = $('moreMenu');
+    const closeMore = () => {
+      moreMenu.classList.remove('on');
+      more.setAttribute('aria-expanded', 'false');
     };
+    if (more && moreMenu) {
+      more.onclick = (ev) => {
+        ev.stopPropagation();
+        const on = !moreMenu.classList.contains('on');
+        moreMenu.classList.toggle('on', on);
+        more.setAttribute('aria-expanded', on ? 'true' : 'false');
+      };
+      moreMenu.querySelectorAll('button[data-act]').forEach((b) => {
+        b.onclick = () => {
+          closeMore();
+          const fn = acts[b.dataset.act];
+          if (fn) fn();
+        };
+      });
+      document.addEventListener('pointerdown', (ev) => {
+        if (!moreMenu.classList.contains('on')) return;
+        if (moreMenu.contains(ev.target) || more.contains(ev.target)) return;
+        closeMore();
+      });
+    }
+
+    // 画布右下角的缩放按钮（触摸端没有滚轮，也能精细放大到某个端口）
+    const zb = { in: $('btnZoomIn'), out: $('btnZoomOut'), fit: $('btnZoomFit') };
+    if (zb.in) zb.in.onclick = () => zoomBy(1.25);
+    if (zb.out) zb.out.onclick = () => zoomBy(0.8);
+    if (zb.fit) zb.fit.onclick = () => { fitView(); persist(); };
+
     $('mask').onclick = (ev) => {
       if (ev.target.id === 'mask') closeModal();
     };
     document.addEventListener('keydown', (ev) => {
-      if (ev.key === 'Escape') closeModal();
+      if (ev.key === 'Escape') {
+        if (moreMenu && moreMenu.classList.contains('on')) return closeMore();
+        closeModal();
+      }
       // Ctrl+` 展开 / 收起命令行面板
       if (ev.ctrlKey && ev.key === '`') {
         ev.preventDefault();
         if (UI.tabs.length) setTermOpen(!termIsOpen());
       }
     });
+
+    // 旋屏 / 窗口尺寸变化：媒体查询可能换了卡片尺寸，尺寸缓存要丢掉重算，
+    // 否则连线端点会和新卡片错位。宽度变化较大时顺手重新适应画布。
+    let lastW = window.innerWidth;
+    const onResize = () => {
+      invalidateMetrics();
+      render();
+      if (Math.abs(window.innerWidth - lastW) > 60) {
+        lastW = window.innerWidth;
+        fitView();
+      }
+    };
+    window.addEventListener('resize', onResize);
+    window.addEventListener('orientationchange', () => setTimeout(onResize, 220));
 
     const restored = restore();
     applyTransform();
@@ -6127,6 +6656,16 @@
   UI.cardHeight = cardHeight;
   UI.showAbout = showAbout;
   UI.version = APP_VERSION;
+  UI.zoomBy = zoomBy;
+  UI.zoomAt = zoomAt;
+  UI.fitView = fitView;
+  UI.narrow = narrow;
+  UI.metrics = metrics;
+  /** 视口尺寸变了（旋屏、切设备模拟）后重算几何并重绘 —— 卡片尺寸来自 CSS 变量，要重新读 */
+  UI.refreshLayout = () => {
+    invalidateMetrics();
+    render();
+  };
   UI.info = APP_INFO;
 
   global.NE = global.NE || {};
