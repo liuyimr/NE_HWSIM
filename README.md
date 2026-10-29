@@ -3,7 +3,7 @@
 **一个 HTML 文件，双击就能练华为交换机 / 路由器命令 —— 不用装 eNSP，不用装 GNS3，不联网也能用。**
 
 [![在线试玩](https://img.shields.io/badge/%E5%9C%A8%E7%BA%BF%E8%AF%95%E7%8E%A9-GitHub%20Pages-orange)](https://liuyimr.github.io/NE_HWSIM/NE_HWSIM.html)
-![单文件](https://img.shields.io/badge/%E5%8D%95%E6%96%87%E4%BB%B6-328%20KB-brightgreen)
+![单文件](https://img.shields.io/badge/%E5%8D%95%E6%96%87%E4%BB%B6-335%20KB-brightgreen)
 ![无需安装](https://img.shields.io/badge/%E6%97%A0%E9%9C%80%E5%AE%89%E8%A3%85-%E5%8F%8C%E5%87%BB%E5%8D%B3%E7%94%A8-success)
 ![离线可用](https://img.shields.io/badge/%E7%A6%BB%E7%BA%BF%E5%8F%AF%E7%94%A8-100%25-informational)
 ![许可证](https://img.shields.io/badge/license-MIT-blue)
@@ -33,7 +33,7 @@
 
 给**网络课老师**和**备考华为认证的同学**做的一个练习工具。
 
-eNSP 要装 VirtualBox，GNS3 要配镜像，虚拟机镜像动辄几个 GB，还得看电脑配置。很多学生卡在第一步就放弃了，然后就没有然后。NE_HWSIM 的判断是：**先把门槛降到零** —— 一个 328 KB 的 HTML 文件，发过去、双击、开始敲命令，整个过程不需要任何解释。
+eNSP 要装 VirtualBox，GNS3 要配镜像，虚拟机镜像动辄几个 GB，还得看电脑配置。很多学生卡在第一步就放弃了，然后就没有然后。NE_HWSIM 的判断是：**先把门槛降到零** —— 一个 335 KB 的 HTML 文件，发过去、双击、开始敲命令，整个过程不需要任何解释。
 
 它**不是**真机的替代品，也跑不了复杂的园区网。它解决的是一个很具体的问题：**让学生能在自己的笔记本上、离线、零安装地，把 VLAN / Trunk / OSPF / ACL / NAT 这些命令反复敲到熟。**
 
@@ -118,7 +118,7 @@ eNSP 要装 VirtualBox，GNS3 要配镜像，虚拟机镜像动辄几个 GB，�
 | | **NE_HWSIM** | eNSP | GNS3 | Cisco Packet Tracer |
 |---|---|---|---|---|
 | 安装 | **双击 HTML，零安装** | 需装 VirtualBox + eNSP | 需装虚拟机 + 导入镜像 | 需注册 Cisco 账号 |
-| 体积 | **328 KB** | 数 GB | 数 GB | 数百 MB |
+| 体积 | **335 KB** | 数 GB | 数 GB | 数百 MB |
 | 联网 | **可完全离线** | 首次需下载镜像 | 需下载镜像 | 需登录 |
 | 命令语法 | 华为 VRP | 华为 VRP | 多厂商 | Cisco IOS |
 | 上手门槛 | **极低** | 中（装环境容易失败） | 高 | 中 |
@@ -218,8 +218,7 @@ A：点顶栏 **「关于」**，里面写着版本号；用记事本打开文�
 - **RIP 动态路由**：`rip 1` → `version 2` → `network`，`silent-interface`、`undo rip` 都有；
   和真机一样**缺省是 version 1**，两端版本不一致就建不起邻居（`display rip neighbor` 会直接指出）；邻接按**二层可达**判定，中间隔着交换机也能建立；
   `display rip` / `display rip routing` / `display rip neighbor` 可查邻居与学到的路由；
-  另附**实验五·补 · RIP 动态路由**（同一个拓扑，把静态路由换成 RIP 对比效果）；
-  **邻接按「二层可达」判定**，路由器之间隔着交换机也能建邻居（以前只认直连，隔一台交换机就永远没邻居、学不到路由）
+  另附**实验五·补 · RIP 动态路由**（同一个拓扑，把静态路由换成 RIP 对比效果）
 - **静态路由更接近真机**：支持**路由递归**（下一跳不在直连网段时按路由表再查），
   支持把下一跳写成出接口（`ip route-static 192.168.2.0 24 GigabitEthernet0/0/0`）
 - **路由问题不再「看着是好的」**：下一跳不可达的静态路由，路由表 Flags 只有 `R` 没有 `D`，
@@ -227,10 +226,16 @@ A：点顶栏 **「关于」**，里面写着版本号；用记事本打开文�
 - **OSPF 少了两个坑**：`network` 把子网掩码误写成 `255.255.255.0` 会被自动换算成反掩码并提示
   （原来会静默失效、邻居永远起不来）；**没有邻居时 `display ospf peer` 会逐条列出原因**
   （对端没开 OSPF / 接口没被通告 / 区域不同 / 网段不一致 / 报文过不去）
+- **PC 上 ping 不通、路由器上却通？** PC 不是路由器，它没有路由表，跨网段全靠**默认网关**。
+  现在 `ping` 的失败原因会直接说清是哪一种：没配网关 / 网关不在本网段 / 这个网关在整个拓扑里没有设备配置 /
+  网关口是 shutdown / 同网段直连的 VLAN 问题 —— 不会再把你引去「检查静态 / 动态路由」。
+  `ip`、`ipconfig`、`dhcp`、`display ip pool` 在配置时就会提示（DHCP 地址池漏 `gateway-list` 是最常见的坑）
 - **导入 / 导出加强**：导出文件里带一段 `@topology`（设备型号/坐标、连线、注释），导入时**先把整张画布还原**（同名设备复用、已连好的线跳过，重复导入不会翻倍），再逐台重放配置；导入报告新增「新建设备 / 还原连线 / 恢复注释」统计和连线异常清单。同时修掉三处配置漏导出：**shutdown 的端口**、**STP 全局参数**、`vlan batch` 里多余的 VLAN 1
 - **画布文字标签**：左下角 **`T 文字`** 直接在拓扑上写注释，可拖动、双击改字、长按或右键删除，随拓扑自动保存
 - **PC 可以改名了**：PC 的终端里直接 `sysname 新名字`（原来 PC 只认 `ipconfig` / `ip` / `ping` 那几条，改名无处下手）
 - 修正 Vlanif 之间 OSPF/RIP 邻接的判定（原来两台交换机之间只要有一根线就可能被判成邻居）
+- 修掉「**T 文字**」点不出来、文字标签拖不动：画布在判断目标之前就抢走了指针，导致画布里的按钮收不到点击、
+  标签收不到移动事件（这条以前的测试用合成事件测不出来，现改为真实鼠标 / 触摸事件回归）
 
 **v1.3.0**
 
@@ -318,7 +323,7 @@ MIT License —— 随便用，商用也行，改了也不用说。详见 [LICEN
 
 **NE_HWSIM — a Huawei VRP network lab simulator that fits in one HTML file.**
 
-A single 328 KB HTML file. Double-click it and you get a drag-and-drop network topology builder plus a
+A single 335 KB HTML file. Double-click it and you get a drag-and-drop network topology builder plus a
 faithful Huawei VRP CLI (user view → system view → interface view → VLAN view → port-group view → ACL view
 → NAT address-pool view → OSPF area view → RIP view), with authentic `^` error markers and `save` interaction.
 
