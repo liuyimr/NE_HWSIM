@@ -3,7 +3,7 @@
 **一个 HTML 文件，双击就能练华为交换机 / 路由器命令 —— 不用装 eNSP，不用装 GNS3，不联网也能用。**
 
 [![在线试玩](https://img.shields.io/badge/%E5%9C%A8%E7%BA%BF%E8%AF%95%E7%8E%A9-GitHub%20Pages-orange)](https://liuyimr.github.io/NE_HWSIM/NE_HWSIM.html)
-![单文件](https://img.shields.io/badge/%E5%8D%95%E6%96%87%E4%BB%B6-282%20KB-brightgreen)
+![单文件](https://img.shields.io/badge/%E5%8D%95%E6%96%87%E4%BB%B6-328%20KB-brightgreen)
 ![无需安装](https://img.shields.io/badge/%E6%97%A0%E9%9C%80%E5%AE%89%E8%A3%85-%E5%8F%8C%E5%87%BB%E5%8D%B3%E7%94%A8-success)
 ![离线可用](https://img.shields.io/badge/%E7%A6%BB%E7%BA%BF%E5%8F%AF%E7%94%A8-100%25-informational)
 ![许可证](https://img.shields.io/badge/license-MIT-blue)
@@ -33,7 +33,7 @@
 
 给**网络课老师**和**备考华为认证的同学**做的一个练习工具。
 
-eNSP 要装 VirtualBox，GNS3 要配镜像，虚拟机镜像动辄几个 GB，还得看电脑配置。很多学生卡在第一步就放弃了，然后就没有然后。NE_HWSIM 的判断是：**先把门槛降到零** —— 一个 282 KB 的 HTML 文件，发过去、双击、开始敲命令，整个过程不需要任何解释。
+eNSP 要装 VirtualBox，GNS3 要配镜像，虚拟机镜像动辄几个 GB，还得看电脑配置。很多学生卡在第一步就放弃了，然后就没有然后。NE_HWSIM 的判断是：**先把门槛降到零** —— 一个 328 KB 的 HTML 文件，发过去、双击、开始敲命令，整个过程不需要任何解释。
 
 它**不是**真机的替代品，也跑不了复杂的园区网。它解决的是一个很具体的问题：**让学生能在自己的笔记本上、离线、零安装地，把 VLAN / Trunk / OSPF / ACL / NAT 这些命令反复敲到熟。**
 
@@ -41,16 +41,23 @@ eNSP 要装 VirtualBox，GNS3 要配镜像，虚拟机镜像动辄几个 GB，�
 
 ## 核心特性
 
-- **真实的华为 VRP 命令行**：用户视图 → 系统视图 → 接口视图 → VLAN 视图 → 端口组视图 → ACL 视图 → NAT 地址池视图 → OSPF 区域视图，**一级一级进入、`quit` 一级一级退出**，和真机一个规矩
+- **真实的华为 VRP 命令行**：用户视图 → 系统视图 → 接口视图 → VLAN 视图 → 端口组视图 → ACL 视图 → NAT 地址池视图 → OSPF 区域视图 → RIP 视图，**一级一级进入、`quit` 一级一级退出**，和真机一个规矩
 - **真实的报错风格**：敲错了会出 `^` 精确指到出错的那个词，`Unrecognized` / `Incomplete` / `Ambiguous` / `Wrong parameter` 的措辞和真机一致
 - **真实的交互**：`save` 会问你 `(y/n)[n]`，再问文件名 —— 跟真机一样
-- **8 个现成实训实验**：拓扑一键加载，附实验目标 + 操作提示（见下表）
+- **9 个现成实训实验**：拓扑一键加载，附实验目标 + 操作提示（见下表）
 - **批量配端口**：`interface range ge 0/0/1 to ge 0/0/5`、`port-group group-member ... to ...`（临时端口组）、`port-group 1`（命名端口组，写进配置）三种真机写法都有
 - **拖拽搭拓扑**：4 种设备随便拖，点两个端口就完成连线；线缆颜色直接反映状态（灰＝未连线，绿＝已连通，红＝shutdown，紫＝Trunk）
+- **动态路由**：`rip 1` → `version 2` → `network` 一路配上就自动学路由（按跳数收敛，Pre=100），
+  两台路由器中间隔着交换机也能建邻居（互联口在同一 VLAN 即可）；
+  和 OSPF 一样有 `display rip` / `display rip routing` / `display rip neighbor` 可查
+- **画布上能写注释**：画布左下角 **`T 文字`** 直接放一个文字标签，拖位置、双击改字、长按/右键删除，
+  跟着拓扑一起自动保存 —— 讲网络规划时可以直接标「这里 192.168.10.0/24」
 - **连线可删、可改接**：点一下选中后按 `Delete`、点线中点浮现的 `×`、右键，或**双击已连线的端口**都能断开；**在连线上按住拖动就能把那一端改接到别的空闲端口**，不用先删再连（改接失败会自动回滚，不会把线弄丢）
 - **手机 / 平板也能用**：窄屏自动换竖版布局（设备库搬到底部横条），所有操作都有对应的手指手势 —— 拖动设备、双指捏合缩放、长按删除、连点两下开命令行（见下）
-- **配置导入 / 导出**：导出成 txt 交给老师检查；也能再读回来。画布上没有的设备会**按型号自动新建**，导入后弹报告逐条列出哪些生效、哪些没生效、报错原文是什么
-- **进度自动保存**：关掉浏览器再打开，拓扑和配置都还在
+- **导入 / 导出能搬走整张画布**：导出的 txt 开头是拓扑段（设备型号与摆放位置、每条连线、画布注释），后面是每台设备的 `running-config`。再导入回来，**设备、连线、注释、配置全部原样还原**，换台电脑接着做、交作业再改回来都行；导入结果有统计 + 逐台明细，连线没还原成功的地方会单独列出来
+- **路由问题看得见**：下一跳不可达的静态路由，`display ip routing-table` 里 Flags 只有 `R` 没有 `D`，
+  表下面还会单独列出来；ping 不通时原因会点名是哪台设备、缺什么路由
+- **进度自动保存**：关掉浏览器再打开，拓扑和配置都还在（含画布上的文字注释）
 - **单文件、零依赖**：没有后端、没有账号、不联网、不采集任何数据
 
 ---
@@ -83,7 +90,7 @@ eNSP 要装 VirtualBox，GNS3 要配镜像，虚拟机镜像动辄几个 GB，�
 
 ---
 
-## 内置 8 个实训实验
+## 内置 9 个实训实验
 
 点顶部 **「实训实验」** 按钮，选一个直接加载（会自动搭好拓扑、连好线）。
 
@@ -94,6 +101,7 @@ eNSP 要装 VirtualBox，GNS3 要配镜像，虚拟机镜像动辄几个 GB，�
 | 三 | 三层交换实现 VLAN 间互通 | `interface Vlanif` · `ip address` | 基础 |
 | 四 | 静态路由实现跨网段互通 | `ip route-static` | 基础 |
 | 五 | OSPF 单区域动态路由 | `ospf 1` · `area 0` · `network` | 基础 |
+| 五·补 | **RIP 动态路由** | `rip 1` · `version 2` · `network` · `display rip neighbor` | 进阶 |
 | 六 | DHCP 自动分配地址 | `dhcp enable` · `ip pool` · `dhcp select global` | 基础 |
 | 七 | **ACL 访问控制** | `acl number 3000` · `rule deny ip source ... destination ...` · `traffic-filter inbound` | 进阶 |
 | 八 | **NAT 网络地址转换** | `acl number 2000` · `nat outbound` · `nat address-group` | 进阶 |
@@ -110,7 +118,7 @@ eNSP 要装 VirtualBox，GNS3 要配镜像，虚拟机镜像动辄几个 GB，�
 | | **NE_HWSIM** | eNSP | GNS3 | Cisco Packet Tracer |
 |---|---|---|---|---|
 | 安装 | **双击 HTML，零安装** | 需装 VirtualBox + eNSP | 需装虚拟机 + 导入镜像 | 需注册 Cisco 账号 |
-| 体积 | **282 KB** | 数 GB | 数 GB | 数百 MB |
+| 体积 | **328 KB** | 数 GB | 数 GB | 数百 MB |
 | 联网 | **可完全离线** | 首次需下载镜像 | 需下载镜像 | 需登录 |
 | 命令语法 | 华为 VRP | 华为 VRP | 多厂商 | Cisco IOS |
 | 上手门槛 | **极低** | 中（装环境容易失败） | 高 | 中 |
@@ -124,11 +132,11 @@ eNSP 要装 VirtualBox，GNS3 要配镜像，虚拟机镜像动辄几个 GB，�
 
 **二层**：VLAN（含 `vlan batch` / `undo vlan batch`）、Access / Trunk / Hybrid 端口、MAC 地址学习表、STP / RSTP 破环、链路聚合 Eth-Trunk、端口安全 Port-Security
 
-**三层**：直连路由、静态路由、OSPF 单区域、最长前缀匹配、ARP、Vlanif 三层接口
+**三层**：直连路由、静态路由（下一跳 / 出接口两种写法，支持**路由递归**）、**RIP v1/v2**（版本必须两端一致）、OSPF 单区域、最长前缀匹配、ARP、Vlanif 三层接口
 
 **服务与安全**：DHCP 服务器（地址池 / 网关）、**ACL**（基本 2000-2999 / 高级 3000-3999，支持源 + 目的 + 协议匹配，含**隐含 `deny all`**，可绑物理口、端口组或 Vlanif，入向 / 出向都生效）、**NAT**（Easy IP 与 `nat address-group` 地址池）
 
-**`display` 系列**：`display vlan` · `display interface` · `display port vlan` · `display ip interface brief` · `display ip routing-table` · `display mac-address` · `display arp` · `display stp brief` · `display ospf peer brief` · `display ospf interface` · `display acl` · `display nat session all` · `display port-group all` · `display eth-trunk` · `display ip pool` · `display this`（任意视图可用）· `display current-configuration`
+**`display` 系列**：`display vlan` · `display interface` · `display port vlan` · `display ip interface brief` · `display ip routing-table` · `display mac-address` · `display arp` · `display stp brief` · `display ospf peer brief` · `display ospf interface` · `display acl` · `display nat session all` · `display rip` · `display rip routing` · `display rip neighbor` · `display port-group all` · `display eth-trunk` · `display ip pool` · `display this`（任意视图可用）· `display current-configuration`
 
 **设备型号**：S5700（三层交换机）· S3700（二层交换机）· AR6121（路由器）· PC
 
@@ -143,8 +151,31 @@ eNSP 要装 VirtualBox，GNS3 要配镜像，虚拟机镜像动辄几个 GB，�
 **Q：要联网吗？会偷偷上传我的东西吗？**
 A：不需要联网，可以完全离线运行。整个模拟器就是一个 HTML 文件，**没有任何网络请求**、没有后端、没有账号、不采集任何数据。你可以断网打开它验证。
 
+**Q：导出的文件能再读回来吗？**
+A：能，而且是**整张画布一起搬**：设备、摆放位置、连线、画布注释、每台设备的配置都会还原（文件开头的 `@topology` 段就是干这个的）。删掉那一段，导入时就只还原配置。
+重复导入不会翻倍 —— 同名设备复用、已连好的线跳过。
+
 **Q：我的配置会丢吗？**
 A：会自动保存在**你自己浏览器**的本地存储里，同一台电脑、同一个浏览器再次打开会自动恢复。换电脑、换浏览器、清浏览器数据会丢。要长期保存请点「导出配置」。
+
+**Q：路由配了但 ping 不通，怎么查？**
+A：三步就能定位：
+
+1. `display ip routing-table` —— 目标网段在不在？下一跳那一行 **Flags 有没有 `D`**？
+   只有 `R` 没有 `D`，说明这条路由的**下一跳当前不可达**（表下面会单独列出来）。
+2. `ping 下一跳地址` —— 互联口通不通？两端地址是否同一网段、端口有没有连线、有没有 `shutdown`。
+3. 两台设备**都要有路由**：正向要有，回程方向也要有（真实网络必须双向可达）。
+
+> ping 失败时会直接点名是哪台设备断的，例如：
+> `失败原因：R2 上没有到达 192.168.2.10 的路由（检查静态 / 动态路由是否配全，回程方向也要配）`。
+
+**Q：设备能改名吗？PC 行不行？**
+A：都能。交换机 / 路由器在系统视图下 `sysname 新名字`；**PC 没有 `system-view`，直接敲 `sysname 新名字`**，
+卡片标题和提示符会一起变（比如把 PC1 改成 `Server-01`）。
+
+**Q：怎么在拓扑图上写注释？**
+A：点画布左下角的 **`T 文字`**，直接打字（支持多行）。拖动挪位置、双击改字、右键（电脑）或长按（手机）删除。
+注释跟着拓扑自动保存。
 
 **Q：和真机差多少？能替代 eNSP 吗？**
 A：命令行风格、视图层级、报错措辞、`save` 交互都尽量贴近真机，但**它是教学模拟器，不是仿真平台** —— 不做报文的逐字节仿真，也不支持复杂特性（VRRP、MSTP、BGP 等）。适合练命令和验证配置思路，不适合做毕业设计级别的复杂组网；想练完整园区网请用 eNSP。
@@ -164,7 +195,7 @@ A：能。把同一个 HTML 文件传到手机（微信 / QQ / 网盘都行）�
 长按端口看详情 —— 功能一个不少，只是手势不一样（见上面「手机 / 平板也能用」的对照表）。
 
 **Q：我怎么知道手上这个文件是哪个版本？**
-A：点顶栏 **「关于」**，里面写着版本号；用记事本打开文件，**开头的注释里也有**（比如 `版本：v1.3.0`）。下载单个 HTML 文件就能自带版本信息，不用去比对文件大小。
+A：点顶栏 **「关于」**，里面写着版本号；用记事本打开文件，**开头的注释里也有**（比如 `版本：v1.4.0`）。下载单个 HTML 文件就能自带版本信息，不用去比对文件大小。
 
 ---
 
@@ -181,6 +212,25 @@ A：点顶栏 **「关于」**，里面写着版本号；用记事本打开文�
 ---
 
 ## 最近更新
+
+**v1.4.0**
+
+- **RIP 动态路由**：`rip 1` → `version 2` → `network`，`silent-interface`、`undo rip` 都有；
+  和真机一样**缺省是 version 1**，两端版本不一致就建不起邻居（`display rip neighbor` 会直接指出）；邻接按**二层可达**判定，中间隔着交换机也能建立；
+  `display rip` / `display rip routing` / `display rip neighbor` 可查邻居与学到的路由；
+  另附**实验五·补 · RIP 动态路由**（同一个拓扑，把静态路由换成 RIP 对比效果）；
+  **邻接按「二层可达」判定**，路由器之间隔着交换机也能建邻居（以前只认直连，隔一台交换机就永远没邻居、学不到路由）
+- **静态路由更接近真机**：支持**路由递归**（下一跳不在直连网段时按路由表再查），
+  支持把下一跳写成出接口（`ip route-static 192.168.2.0 24 GigabitEthernet0/0/0`）
+- **路由问题不再「看着是好的」**：下一跳不可达的静态路由，路由表 Flags 只有 `R` 没有 `D`，
+  表下面单独列出并说明原因；ping 不通时失败原因**点名到设备**（`R2 上没有到达 … 的路由`），不再只说「没有路由」
+- **OSPF 少了两个坑**：`network` 把子网掩码误写成 `255.255.255.0` 会被自动换算成反掩码并提示
+  （原来会静默失效、邻居永远起不来）；**没有邻居时 `display ospf peer` 会逐条列出原因**
+  （对端没开 OSPF / 接口没被通告 / 区域不同 / 网段不一致 / 报文过不去）
+- **导入 / 导出加强**：导出文件里带一段 `@topology`（设备型号/坐标、连线、注释），导入时**先把整张画布还原**（同名设备复用、已连好的线跳过，重复导入不会翻倍），再逐台重放配置；导入报告新增「新建设备 / 还原连线 / 恢复注释」统计和连线异常清单。同时修掉三处配置漏导出：**shutdown 的端口**、**STP 全局参数**、`vlan batch` 里多余的 VLAN 1
+- **画布文字标签**：左下角 **`T 文字`** 直接在拓扑上写注释，可拖动、双击改字、长按或右键删除，随拓扑自动保存
+- **PC 可以改名了**：PC 的终端里直接 `sysname 新名字`（原来 PC 只认 `ipconfig` / `ip` / `ping` 那几条，改名无处下手）
+- 修正 Vlanif 之间 OSPF/RIP 邻接的判定（原来两台交换机之间只要有一根线就可能被判成邻居）
 
 **v1.3.0**
 
@@ -239,7 +289,7 @@ A：点顶栏 **「关于」**，里面写着版本号；用记事本打开文�
 
 做工业自动控制与楼宇智能化的，这个是给网络教学做的小工具。
 
-> 程序里点顶栏 **「关于」** 也能看到版本号、作者与许可信息。当前版本 **v1.3.0**。
+> 程序里点顶栏 **「关于」** 也能看到版本号、作者与许可信息。当前版本 **v1.4.0**。
 
 ---
 
@@ -268,20 +318,22 @@ MIT License —— 随便用，商用也行，改了也不用说。详见 [LICEN
 
 **NE_HWSIM — a Huawei VRP network lab simulator that fits in one HTML file.**
 
-A single 282 KB HTML file. Double-click it and you get a drag-and-drop network topology builder plus a
+A single 328 KB HTML file. Double-click it and you get a drag-and-drop network topology builder plus a
 faithful Huawei VRP CLI (user view → system view → interface view → VLAN view → port-group view → ACL view
-→ NAT address-pool view → OSPF area view), with authentic `^` error markers and `save` interaction.
+→ NAT address-pool view → OSPF area view → RIP view), with authentic `^` error markers and `save` interaction.
 
 - **No installation, no backend, no account, works fully offline** — a lightweight alternative to eNSP / GNS3
   when you just need to practise Huawei CLI commands.
-- **8 built-in hands-on labs** for HCIA / HCIP practice: VLAN, Trunk, inter-VLAN routing, static routing,
-  OSPF, DHCP, **ACL**, **NAT**.
+- **9 built-in hands-on labs** for HCIA / HCIP practice: VLAN, Trunk, inter-VLAN routing, static routing,
+  OSPF, **RIP**, DHCP, **ACL**, **NAT**.
 - Batch port configuration (`interface range`, `port-group`), config export / import, auto-save to browser storage.
 - **Cables can be deleted or re-plugged** — click to select and press `Delete`, click the `×` on the cable,
   right-click, or double-click a connected port; or just **drag a cable end onto another free port** to re-route it.
 - **Works on phones and tablets too** — the same single HTML file. On a narrow screen the layout switches
   to portrait (device palette moves to a bottom strip), and every action has a touch gesture: drag devices,
   pinch to zoom, double-tap to open the CLI, long-press to delete.
+- **RIP v1/v2** (matching version required on both ends) and **OSPF** dynamic routing, static routes with route recursion, and canvas text notes
+  (`T` button) for annotating a topology.
 - Devices: S5700 (L3 switch), S3700 (L2 switch), AR6121 (router), PC.
 
 **Try it online:** <https://liuyimr.github.io/NE_HWSIM/NE_HWSIM.html> ·

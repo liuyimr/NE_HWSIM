@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <!--
   NE_HWSIM —— 华为 VRP 网络实训模拟器（单文件版）
-  版本：v1.3.0
+  版本：v1.4.0
 
   Copyright (c) 2026 新易科技工作室 NewE
   作者：Liuyi  <yimr@sohu.com>
@@ -129,6 +129,36 @@
   }
   .zoombar button:hover{border-color:var(--cy);color:var(--tx)}
   .zoombar button:active{background:#1f2733}
+
+  /* ---------- 画布文字标签（注释） ---------- */
+  /* 容器本身不接事件，空白处照旧能拖动画布；单条标签自己把事件要回来 */
+  #notes{position:absolute;inset:0;pointer-events:none}
+  .note{
+    position:absolute;pointer-events:auto;cursor:move;
+    /* ❗必须给 width:max-content：绝对定位元素默认走 shrink-to-fit，
+       标签放在容器右半边时「可用宽度」会变成负值，文字会被压成一列竖排。 */
+    width:max-content;max-width:260px;
+    font-size:12.5px;line-height:1.55;color:var(--tx);white-space:pre-wrap;word-break:break-word;
+    padding:1px 6px;border-radius:5px;border:1px dashed transparent;user-select:none;
+    touch-action:none;
+  }
+  @media (hover:hover) and (pointer:fine){ .note:hover{border-color:var(--line)} }
+  .note.sel{border-color:var(--cy);background:rgba(47,129,247,.10)}
+  .note.blank{color:var(--tx3);font-style:italic}
+  .note.editing{padding:0;border-color:var(--cy);background:var(--bg2);box-shadow:0 4px 16px rgba(0,0,0,.45)}
+  .note-input{
+    display:block;min-width:90px;padding:1px 6px;border:0;outline:0;background:transparent;
+    color:var(--tx);font:inherit;line-height:1.55;resize:none;overflow:hidden;white-space:pre-wrap;
+  }
+  /* 注释按钮：画布左下角，桌面和手机都显示 */
+  .note-btn{
+    position:absolute;left:10px;bottom:10px;z-index:6;display:flex;align-items:center;gap:5px;
+    padding:7px 11px;border-radius:9px;border:1px solid var(--line);background:rgba(22,27,34,.92);
+    color:var(--tx2);font-size:12.5px;line-height:1;backdrop-filter:blur(3px);
+  }
+  .note-btn:hover{border-color:var(--cy);color:var(--tx)}
+  .note-btn:active{background:#1f2733}
+  .note-btn .nt{font-family:Georgia,"Times New Roman",serif;font-size:15px;font-weight:700;line-height:1}
 
   /* ---------- 连线（可选中 / 可删除 / 可拖拽改接） ---------- */
   /* 父级 svg 是 pointer-events:none，靠子元素自己把事件要回来：这样画布空白处仍能拖动平移 */
@@ -299,6 +329,19 @@
 
   /* ---------- 导入配置结果 ---------- */
   .imp{display:flex;flex-direction:column;gap:8px}
+  /* 导入结果的小统计块 */
+  .impstat{display:flex;flex-wrap:wrap;gap:6px;margin:2px 0 10px}
+  .impstat .chip{
+    font-size:11.5px;padding:3px 9px;border-radius:20px;background:var(--bg3);
+    border:1px solid var(--line);color:var(--tx2);
+  }
+  .impstat .chip b{color:var(--tx);font-weight:600}
+  .impstat .chip .bad{color:#ffb3ae}
+  .impwarn{
+    border:1px solid #8b3a3a;border-radius:8px;background:#2a1618;color:#ffb3ae;
+    font-size:12px;line-height:1.7;padding:9px 12px;margin-bottom:10px;
+  }
+  .impwarn b{color:#ffd0cb}
   .improw{border:1px solid var(--line);border-radius:8px;background:var(--bg3);padding:10px 12px}
   .improw .imph{display:flex;align-items:center;gap:9px;font-size:12.5px;flex-wrap:wrap}
   .improw .imph b{font-weight:600}
@@ -408,6 +451,10 @@
     .card .head .x{font-size:17px;padding:4px 6px}
     .wire-x-in{transform:scale(1.35)}
     .zoombar button{width:42px;height:42px;font-size:17px}
+    /* 文字标签：手机上标签按钮放左下角，编辑框字号必须 ≥16px，否则 iOS 聚焦时会把整页放大 */
+    .note-btn{left:8px;bottom:8px;padding:8px 10px;font-size:13px}
+    .note{font-size:13.5px}
+    .note-input{font-size:16px;min-width:110px}
     .toast{bottom:auto;top:54px;max-width:88vw;font-size:13px}
   }
 
@@ -480,6 +527,7 @@
     <div class="stage" id="stage">
       <div class="stage-inner" id="stageInner">
         <svg class="wires" id="wires"></svg>
+        <div id="notes"></div>
         <div id="cards"></div>
         <div class="empty" id="empty">
           <svg class="empty-logo" viewBox="0 0 820 232" role="img" aria-label="NewE"><use href="#neweLogo" /></svg>
@@ -494,6 +542,10 @@
         <button id="btnZoomOut" title="缩小" aria-label="缩小">－</button>
         <button id="btnZoomFit" title="适应画布" aria-label="适应画布">⛶</button>
       </div>
+      <!-- 画布注释：点一下在视口中间放一个文字标签 -->
+      <button class="note-btn" id="btnNote" title="添加文字标签（注释）">
+        <span class="nt">T</span><span class="nl">文字</span>
+      </button>
     </div>
   </div>
 
@@ -721,6 +773,8 @@
       natSessions: [], // NAT 会话表（做地址转换时记录下来，供 display nat session 查看）
       dhcp: { enabled: false, pools: [] },
       ospf: { enabled: false, pid: null, routerId: null, areas: [], ifaces: [] },
+      // RIP：version 只影响回显（本模拟器两种版本都按「有类网络 + 跳数」收敛）
+      rip: { enabled: false, pid: null, version: 1, networks: [], silent: [] },
       stp: { mode: 'rstp', priority: 32768 },
       staticMac: [],
       netconf: { enabled: false },
@@ -771,6 +825,10 @@
     if (!dev.ospf) dev.ospf = { enabled: false, pid: null, routerId: null, areas: [], ifaces: [] };
     if (!Array.isArray(dev.ospf.areas)) dev.ospf.areas = [];
     if (!Array.isArray(dev.ospf.ifaces)) dev.ospf.ifaces = [];
+    if (!dev.rip) dev.rip = { enabled: false, pid: null, version: 1, networks: [], silent: [] };
+    if (!Array.isArray(dev.rip.networks)) dev.rip.networks = [];
+    if (!Array.isArray(dev.rip.silent)) dev.rip.silent = [];
+    if (dev.rip.version == null) dev.rip.version = 1;
     if (!dev.stp) dev.stp = { mode: 'rstp', priority: 32768 };
     if (!dev.cli || typeof dev.cli !== 'object') dev.cli = {};
     const c = dev.cli;
@@ -792,10 +850,13 @@
   const Net = {
     devices: [],
     cables: [],
+    // 画布上的文字标签（注释）：{ id, x, y, text, color }
+    labels: [],
 
     reset() {
       this.devices = [];
       this.cables = [];
+      this.labels = [];
     },
 
     getDevice(id) {
@@ -804,6 +865,19 @@
 
     getCable(id) {
       return this.cables.find((c) => c.id === id) || null;
+    },
+
+    /* ---------- 画布文字标签 ---------- */
+    addLabel(x, y, text) {
+      const l = { id: uid('note'), x: Math.round(x || 0), y: Math.round(y || 0), text: text || '', color: '#e6edf3' };
+      this.labels.push(l);
+      return l;
+    },
+    getLabel(id) {
+      return this.labels.find((l) => l.id === id) || null;
+    },
+    removeLabel(id) {
+      this.labels = this.labels.filter((l) => l.id !== id);
     },
 
     getPort(device, portId) {
@@ -937,7 +1011,7 @@
     const queue = [{ device, path: [device.id], ingressPortId: null }];
 
     // 起点设备自身是否拥有该 IP（例如本地 Vlanif）
-    if (ownsIpInDomain(device, domain, targetIp)) {
+    if (ownsIpInDomain(device, domain, targetIp, port.id)) {
       return { device, path: [device.id], ingressPortId: null };
     }
 
@@ -978,7 +1052,7 @@
           if (deny) return { denied: deny, path };
         }
 
-        if (ownsIpInDomain(peer.device, domain, targetIp)) {
+        if (ownsIpInDomain(peer.device, domain, targetIp, peer.port.id)) {
           return {
             device: peer.device,
             path,
@@ -993,7 +1067,12 @@
   }
 
   /** 设备在给定二层域下是否拥有该 IP 地址（三层拥有关系） */
-  function ownsIpInDomain(device, domain, ip) {
+  /**
+   * 设备在给定二层域下是否拥有该 IP 地址（三层拥有关系）。
+   * ❗点到点域必须带上「报文是从哪个端口进/出的」——否则同一台设备另一根线上的地址也会被当成
+   * 在这条链路上答 ARP，既会让邻居诊断张冠李戴，也会让二层投递走错设备。
+   */
+  function ownsIpInDomain(device, domain, ip, viaPortId) {
     if (!ip) return false;
     // Vlanif
     for (const vi of device.vlanifs) {
@@ -1006,7 +1085,11 @@
     for (const p of device.ports) {
       if (p.mode !== 'routed' || p.shutdown || !p.ip) continue;
       if (p.ip !== ip) continue;
-      if (domain.type === P2P_DOMAIN) return true;
+      if (domain.type === P2P_DOMAIN) {
+        // 点到点域只认本域的那个端口
+        if (viaPortId == null || p.id === viaPortId) return true;
+        continue;
+      }
       // 路由口挂在某个 VLAN 域里（路由口直连交换机二层口）
       const d = egressDomain(device, p);
       if (d && d.type === VLAN_DOMAIN && d.vlan === domain.vlan) return true;
@@ -1014,7 +1097,9 @@
     // PC 主机口
     if (device.type === 'pc') {
       for (const p of device.ports) {
-        if (p.ip === ip && p.cableId) return true;
+        if (p.ip !== ip || !p.cableId) continue;
+        if (domain.type === P2P_DOMAIN && viaPortId != null && p.id !== viaPortId) continue;
+        return true;
       }
     }
     return false;
@@ -1035,6 +1120,58 @@
     return list;
   }
 
+  /** 路由表里命中 dstIp 的最优路由（最长前缀，前缀相同比优先级） */
+  function bestRouteTo(device, dstIp) {
+    let best = null;
+    for (const r of device.routes) {
+      if (r.mask == null) continue;
+      if (!sameSubnet(r.dest, r.mask, dstIp)) continue;
+      if (!best || r.mask > best.mask || (r.mask === best.mask && (r.pre || 0) < (best.pre || 0))) best = r;
+    }
+    return best;
+  }
+
+  /** 设备上能直达 nextHop 的三层接口；给了接口名时优先按名字找（直连接口路由） */
+  function ifaceTo(device, nextHop, ifaceName) {
+    const ifaces = l3Interfaces(device);
+    if (ifaceName) {
+      const byName = ifaces.find((i) => i.name === ifaceName);
+      if (byName) return byName;
+    }
+    if (!nextHop) return null;
+    return ifaces.find((i) => (i.kind === 'port' ? i.up : true) && sameSubnet(i.ip, i.mask, nextHop)) || null;
+  }
+
+  /**
+   * 把一条路由解析成「出接口 + 真正发往的下一跳」。
+   * 真实路由器支持**路由递归**：下一跳不在直连网段时，先按路由表再查一次，
+   * 报文实际发给递归解析出来的那个网关（最多 4 层，防环）。
+   * 解析不出来说明这条路由的下一跳当前不可达 —— 报文不能靠它转发。
+   */
+  function resolveRoute(device, route, depth) {
+    const d = depth || 0;
+    if (route.nextHop) {
+      const via = ifaceTo(device, route.nextHop, route.ifaceName);
+      if (via) return { iface: via, nextHop: route.nextHop };
+    } else if (route.ifaceName) {
+      // 只指定出接口的路由（点到点直连），下一跳就是目的地址
+      const via = ifaceTo(device, null, route.ifaceName);
+      if (via) return { iface: via, nextHop: null };
+    }
+    if (d >= 4) return null;
+    if (!route.nextHop) return null;
+    const rec = bestRouteTo(device, route.nextHop);
+    if (!rec || rec === route) return null;
+    const sub = resolveRoute(device, rec, d + 1);
+    if (!sub) return null;
+    return { iface: sub.iface, nextHop: sub.nextHop, recursed: true };
+  }
+
+  /** 这条静态 / 动态路由当前能不能真正用来转发 */
+  function routeActive(device, route) {
+    return !!resolveRoute(device, route, 0);
+  }
+
   /** 查路由表：返回 { type:'direct'|'route'|'none', iface, nextHop } */
   function routeLookup(device, dstIp) {
     const ifaces = l3Interfaces(device);
@@ -1045,19 +1182,15 @@
         return { type: 'direct', iface: i, nextHop: null };
       }
     }
-    // 2) 最长前缀匹配（静态 / OSPF）
-    let best = null;
-    for (const r of device.routes) {
-      if (r.mask == null) continue;
-      if (!sameSubnet(r.dest, r.mask, dstIp)) continue;
-      if (!best || r.mask > best.mask) best = r;
-    }
+    // 2) 最长前缀匹配（静态 / OSPF / RIP）
+    const best = bestRouteTo(device, dstIp);
     if (best) {
-      const iface =
-        ifaces.find((i) => (best.ifaceName ? i.name === best.ifaceName : false)) ||
-        ifaces.find((i) => sameSubnet(i.ip, i.mask, best.nextHop)) ||
-        null;
-      return { type: 'route', iface, nextHop: best.nextHop, route: best };
+      const r = resolveRoute(device, best, 0);
+      if (!r) {
+        // 路由在表里，但下一跳当前不可达 —— 明确标出来，别让路由表「看着是好的」
+        return { type: 'route', iface: null, nextHop: best.nextHop, route: best, unreachable: true };
+      }
+      return { type: 'route', iface: r.iface, nextHop: r.nextHop, route: best, recursed: !!r.recursed };
     }
     // 3) PC 的缺省网关兜底
     if (device.type === 'pc') {
@@ -1119,11 +1252,22 @@
 
     const lookup = routeLookup(device, dstIp);
     if (lookup.type === 'none') {
-      return { ok: false, path, reason: `没有到达 ${dstIp} 的路由` };
+      return {
+        ok: false,
+        path,
+        reason: `${device.hostname} 上没有到达 ${dstIp} 的路由（检查静态 / 动态路由是否配全，回程方向也要配）`
+      };
+    }
+    if (lookup.unreachable) {
+      return {
+        ok: false,
+        path,
+        reason: `${device.hostname} 上到 ${dstIp} 的路由下一跳 ${lookup.nextHop} 不可达（检查互联口的两端地址是否在同一网段、端口是否接通）`
+      };
     }
 
     const egress = findEgressIface(device, dstIp, lookup);
-    if (!egress) return { ok: false, path, reason: '找不到出接口' };
+    if (!egress) return { ok: false, path, reason: `${device.hostname} 上找不到去往 ${lookup.nextHop || dstIp} 的出接口` };
 
     // ACL 出方向过滤：报文从出接口发出时检查该接口绑定的 ACL
     const aclOutDeny = checkAclOutbound(device, srcIp, dstIp, egress);
@@ -1141,17 +1285,21 @@
 
     if (egress.kind === 'port') {
       port = Net.getPort(device, egress.portId);
-      if (!port || port.shutdown) return { ok: false, path, reason: `${egress.name} 接口已关闭` };
-      if (!port.cableId) return { ok: false, path, reason: `出接口 ${egress.name} 未连接线缆` };
+      if (!port || port.shutdown) return { ok: false, path, reason: `${device.hostname} 的 ${egress.name} 接口已关闭（shutdown）` };
+      if (!port.cableId) return { ok: false, path, reason: `${device.hostname} 的出接口 ${egress.name} 未连接线缆` };
       domain = egressDomain(device, port);
       const res = forwardViaPort(device, dstIp, lookup, port, domain, ctx);
-      return res || { ok: false, path, reason: `在二层域内无法到达 ${lookup.nextHop || dstIp}` };
+      return res || { ok: false, path, reason: `${device.hostname} 的二层域内无法到达 ${lookup.nextHop || dstIp}` };
     }
 
     // Vlanif：在对应 VLAN 内寻找物理出端口
     const cands = device.ports.filter((p) => !p.shutdown && p.cableId && portPassesVlan(p, egress.vlanId));
     if (!cands.length) {
-      return { ok: false, path, reason: `VLAN ${egress.vlanId} 内没有可用的物理端口（检查端口是否已连线和放行该 VLAN）` };
+      return {
+        ok: false,
+        path,
+        reason: `${device.hostname} 的 VLAN ${egress.vlanId} 内没有可用的物理端口（检查端口是否已连线、是否已划入该 VLAN）`
+      };
     }
     domain = { type: VLAN_DOMAIN, vlan: egress.vlanId };
     let last = null;
@@ -1160,12 +1308,12 @@
       if (res && res.ok) return res;
       if (res) last = res;
     }
-    return last || { ok: false, path, reason: `在 VLAN ${egress.vlanId} 内无法到达 ${lookup.nextHop || dstIp}` };
+    return last || { ok: false, path, reason: `${device.hostname} 的 VLAN ${egress.vlanId} 内无法到达 ${lookup.nextHop || dstIp}` };
   }
 
   function forwardViaPort(device, dstIp, lookup, port, domain, ctx) {
-    // 目标 IP 在本二层域内？
-    const target = lookup.type === 'direct' ? dstIp : lookup.nextHop;
+    // 目标 IP 在本二层域内？（只指定出接口的点到点路由，下一跳就是目的地址）
+    const target = lookup.type === 'direct' ? dstIp : lookup.nextHop || dstIp;
     if (!target) return { ok: false, path: ctx.path, reason: '缺少下一跳' };
 
     const hit = deliverL2(device, port, domain, target, { srcIp: ctx.srcIp, dstIp });
@@ -1176,7 +1324,7 @@
       return {
         ok: false,
         path: ctx.path,
-        reason: `在二层域内无法到达 ${target}（检查 VLAN 划分、Trunk 放行、端口是否 shutdown）`
+        reason: `${device.hostname} 的二层域内无法到达 ${target}（检查 VLAN 划分、Trunk 放行、端口是否 shutdown）`
       };
     }
 
@@ -1187,7 +1335,7 @@
       return { ok: true, path: newPath, reason: 'direct' };
     }
     if (arrived.id === device.id) {
-      return { ok: false, path: newPath, reason: '下一跳不可达' };
+      return { ok: false, path: newPath, reason: `${device.hostname} 的下一跳 ${target} 不可达` };
     }
     if (ctx.visitedDevices.has(arrived.id)) {
       return { ok: false, path: newPath, reason: '路由环路' };
@@ -1366,6 +1514,61 @@
     return null;
   }
 
+  /**
+   * PC 不是路由器：它没有路由表，跨网段完全依赖默认网关。
+   * 所以 PC 侧 ping 失败必须按主机的逻辑解释，不能套用「检查静态/动态路由」那套提示
+   * —— 那会让用户去查 RIP，而真正的原因是网关没配或配错。
+   */
+  function pcHint(pc, dstIp) {
+    const p = pc.ports.find((x) => x.ip) || null;
+    if (!p) return `${pc.hostname} 还没有配置 IP 地址 —— 先在命令行执行 ip <地址> <掩码> <网关>`;
+    if (!p.cableId) return `${pc.hostname} 的网线没有接到任何设备上（把这个口拖到对端设备的口上）`;
+
+    // 同网段：直连访问，与网关无关
+    if (sameSubnet(p.ip, p.mask, dstIp)) {
+      return (
+        `${pc.hostname}(${p.ip}/${p.mask}) 和 ${dstIp} 在同一网段，属于直连访问、不经过网关 —— ` +
+        '查两点之间的线缆，以及中间交换机的 VLAN / 端口是否 shutdown'
+      );
+    }
+
+    if (!p.gateway) {
+      return (
+        `${pc.hostname} 没有配置默认网关 —— 主机自己只认识直连网段，跨网段必须先配网关：` +
+        `ip ${p.ip} ${p.mask} <同一网段里的路由器接口地址>`
+      );
+    }
+    if (!sameSubnet(p.ip, p.mask, p.gateway)) {
+      return (
+        `${pc.hostname} 的默认网关 ${p.gateway} 不在 ${p.ip}/${p.mask} 这个网段内 —— ` +
+        '要么网关地址写错了（应填本网段里的路由器接口），要么掩码写错了（/24 写成 /25 这类）'
+      );
+    }
+
+    const owner = Net.devices.find(
+      (d) =>
+        d.ports.some((x) => x.ip === p.gateway) ||
+        d.vlanifs.some((v) => v.enabled && v.ip === p.gateway)
+    );
+    if (!owner) {
+      return (
+        `${pc.hostname} 的默认网关 ${p.gateway} 在整个拓扑里没有任何设备配置 —— ` +
+        '检查路由器接口地址是否就是它（display ip interface brief），或网关是不是抄错了'
+      );
+    }
+    const gwDev = owner;
+    const gwPort = gwDev.ports.find((x) => x.ip === p.gateway) || null;
+    if (gwPort && gwPort.shutdown) {
+      return `${pc.hostname} 的默认网关 ${p.gateway} 所在的 ${gwDev.hostname} ${gwPort.name} 端口是 shutdown 的`;
+    }
+    return (
+      `${pc.hostname} 的默认网关 ${p.gateway}（${gwDev.hostname}）没有应答 —— ` +
+      '查：① PC 与它之间的线缆接在哪个端口、那个端口是否 shutdown；' +
+      '② 中间交换机是否放行 PC 所在的 VLAN；' +
+      `③ ${gwDev.hostname} 上有没有到 ${dstIp} 的路由（display ip routing-table）`
+    );
+  }
+
   /** 执行 ping，返回 { ok, path, reason, srcIp, dstDevice } */
   function ping(srcDevice, dstIp, srcIpOverride) {
     const src = srcIpOverride ? { ip: srcIpOverride } : primaryIp(srcDevice);
@@ -1391,11 +1594,16 @@
     }
 
     const res = forward(srcDevice, dstIp, { srcIp: src.ip });
+    // PC 侧失败 → 换成主机视角的解释。
+    // 只在「失败发生在 PC 自己身上」时替换，别盖掉路由器给出的原因（那才是真线索）。
+    if (!res.ok && srcDevice.type === 'pc' && String(res.reason || '').startsWith(srcDevice.hostname)) {
+      res.reason = pcHint(srcDevice, dstIp) || res.reason;
+    }
     return { ...res, srcIp: src.ip, dstDevice: dstDevice || null, dstIp };
   }
 
-  /** traceroute：逐跳收集 */
-  function traceroute(srcDevice, dstIp) {
+  /** traceroute：逐跳收集（内部实现，PC 侧的失败原因在外面统一翻译） */
+  function traceWalk(srcDevice, dstIp) {
     const hops = [];
     const src = primaryIp(srcDevice);
     if (!src || !src.ip) return { ok: false, hops, reason: '源设备未配置 IP 地址' };
@@ -1437,6 +1645,15 @@
     return { ok: false, hops, reason: 'TTL 超时' };
   }
 
+  /** traceroute 对外入口：PC 失败时换成主机视角的原因 */
+  function traceroute(srcDevice, dstIp) {
+    const r = traceWalk(srcDevice, dstIp);
+    if (!r.ok && srcDevice.type === 'pc' && String(r.reason || '').includes(srcDevice.hostname)) {
+      r.reason = pcHint(srcDevice, dstIp) || r.reason;
+    }
+    return r;
+  }
+
   /* ------------------------------ OSPF 计算 ------------------------------ */
 
   /** 该接口是否被 area 的 network 语句覆盖 */
@@ -1450,6 +1667,28 @@
       }
     }
     return null;
+  }
+
+  /**
+   * 两个三层接口是否在**同一个二层域**里 —— 中间可以隔着若干台交换机。
+   * ❗以前 OSPF / RIP 的邻接只按「同一根线缆两端」判定，所以两台路由器之间只要隔一台交换机，
+   * 邻居就永远建不起来（RIP 学不到路由、OSPF 也没邻居）。这里直接复用它自己的报文投递逻辑
+   * （deliverL2）走一遍二层域，能走到对端接口就算邻接 —— 和真实的广播网行为一致。
+   */
+  function l2Adjacent(devA, ifaceA, devB, ipB) {
+    if (!ifaceA || !ipB || !devA || !devB || devA.id === devB.id) return false;
+    const starts =
+      ifaceA.kind === 'port'
+        ? [Net.getPort(devA, ifaceA.portId)].filter(Boolean)
+        : devA.ports.filter((p) => !p.shutdown && p.cableId && portPassesVlan(p, ifaceA.vlanId));
+    for (const port of starts) {
+      if (!port || port.shutdown || !port.cableId) continue;
+      const domain = egressDomain(devA, port);
+      if (!domain) continue;
+      const hit = deliverL2(devA, port, domain, ipB);
+      if (hit && hit.device && hit.device.id === devB.id) return true;
+    }
+    return false;
   }
 
   /** 重新计算全网 OSPF 路由（邻居建立 + SPF 计算） */
@@ -1474,7 +1713,7 @@
       }
     }
 
-    // 3) 建立邻接关系（直连 + 同网段 + 同区域 + 双方 OSPF 启用且接口已通告）
+    // 3) 建立邻接关系：二层可达 + 同网段 + 同区域 + 双方 OSPF 启用且接口已通告
     const adj = new Map(); // devId -> [{ peer, myIface, peerIface, area }]
     const addAdj = (a, b, aIf, bIf, area) => {
       if (!adj.has(a.id)) adj.set(a.id, []);
@@ -1483,21 +1722,19 @@
       adj.get(b.id).push({ peer: a, myIface: bIf, peerIface: aIf, area });
     };
 
-    for (const cable of Net.cables) {
-      const a = Net.getDevice(cable.aDeviceId);
-      const b = Net.getDevice(cable.bDeviceId);
-      if (!a || !b) continue;
-      for (const aIf of a.ospfActiveIfaces || []) {
-        for (const bIf of b.ospfActiveIfaces || []) {
-          if (aIf.area !== bIf.area) continue;
-          if (!sameSubnet(aIf.ip, aIf.mask, bIf.ip) || !sameSubnet(bIf.ip, bIf.mask, aIf.ip)) continue;
-          // 确认两个接口确实通过这条线缆相连
-          const okLink =
-            (aIf.kind === 'port' && aIf.portId === cable.aPortId) ||
-            (bIf.kind === 'port' && bIf.portId === cable.bPortId) ||
-            (aIf.kind === 'vlanif' && aIf.vlanId != null && bIf.kind === 'vlanif' && aIf.vlanId != null);
-          if (!okLink) continue;
-          addAdj(a, b, aIf, bIf, aIf.area);
+    const ospfDevs = Net.devices.filter((d) => d.ospf && d.ospf.enabled && (d.ospfActiveIfaces || []).length);
+    for (let i = 0; i < ospfDevs.length; i++) {
+      for (let j = i + 1; j < ospfDevs.length; j++) {
+        const a = ospfDevs[i];
+        const b = ospfDevs[j];
+        for (const aIf of a.ospfActiveIfaces) {
+          for (const bIf of b.ospfActiveIfaces) {
+            if (String(aIf.area) !== String(bIf.area)) continue;
+            if (!sameSubnet(aIf.ip, aIf.mask, bIf.ip) || !sameSubnet(bIf.ip, bIf.mask, aIf.ip)) continue;
+            // 二层可达即可（中间可以隔着交换机），不再要求「同一根线缆两端」
+            if (!l2Adjacent(a, aIf, b, bIf.ip)) continue;
+            addAdj(a, b, aIf, bIf, aIf.area);
+          }
         }
       }
     }
@@ -1559,6 +1796,226 @@
         priority: 1
       }));
 
+      for (const r of learned.values()) d.routes.push(r);
+    }
+  }
+
+  /**
+   * OSPF 邻居起不来时逐条链路找出原因（display ospf peer 没邻居时输出）。
+   * 教学里「OSPF 配好了却看不到邻居」绝大多数就是下面这几种，直接把原因写出来最有价值。
+   */
+  /**
+   * 邻居起不来时逐条链路找原因（display ospf peer / display rip neighbor 没邻居时输出）。
+   * 按「二层可达」找对端 —— 中间隔着交换机也能查出来，和邻接判定用的是同一套逻辑。
+   */
+  function peerDiag(device, proto) {
+    const isOspf = proto === 'ospf';
+    const label = isOspf ? 'OSPF' : 'RIP';
+    const st = isOspf ? device.ospf : device.rip;
+    const activeKey = isOspf ? 'ospfActiveIfaces' : 'ripActiveIfaces';
+    const out = [];
+    if (!st || !st.enabled) {
+      out.push(isOspf ? '本机没有启用 OSPF（先 ospf 1，再进 area 0 用 network 通告网段）' : '本机没有启用 RIP（先 rip 1，再 network 通告网段）');
+      return out;
+    }
+    const ifaces = l3Interfaces(device);
+    if (!ifaces.length) {
+      out.push('本机没有已配置 IP 的三层接口（路由口 ip address / Vlanif ip address 都要配）');
+      return out;
+    }
+    const active = device[activeKey] || [];
+    if (!active.length) {
+      out.push(
+        isOspf
+          ? '没有任何接口被 network 通告 —— 检查 network 的网段与反掩码是否覆盖接口地址'
+          : '没有任何接口被 network 通告 —— RIP 的 network 只写网段时按主类匹配（192.168.x.0 → /24，10.x → /8）'
+      );
+    }
+    for (const i of ifaces) {
+      if (!active.some((a) => a.name === i.name)) out.push(`接口 ${i.name}(${i.ip}/${i.mask}) 没有被任何 network 语句通告`);
+    }
+    if (!active.length) return out;
+
+    for (const own of active) {
+      let sawLink = false;
+      for (const peer of Net.devices) {
+        if (peer.id === device.id) continue;
+        if (peer.type === 'pc') continue; // PC 不会跑动态路由，别当成邻居候选
+        for (const pIf of l3Interfaces(peer)) {
+          if (!l2Adjacent(device, own, peer, pIf.ip)) continue;
+          sawLink = true;
+          const where = `${own.name}(${own.ip}) ↔ ${peer.hostname} ${pIf.name}(${pIf.ip})`;
+          const pSt = isOspf ? peer.ospf : peer.rip;
+          if (!pSt || !pSt.enabled) {
+            out.push(`${where}：对端没有启用 ${label}`);
+            continue;
+          }
+          // silent-interface 的接口不会出现在 activeIfaces 里，得先说清楚，不能笼统报「没被通告」
+          const pSilent = !isOspf && peer.rip ? peer.rip.silent || [] : [];
+          if (pSilent.includes('all') || pSilent.includes(pIf.name)) {
+            out.push(`${where}：对端把 ${pIf.name} 配成了 silent-interface（只收不发），不会向本机发送路由`);
+            continue;
+          }
+          const pActive = (peer[activeKey] || []).find((x) => x.name === pIf.name && x.ip === pIf.ip);
+          if (!pActive) {
+            out.push(`${where}：对端接口没被它的 network 通告`);
+            continue;
+          }
+          if (!isOspf && (peer.rip.version || 1) !== (st.version || 1)) {
+            out.push(
+              `${where}：两端 RIP 版本不一致（本机 v${st.version || 1} / 对端 v${peer.rip.version || 1}）` +
+                ' —— v1 与 v2 的报文互不兼容，两端必须都配 version 2（或都不配）'
+            );
+            continue;
+          }
+          if (!sameSubnet(own.ip, own.mask, pIf.ip) || !sameSubnet(pIf.ip, pIf.mask, own.ip)) {
+            out.push(`${where}：两端地址不在同一网段或掩码不一致`);
+            continue;
+          }
+          if (isOspf && String(pActive.area) !== String(own.area)) {
+            out.push(`${where}：两端区域不同（${fmtArea(own.area)} / ${fmtArea(pActive.area)}）`);
+            continue;
+          }
+          out.push(`${where}：参数一致，报文却过不去（检查端口 shutdown / VLAN 划分 / Trunk 放行）`);
+        }
+      }
+      if (!sawLink) out.push(`接口 ${own.name}(${own.ip}) 这一侧没有可达的对端三层接口（接线？两端端口是否同一 VLAN / Trunk 是否放行？）`);
+    }
+    return out;
+  }
+
+  function ospfPeerDiag(device) {
+    return peerDiag(device, 'ospf');
+  }
+
+  function ripPeerDiag(device) {
+    return peerDiag(device, 'rip');
+  }
+
+  /* ------------------------------ RIP 计算 ------------------------------ */
+
+  /** 主类网络前缀：RIP 的 network 只写 IP 时按 A/B/C 类理解 */
+  function classfulPrefix(ip) {
+    const first = parseInt(String(ip).split('.')[0], 10);
+    if (isNaN(first)) return null;
+    if (first < 128) return 8;
+    if (first < 192) return 16;
+    if (first < 224) return 24;
+    return null;
+  }
+
+  /** 接口是否被 rip 的 network 覆盖：只写 IP 按主类算，写成 IP+反掩码按反掩码算 */
+  function ripCovers(device, ip) {
+    for (const n of device.rip.networks) {
+      let pfx = null;
+      if (n.wildcard) pfx = wildcardToPrefix(n.wildcard);
+      else pfx = classfulPrefix(n.ip);
+      if (pfx == null) continue;
+      if (sameSubnet(n.ip, pfx, ip)) return n;
+    }
+    return null;
+  }
+
+  /**
+   * 重新计算全网 RIP 路由。
+   * 真实 RIP 是距离矢量协议，这里按「跳数」收敛：邻接之间互告网段，取最小跳数，
+   * 15 跳以内有效、16 跳视为不可达（和真机一致）。silent-interface 的口不建邻居。
+   */
+  function recomputeRip() {
+    for (const d of Net.devices) {
+      if (!d.rip) {
+        d.rip = { enabled: false, pid: null, version: 1, networks: [], silent: [] };
+      }
+      d.routes = d.routes.filter((r) => r.proto !== 'RIP');
+      d.ripNeighbors = [];
+      d.ripActiveIfaces = [];
+    }
+
+    // 1) 找出每台设备的 RIP 活跃接口（被 network 通告、且不是 silent）
+    for (const d of Net.devices) {
+      if (!d.rip.enabled) continue;
+      const silent = d.rip.silent || [];
+      for (const i of l3Interfaces(d)) {
+        if (!ripCovers(d, i.ip)) continue;
+        if (silent.includes('all') || silent.includes(i.name)) continue;
+        d.ripActiveIfaces.push(i);
+      }
+    }
+
+    // 2) 建立邻接：二层可达、同网段、两端都通告且都不是 silent
+    const adj = new Map();
+    const add = (a, b, aIf, bIf) => {
+      if (!adj.has(a.id)) adj.set(a.id, []);
+      if (!adj.has(b.id)) adj.set(b.id, []);
+      adj.get(a.id).push({ peer: b, myIface: aIf, peerIface: bIf });
+      adj.get(b.id).push({ peer: a, myIface: bIf, peerIface: aIf });
+    };
+    const ripDevs = Net.devices.filter((d) => d.rip && d.rip.enabled && (d.ripActiveIfaces || []).length);
+    for (let i = 0; i < ripDevs.length; i++) {
+      for (let j = i + 1; j < ripDevs.length; j++) {
+        const a = ripDevs[i];
+        const b = ripDevs[j];
+        for (const aIf of a.ripActiveIfaces) {
+          for (const bIf of b.ripActiveIfaces) {
+            if (!sameSubnet(aIf.ip, aIf.mask, bIf.ip) || !sameSubnet(bIf.ip, bIf.mask, aIf.ip)) continue;
+            // ❗RIP v1 与 v2 的报文互不兼容：一端 v1 一端 v2 永远建不起邻居（真机就是这样）
+            if ((a.rip.version || 1) !== (b.rip.version || 1)) continue;
+            // 二层可达即可（中间可以隔着交换机）—— 和 OSPF 用同一套判定
+            if (!l2Adjacent(a, aIf, b, bIf.ip)) continue;
+            add(a, b, aIf, bIf);
+          }
+        }
+      }
+    }
+
+    // 3) 每台设备自己要通告的直连网段
+    const subnets = new Map();
+    for (const d of Net.devices) {
+      const list = [];
+      for (const i of d.ripActiveIfaces) list.push({ network: networkOf(i.ip, i.mask), mask: i.mask });
+      subnets.set(d.id, list);
+    }
+
+    // 4) 按跳数收敛
+    for (const d of Net.devices) {
+      if (!d.rip.enabled) continue;
+      const visited = new Set([d.id]);
+      const queue = [{ dev: d, nextHop: null, cost: 0, firstIface: null }];
+      const learned = new Map();
+
+      while (queue.length) {
+        const cur = queue.shift();
+        for (const n of adj.get(cur.dev.id) || []) {
+          if (visited.has(n.peer.id)) continue;
+          visited.add(n.peer.id);
+          const nextHop = cur.nextHop || n.peerIface.ip;
+          const cost = cur.cost + 1;
+          if (cost > 15) continue; // RIP 最大 15 跳
+          const firstIface = cur.firstIface || n.myIface;
+          queue.push({ dev: n.peer, nextHop, cost, firstIface });
+
+          for (const s of subnets.get(n.peer.id) || []) {
+            const key = `${s.network}/${s.mask}`;
+            if ((subnets.get(d.id) || []).some((x) => x.network === s.network && x.mask === s.mask)) continue;
+            if (learned.has(key) && learned.get(key).cost <= cost) continue;
+            learned.set(key, {
+              dest: s.network,
+              mask: s.mask,
+              nextHop,
+              proto: 'RIP',
+              pre: 100,
+              cost,
+              ifaceName: firstIface ? firstIface.name : null
+            });
+          }
+        }
+      }
+
+      d.ripNeighbors = (adj.get(d.id) || []).map((n) => ({
+        address: n.peerIface.ip,
+        iface: n.myIface.name,
+        name: n.peer.hostname
+      }));
       for (const r of learned.values()) d.routes.push(r);
     }
   }
@@ -1748,7 +2205,7 @@
     if (p.nat && p.nat.aclId != null) {
       lines.push(` nat outbound ${p.nat.aclId}${p.nat.addrGroup != null ? ' address-group ' + p.nat.addrGroup : ''}`);
     }
-    if (p.shutdown && p.cableId) lines.push(' shutdown');
+    if (p.shutdown) lines.push(' shutdown');
     return lines;
   }
 
@@ -1795,10 +2252,20 @@
       return !m || (!m.desc && !m.name);
     });
     const namedVlans = dev.vlans.filter((v) => plainVlans.indexOf(v) < 0).sort((a, b) => a - b);
-    if (plainVlans.length > 1) {
-      out.push(`vlan batch ${plainVlans.slice().sort((a, b) => a - b).join(' ')}`);
+    const batchVlans = plainVlans.filter((v) => v !== 1).sort((a, b) => a - b);
+    if (batchVlans.length) {
+      out.push(`vlan batch ${batchVlans.join(' ')}`);
       out.push('#');
     }
+    // STP 全局参数：非缺省才写，缺省不写（导入时缺省值由设备模板给）
+    const stpLines = [];
+    if (dev.stp && dev.stp.mode && dev.stp.mode !== 'rstp') stpLines.push(`stp mode ${dev.stp.mode}`);
+    if (dev.stp && dev.stp.priority != null && dev.stp.priority !== 32768) stpLines.push(`stp priority ${dev.stp.priority}`);
+    if (stpLines.length) {
+      out.push(...stpLines);
+      out.push('#');
+    }
+
     for (const v of namedVlans) {
       const m = meta[v] || {};
       out.push(`vlan ${v}`);
@@ -1845,6 +2312,7 @@
       for (const a of dev.acl) {
         out.push(`acl number ${a.id}`);
         if (a.desc) out.push(` description ${a.desc}`);
+        if (a.step && a.step !== 5) out.push(` step ${a.step}`);
         for (const r of a.rules) out.push(' ' + aclRuleText(r));
         out.push('#');
       }
@@ -1855,6 +2323,13 @@
         out.push(` area ${fmtArea(a.areaId)}`);
         for (const n of a.networks) out.push(`  network ${n.ip} ${n.wildcard}`);
       }
+      out.push('#');
+    }
+    if (dev.rip && dev.rip.enabled) {
+      out.push(`rip ${dev.rip.pid || 1}`);
+      if ((dev.rip.version || 1) !== 1) out.push(` version ${dev.rip.version}`);
+      for (const n of dev.rip.networks) out.push(` network ${n.ip}${n.wildcard ? ' ' + n.wildcard : ''}`);
+      for (const s of dev.rip.silent || []) out.push(` silent-interface ${s}`);
       out.push('#');
     }
     for (const r of dev.routes.filter((x) => x.proto === 'Static')) {
@@ -1925,7 +2400,11 @@
     hasNatConfig,
     // 协议
     recomputeOspf,
+    recomputeRip,
     recomputeStp,
+    ospfPeerDiag,
+    ripPeerDiag,
+    routeActive,
     // DHCP
     findDhcpServer,
     allocateFromPool,
@@ -2031,6 +2510,26 @@
     return E.maskToPrefix(v);
   }
 
+  /**
+   * 判断一个点分十进制地址是不是「子网掩码」（左边连续 1、右边连续 0，且不是 0.0.0.0）。
+   * 用来识别学生把子网掩码写进本该写反掩码的地方（network / RIP 的 network）。
+   */
+  function isSubnetMask(s) {
+    const parts = String(s).split('.').map((x) => parseInt(x, 10));
+    if (parts.length !== 4 || parts.some((x) => isNaN(x) || x < 0 || x > 255)) return false;
+    const bits = parts.map((p) => p.toString(2).padStart(8, '0')).join('');
+    if (!/^1+0*$/.test(bits)) return false;
+    return bits !== '0'.repeat(32);
+  }
+
+  /** 子网掩码取反 = 反掩码 */
+  function maskToWildcard(s) {
+    return String(s)
+      .split('.')
+      .map((x) => 255 - parseInt(x, 10))
+      .join('.');
+  }
+
   /* --------------------------- 视图栈（核心） ---------------------------
    * 真实 VRP 的视图是「一级一级进入、quit 一级一级退出」：
    *   <SW1> --system-view--> [SW1]
@@ -2053,7 +2552,8 @@
     'aclId',
     'natGroupId',
     'ospfPid',
-    'areaId'
+    'areaId',
+    'ripPid'
   ];
 
   /** 接口视图 / 端口组视图下当前被配置的端口列表 */
@@ -2159,6 +2659,8 @@
         return `[${name}-ospf-${dev.cli.ospfPid || ''}]`;
       case 'ospf-area-view':
         return `[${name}-ospf-${dev.cli.ospfPid || ''}-area-${dev.cli.areaId || ''}]`;
+      case 'rip-view':
+        return `[${name}-rip-${dev.cli.ripPid || ''}]`;
       case 'trunk-view':
         return `[${name}-Eth-Trunk${dev.cli.trunkId || ''}]`;
       default:
@@ -2426,6 +2928,16 @@
       return out;
     }
 
+    if (view === 'rip-view') {
+      const rip = dev.rip || {};
+      out.push(`rip ${rip.pid || 1}`);
+      out.push(` version ${rip.version || 1}`);
+      for (const n of rip.networks || []) out.push(` network ${n.ip}${n.wildcard ? ' ' + n.wildcard : ''}`);
+      for (const s of rip.silent || []) out.push(` silent-interface ${s}`);
+      out.push('#', 'return');
+      return out;
+    }
+
     // 系统视图（含用户视图兜底）：回显整机当前配置
     out.push(...E.runningConfig(dev));
     if (!out[out.length - 1].startsWith('return')) out.push('return');
@@ -2528,7 +3040,14 @@
         flag: 'D'
       });
     }
+    const inactive = [];
     for (const r of dev.routes) {
+      const active = E.routeActive(dev, r);
+      let ifName = r.ifaceName || '-';
+      if (active && !r.ifaceName) {
+        const lk = E.routeLookup(dev, r.nextHop);
+        ifName = (lk.iface && lk.iface.name) || '-';
+      }
       entries.push({
         dest: r.dest,
         mask: r.mask,
@@ -2536,9 +3055,11 @@
         pre: r.pre != null ? r.pre : r.proto === 'OSPF' ? 10 : 60,
         cost: r.cost != null ? r.cost : 0,
         nextHop: r.nextHop,
-        iface: r.ifaceName || (E.routeLookup(dev, r.nextHop).iface || {}).name || '-',
-        flag: 'RD'
+        iface: ifName,
+        // 真实设备上「下一跳不可达」的路由不会下到转发表，这里用 R（无 D）表示不活跃
+        flag: active ? 'RD' : 'R'
       });
+      if (!active) inactive.push(r);
     }
     // 去重 & 排序
     const map = new Map();
@@ -2564,6 +3085,12 @@
           padEnd(e.nextHop, 16) +
           e.iface
       );
+    }
+    if (inactive.length) {
+      out.push('');
+      out.push('// 提示：下面这些路由的下一跳当前不可达，报文不会按它们转发（Flags 只有 R、没有 D）');
+      for (const r of inactive) out.push(`//   ${r.proto}  ${r.dest}/${r.mask}  →  ${r.nextHop}`);
+      out.push('//   常见原因：互联口两端地址不在同一网段、对端接口未配地址或端口未接通。');
     }
     return out;
   }
@@ -2738,10 +3265,18 @@
         out.push(padEnd(fmtArea(n.area), 17) + padEnd(n.iface, 34) + padEnd(n.routerId, 17) + n.state);
       }
       if (!nbrs.length) out.push('(没有邻居)');
+      if (!nbrs.length) {
+        out.push('');
+        out.push('// 为什么没有邻居：');
+        for (const l of E.ospfPeerDiag(dev)) out.push('//   ' + l);
+      }
       return out;
     }
     if (!nbrs.length) {
       out.push(' OSPF Process has no peer.');
+      out.push('');
+      out.push('// 为什么没有邻居：');
+      for (const l of E.ospfPeerDiag(dev)) out.push('//   ' + l);
       return out;
     }
     for (const n of nbrs) {
@@ -2777,6 +3312,73 @@
     return out;
   }
 
+  /* ------------------------------ RIP 显示 ------------------------------ */
+
+  function cmdDisplayRip(dev) {
+    if (!dev.rip || !dev.rip.enabled) return ['Error: RIP is not enabled.'];
+    E.recomputeRip();
+    const rip = dev.rip;
+    const out = [];
+    const nets = (dev.ripActiveIfaces || []).map((i) => E.networkOf(i.ip, i.mask));
+    out.push(` Public net: ${[...new Set(nets)].join(' ') || '--'}`);
+    out.push('');
+    out.push(` RIP  ${rip.pid || 1}`);
+    out.push(`   Version                 : ${rip.version || 1}`);
+    out.push(`   Preference              : 100`);
+    out.push(`   Checkzero               : Enabled`);
+    out.push(`   Packet sending interval : 30`);
+    out.push(`   Network statements      : ${rip.networks.length ? rip.networks.map((n) => n.ip + (n.wildcard ? ' ' + n.wildcard : '')).join(' , ') : '（空）'}`);
+    const nbrs = dev.ripNeighbors || [];
+    if (nbrs.length) {
+      out.push('');
+      out.push('   Peer:');
+      for (const n of nbrs) out.push(`     ${padEnd(n.address, 16)}${padEnd(n.iface, 34)}${n.name}`);
+    }
+    return out;
+  }
+
+  function cmdDisplayRipRouting(dev) {
+    if (!dev.rip || !dev.rip.enabled) return ['Error: RIP is not enabled.'];
+    E.recomputeRip();
+    const routes = dev.routes.filter((r) => r.proto === 'RIP');
+    const out = [
+      'Route Flags: R - relay, D - download to fib',
+      '-'.repeat(78),
+      `         Destinations : ${routes.length}        Routes : ${routes.length}`,
+      '',
+      'Destination/Mask    Proto   Pre  Cost      Flags NextHop         Interface',
+      ''
+    ];
+    for (const r of routes) {
+      out.push(
+        padEnd(`${r.dest}/${r.mask}`, 20) +
+          padEnd('RIP', 8) +
+          padEnd(r.pre != null ? r.pre : 100, 5) +
+          padEnd(r.cost != null ? r.cost : 1, 10) +
+          padEnd('RD', 6) +
+          padEnd(r.nextHop, 16) +
+          (r.ifaceName || '-')
+      );
+    }
+    if (!routes.length) out.push('// 还没有学到任何 RIP 路由：确认两端都 rip → network 通告了互联口所在网段。');
+    return out;
+  }
+
+  function cmdDisplayRipNeighbor(dev) {
+    if (!dev.rip || !dev.rip.enabled) return ['Error: RIP is not enabled.'];
+    E.recomputeRip();
+    const nbrs = dev.ripNeighbors || [];
+    const out = ['Neighbor        Interface                         Peer', '-'.repeat(70)];
+    for (const n of nbrs) out.push(padEnd(n.address, 16) + padEnd(n.iface, 34) + n.name);
+    if (!nbrs.length) {
+      out.push('(没有邻居)');
+      out.push('');
+      out.push('// 为什么没有邻居：');
+      for (const l of E.ripPeerDiag(dev)) out.push('//   ' + l);
+    }
+    return out;
+  }
+
   function cmdDisplayIpPool(dev, name) {
     if (!dev.dhcp.pools.length) return ['Error: The IP pool does not exist.'];
     const out = [];
@@ -2790,6 +3392,7 @@
       out.push(`  DNS              : ${pl.dns || '--'}`);
       for (const e of pl.excluded || []) out.push(`  Excluded-IP      : ${e}`);
       out.push(`  Total-IP         : ${total}   Used: ${used}   Idle: ${Math.max(0, total - used)}`);
+      if (!pl.gateway) out.push('  // 注意：没有 gateway-list —— 从这个池拿到地址的 PC 没有默认网关，跨网段 ping 不通。');
       out.push('');
     }
     return out;
@@ -3099,6 +3702,10 @@
         if (a[2] === 'interface') return cmdDisplayOspfInterface(dev);
         if (a[2] === 'brief') return cmdDisplayOspfPeer(dev, true);
         return errUnrecognized('display ospf');
+      case 'rip':
+        if (a[2] === 'routing' || a[2] === 'route') return cmdDisplayRipRouting(dev);
+        if (a[2] === 'neighbor' || a[2] === 'peer') return cmdDisplayRipNeighbor(dev);
+        return cmdDisplayRip(dev);
       case 'port-security':
         return cmdDisplayPortSecurity(dev);
       case 'acl':
@@ -3222,6 +3829,10 @@
     out.push(`   IPv4 Address. . . . . . . . . . . : ${p.ip || '（未配置）'}`);
     out.push(`   Subnet Mask . . . . . . . . . . . : ${p.ip ? E.prefixToMask(p.mask) : '（未配置）'}`);
     out.push(`   Default Gateway . . . . . . . . . : ${p.gateway || '（未配置）'}`);
+    if (p.ip && !p.gateway) {
+      out.push('');
+      out.push('// 提示：没有默认网关，只能访问同网段主机。跨网段请执行 ip <地址> <掩码> <网关>。');
+    }
     if (p.dhcp) out.push('   DHCP Enabled. . . . . . . . . . . : Yes');
     else out.push('   DHCP Enabled. . . . . . . . . . . : No');
     return { lines: out, device: dev };
@@ -3246,11 +3857,18 @@
     p.gateway = pool.gateway;
     p.dhcp = true;
     server.dhcp.leases.push({ ip, mac: E.macOf(pc), poolName: pool.name, t: Date.now() });
-    return [
+    const lines = [
       `已通过 DHCP 获取地址：${ip}/${pool.mask}`,
       `  网关：${pool.gateway || '--'}    DNS：${pool.dns || '--'}`,
       `  （来自 ${server.hostname} 的地址池 ${pool.name}）`
     ];
+    // 地址池漏配 gateway-list 是「PC 上 ping 不通、路由器上能通」最常见的原因，必须当场提醒
+    if (!pool.gateway) {
+      lines.push('');
+      lines.push('// 注意：这个地址池没有配置 gateway-list，所以这台 PC 没有默认网关 —— 只能访问同网段，跨网段一律不通。');
+      lines.push(`//   进地址池视图补：ip pool ${pool.name} → gateway-list <网关地址>，然后让这台 PC 重新 dhcp。`);
+    }
+    return lines;
   }
 
   /* --------------------------- 主执行入口 --------------------------- */
@@ -3420,9 +4038,28 @@
         p.mask = mask;
         p.gateway = gw;
         p.dhcp = false;
-        return { lines: [`已设置 IP 地址：${ip}/${mask}${gw ? '  网关：' + gw : ''}`] };
+        const lines = [`已设置 IP 地址：${ip}/${mask}${gw ? '  网关：' + gw : ''}`];
+        // 主机没有路由表，跨网段完全靠默认网关 —— 配错或漏配要当场说清楚，别等到 ping 不通
+        if (!gw) {
+          lines.push('// 提示：没有配置默认网关。这样只能访问同一网段的主机，跨网段（含经路由器去别的网段）一律不通。');
+          lines.push('//   写法：ip <地址> <掩码> <网关>，网关填同一网段里路由器的接口地址。');
+        } else if (!E.sameSubnet(ip, mask, gw)) {
+          lines.push(`// 提示：网关 ${gw} 不在 ${ip}/${mask} 这个网段内 —— 请核对两处：`);
+          lines.push('//   ① 网关地址是否写错（应填本网段里的路由器接口 / 三层交换机 Vlanif）；');
+          lines.push('//   ② 掩码是否写错（/24 写成 /25 这类，看起来网关就「跑出网段」了）。');
+        }
+        if (dev.ports[0].cableId == null) {
+          lines.push('// 提示：这个网口还没有接线缆，配好地址也发不出报文。');
+        }
+        return { lines };
       }
       if (cmd === 'dhcp') return { lines: doDhcp(dev) };
+      // PC 上没有 system-view，改名字就直接在用户视图里做（真机是在图形界面改的）
+      if (cmd === 'sysname') {
+        if (!args[1]) return errIncomplete('sysname');
+        dev.hostname = args.slice(1).join(' ');
+        return { lines: [] };
+      }
       return errUnrecognized(cmd);
     }
 
@@ -3549,13 +4186,29 @@
       if (cmd === 'ip' && args[1] === 'route-static') {
         const dest = args[2];
         const mask = parseMask(args[3]);
-        const nh = args[4];
         let pre = 60;
         const pIdx = args.findIndex((a) => a.toLowerCase() === 'preference');
         if (pIdx > 0) pre = parseInt(args[pIdx + 1], 10) || 60;
-        if (!E.isValidIp(dest) || mask == null || !E.isValidIp(nh)) return errWrong(!E.isValidIp(dest) ? dest : mask == null ? args[3] : nh);
+        if (!E.isValidIp(dest) || mask == null) return errWrong(!E.isValidIp(dest) ? dest : args[3]);
+        // 下一跳可以是 IP，也可以是出接口：ip route-static 目的 掩码 <下一跳|接口> [下一跳]
+        let nextHop = null;
+        let ifaceName = null;
+        const nhRaw = args[4];
+        if (E.isValidIp(nhRaw)) {
+          nextHop = nhRaw;
+        } else {
+          const r = resolveIface(dev, nhRaw);
+          if (!r || r.kind === 'trunk') return errWrong(nhRaw);
+          ifaceName = r.kind === 'eth' ? r.port.name : r.label;
+          const nh2 = args[5];
+          if (nh2) {
+            if (!E.isValidIp(nh2)) return errWrong(nh2);
+            nextHop = nh2;
+          }
+        }
+        if (!nextHop && !ifaceName) return errIncomplete('ip route-static');
         dev.routes = dev.routes.filter((r) => !(r.proto === 'Static' && r.dest === dest && r.mask === mask));
-        dev.routes.push({ dest, mask, nextHop: nh, proto: 'Static', pre, cost: 0 });
+        dev.routes.push({ dest, mask, nextHop, ifaceName, proto: 'Static', pre, cost: 0 });
         return { lines: [] };
       }
       if (cmd === 'undo' && args[1] === 'ip' && args[2] === 'route-static') {
@@ -3624,6 +4277,35 @@
       if (cmd === 'undo' && args[1] === 'ospf') {
         dev.ospf = { enabled: false, pid: null, routerId: null, areas: [], ifaces: [], neighbors: [] };
         dev.routes = dev.routes.filter((r) => r.proto !== 'OSPF');
+        return { lines: [] };
+      }
+      if (cmd === 'rip') {
+        if (dev.l2only) {
+          return {
+            lines: ['Error: This is a layer 2 switch, RIP is not supported.', '// 提示：S3700 是二层交换机，路由功能请用 S5700/路由器。']
+          };
+        }
+        const pid = args[1] == null ? 1 : parseInt(args[1], 10);
+        if (isNaN(pid)) return errWrong(args[1]);
+        if (!dev.rip) dev.rip = { enabled: false, pid: null, version: 1, networks: [], silent: [] };
+        dev.rip.enabled = true;
+        dev.rip.pid = pid;
+        enterView(dev, 'rip-view', { ripPid: pid });
+        // 华为 VRP 里 rip 之后默认是 version 1（广播），这是「一端配 v2、一端没配」不通的常见原因
+        return {
+          lines:
+            (dev.rip.version || 1) === 1
+              ? ['// 提示：RIP 缺省为 version 1（广播报文）。建议两端都执行 version 2，且版本必须一致，否则学不到路由。']
+              : []
+        };
+      }
+      if (cmd === 'undo' && args[1] === 'rip') {
+        if (!dev.rip) dev.rip = { enabled: false, pid: null, version: 1, networks: [], silent: [] };
+        dev.rip.enabled = false;
+        dev.rip.pid = null;
+        dev.rip.networks = [];
+        dev.rip.silent = [];
+        dev.routes = dev.routes.filter((r) => r.proto !== 'RIP');
         return { lines: [] };
       }
       if (cmd === 'acl') {
@@ -4098,14 +4780,80 @@
       if (!area) { quitView(dev); return errUnrecognized(cmd); }
       if (cmd === 'network') {
         const ip = args[1];
-        const wc = args[2];
-        if (!E.isValidIp(ip) || !E.isValidIp(wc)) return errWrong(!E.isValidIp(ip) ? ip : wc);
+        const wcArg = args[2];
+        if (!E.isValidIp(ip) || !E.isValidIp(wcArg)) return errWrong(!E.isValidIp(ip) ? ip : wcArg);
+        // network 要写反掩码（通配符掩码）。学生常把子网掩码 255.255.255.0 写进来 ——
+        // 那样一个网段都不会命中、邻居永远起不来，而且原版不会有任何报错。这里自动换算并提示。
+        const lines = [];
+        let wc = wcArg;
+        if (isSubnetMask(wcArg)) {
+          wc = maskToWildcard(wcArg);
+          lines.push(`// 提示：network 用的是反掩码（通配符掩码），已把 ${wcArg} 换算成 ${wc}。`);
+        }
         area.networks = area.networks.filter((n) => !(n.ip === ip && n.wildcard === wc));
         area.networks.push({ ip, wildcard: wc });
-        return { lines: [] };
+        return { lines };
       }
       if (cmd === 'undo' && args[1] === 'network') {
         area.networks = area.networks.filter((n) => !(n.ip === args[2] && n.wildcard === args[3]));
+        return { lines: [] };
+      }
+      return errUnrecognized(cmd);
+    }
+
+    /* ================= RIP 视图 ================= */
+    if (view === 'rip-view') {
+      const rip = dev.rip || (dev.rip = { enabled: false, pid: null, version: 1, networks: [], silent: [] });
+      if (cmd === 'version') {
+        const v = parseInt(args[1], 10);
+        if (v !== 1 && v !== 2) return errWrong(args[1]);
+        rip.version = v;
+        return {
+          lines:
+            v === 2
+              ? ['// 提示：本机已用 v2（组播 224.0.0.9）。对端也必须配 version 2，否则两端学不到路由。']
+              : ['// 提示：v1 用广播、只按主类网络通告（不能带反掩码）。对端也必须是不配 version 的 v1。']
+        };
+      }
+      if (cmd === 'network') {
+        const ip = args[1];
+        if (!E.isValidIp(ip)) return errWrong(ip);
+        const lines = [];
+        let wildcard = null;
+        if (args[2] != null) {
+          if (!E.isValidIp(args[2])) return errWrong(args[2]);
+          wildcard = isSubnetMask(args[2]) ? maskToWildcard(args[2]) : args[2];
+          if (isSubnetMask(args[2])) lines.push(`// 提示：反掩码写法应为 ${wildcard}（这里已自动换算）。`);
+        }
+        rip.networks = rip.networks.filter((n) => n.ip !== ip);
+        rip.networks.push({ ip, wildcard });
+        return { lines };
+      }
+      if (cmd === 'undo' && args[1] === 'network') {
+        rip.networks = rip.networks.filter((n) => n.ip !== args[2]);
+        return { lines: [] };
+      }
+      if (cmd === 'silent-interface') {
+        const t = args[1];
+        if (!t) return errIncomplete('silent-interface');
+        if (t.toLowerCase() === 'all') {
+          rip.silent = ['all'];
+          return { lines: [] };
+        }
+        const r = resolveIface(dev, t);
+        if (!r || r.kind === 'trunk') return errWrong(t);
+        const name = r.kind === 'eth' ? r.port.name : r.label;
+        if (!rip.silent.includes(name)) rip.silent.push(name);
+        return { lines: [] };
+      }
+      if (cmd === 'undo' && args[1] === 'silent-interface') {
+        const t = args[2];
+        if (!t) rip.silent = [];
+        else {
+          const r = resolveIface(dev, t);
+          const name = r ? (r.kind === 'eth' ? r.port.name : r.label) : t;
+          rip.silent = rip.silent.filter((x) => x !== name);
+        }
         return { lines: [] };
       }
       return errUnrecognized(cmd);
@@ -4128,7 +4876,8 @@
     'acl-view': 'ACL 视图',
     'nat-group-view': 'NAT 地址池视图',
     'ospf-view': 'OSPF 视图',
-    'ospf-area-view': 'OSPF 区域视图'
+    'ospf-area-view': 'OSPF 区域视图',
+    'rip-view': 'RIP 视图'
   };
 
   /** 把视图栈拼成"一级一级"的路径，帮学生搞清自己在第几层 */
@@ -4160,6 +4909,9 @@
         'display eth-trunk            查看链路聚合',
         'display ospf peer brief      查看 OSPF 邻居',
         'display ospf interface       查看 OSPF 接口状态',
+        'display rip                  查看 RIP 进程与邻居',
+        'display rip routing          查看 RIP 学到的路由',
+        'display rip neighbor         查看 RIP 邻居',
         'display ip pool              查看 DHCP 地址池',
         'display acl all              查看所有 ACL 规则',
         'display nat session all      查看 NAT 地址转换表项',
@@ -4179,6 +4931,8 @@
         'port-group group-member <起> to <止>  批量进入多个端口',
         'port-group <组名>            创建永久端口组，再 group-member 加成员',
         'ip route-static <目的> <掩码> <下一跳>   配置静态路由',
+        'ip route-static <目的> <掩码> <接口>   下一跳写成出接口（点到点）',
+        'rip [进程号]                 开启 RIP 并进入 RIP 视图',
         'ip pool <名字>               创建 DHCP 地址池',
         'dhcp enable                  开启 DHCP 服务',
         'nat address-group <编号>     创建 NAT 公网地址池',
@@ -4258,8 +5012,16 @@
         'display this                 查看 OSPF 配置'
       ],
       'ospf-area-view': [
-        'network <网段> <通配符>      通告网段',
+        'network <网段> <反掩码>      通告网段（/24 的反掩码是 0.0.0.255）',
         'display this                 查看本区域配置'
+      ],
+      'rip-view': [
+        'version 1|2                  设置 RIP 版本（缺省 1；两端必须一致，一般都用 2）',
+        'network <网段>               通告网段（只写 IP 时按 A/B/C 主类网络处理）',
+        'network <网段> <反掩码>      按反掩码精确通告',
+        'undo network <网段>          取消通告',
+        'silent-interface <接口|all>  抑制接口发送/接收 RIP 报文',
+        'display this                 查看 RIP 配置'
       ]
     };
     if (dev.type === 'pc') {
@@ -4270,6 +5032,7 @@
         'ipconfig /renew              通过 DHCP 重新获取地址',
         'ipconfig /release            释放地址',
         'ip <地址> <掩码> <网关>      手工配置 IP',
+        'sysname <名字>               给这台 PC 改名',
         'ping <ip>                    连通性测试',
         'tracert <ip>                 路由跟踪'
       ];
@@ -4338,6 +5101,65 @@
     return (lines || []).some((l) => /^Error[: ]/.test(String(l).trim()));
   }
 
+  /* ------------------------------ 拓扑段格式 ------------------------------
+   * 导出的文件开头有一段给模拟器自己读的拓扑信息（人看也不难）：
+   *
+   *   @topology v1
+   *   @device 0 S5700 120 80 SW1
+   *   @device 1 PC 60 460 PC1
+   *   @cable 0 GigabitEthernet0/0/1 1 Ethernet0/0/0
+   *   @note 200 30 "办公区 192.168.10.0/24"
+   *   @end
+   *
+   * 设备用序号引用（@cable 里写 0/1），这样设备名里有空格也不影响解析。
+   * 没有这段也没关系 —— 那就退化成「只导入配置」，按设备表头重建。
+   * ---------------------------------------------------------------------- */
+  const RE_TOPO_START = /^@topology\b/i;
+  const RE_TOPO_END = /^@end\b/i;
+  const RE_DEVICE = /^@device\s+(\d+)\s+(\S+)\s+(-?\d+)\s+(-?\d+)\s+(.+)$/;
+  const RE_CABLE = /^@cable\s+(\d+)\s+(\S+)\s+(\d+)\s+(\S+)$/;
+  const RE_NOTE = /^@note\s+(-?\d+)\s+(-?\d+)\s+(.+)$/;
+
+  /** 从整份文本里抽出拓扑段（没有就返回 null） */
+  function parseTopology(lines) {
+    const topo = { devices: [], cables: [], notes: [] };
+    let inTopo = false;
+    for (const raw of lines) {
+      const t = String(raw).trim();
+      if (RE_TOPO_START.test(t)) {
+        inTopo = true;
+        continue;
+      }
+      if (!inTopo) continue;
+      if (RE_TOPO_END.test(t)) {
+        inTopo = false;
+        continue;
+      }
+      if (!t) continue;
+      let m = t.match(RE_DEVICE);
+      if (m) {
+        topo.devices.push({ idx: +m[1], key: m[2], x: +m[3], y: +m[4], hostname: m[5].trim() });
+        continue;
+      }
+      m = t.match(RE_CABLE);
+      if (m) {
+        topo.cables.push({ a: +m[1], aPort: m[2], b: +m[3], bPort: m[4] });
+        continue;
+      }
+      m = t.match(RE_NOTE);
+      if (m) {
+        let text = m[3];
+        try {
+          text = JSON.parse(m[3]);
+        } catch (e) {
+          /* 容错：不是合法 JSON 就按原样当纯文本 */
+        }
+        topo.notes.push({ x: +m[1], y: +m[2], text: String(text == null ? '' : text) });
+      }
+    }
+    return topo.devices.length || topo.cables.length || topo.notes.length ? topo : null;
+  }
+
   /** 型号字符串 → 设备库 key（先按模板精确匹配，再按关键字兜底） */
   function modelToKey(model) {
     const m = String(model == null ? '' : model).trim();
@@ -4365,12 +5187,15 @@
     const lines = String(text == null ? '' : text).replace(/\r\n?/g, '\n').split('\n');
     const blocks = [];
     const orphans = [];
+    const topo = parseTopology(lines);
     let cur = null;
     let headered = false;
 
     for (const raw of lines) {
       const t = raw.trim();
       if (RE_SEP.test(t) || RE_STAMP.test(t)) continue;
+      if (RE_TOPO_START.test(t) || RE_TOPO_END.test(t)) continue;
+      if (/^@(device|cable|note)\b/i.test(t)) continue; // 拓扑段的行不算设备配置
       const hm = t.match(RE_HEAD);
       if (hm) {
         headered = true;
@@ -4390,7 +5215,7 @@
       if (keep.length) blocks.push({ hostname: null, model: null, lines: keep });
     }
 
-    return { blocks: blocks.filter((b) => b.lines.some((l) => l.trim())), headered };
+    return { blocks: blocks.filter((b) => b.lines.some((l) => l.trim())), headered, topo };
   }
 
   /* ------------------------------ 重放计划 ------------------------------ */
@@ -4510,6 +5335,60 @@
     return { cmds, unknown };
   }
 
+  /* ------------------------------ 导出 ------------------------------ */
+
+  /**
+   * 生成一份「拓扑 + 配置」文本。
+   *   · 开头 @topology 段：设备（型号/坐标）、连线、文字标签 —— 给模拟器自己读回用；
+   *   · 后面每台设备一段 running-config —— 给人看，也能单独复制粘贴到命令行。
+   * 只有这个格式能「原样搬走」一张画布（以前只导配置，导入后设备全堆在一起、连线全丢）。
+   */
+  function buildText(opts) {
+    const o = opts || {};
+    const devs = (E.Net && E.Net.devices) || [];
+    const cables = (E.Net && E.Net.cables) || [];
+    const notes = (E.Net && E.Net.labels) || [];
+    const idxOf = new Map(devs.map((d, i) => [d.id, i]));
+
+    const out = [];
+    out.push('# ============================================================');
+    out.push('# NE_HWSIM 拓扑与配置导出');
+    out.push('# 时间：' + (o.time || new Date().toLocaleString()));
+    out.push('# 读回：在模拟器里点「导入配置」——会先按下面的 @topology 段还原设备位置与连线，');
+    out.push('#       再逐台重放 running-config。只想抄某台设备，复制它那一段即可。');
+    out.push('# ============================================================');
+    out.push('');
+    out.push('# ---------- 拓扑段（模拟器自用；删掉它就只导入配置）----------');
+    out.push('@topology v1');
+    devs.forEach((d, i) => {
+      out.push(`@device ${i} ${d.key} ${Math.round(d.x)} ${Math.round(d.y)} ${d.hostname}`);
+    });
+    for (const c of cables) {
+      const a = idxOf.get(c.aDeviceId);
+      const b = idxOf.get(c.bDeviceId);
+      if (a == null || b == null) continue;
+      const pa = devs[a].ports.find((p) => p.id === c.aPortId);
+      const pb = devs[b].ports.find((p) => p.id === c.bPortId);
+      if (!pa || !pb) continue;
+      out.push(`@cable ${a} ${pa.name} ${b} ${pb.name}`);
+    }
+    for (const n of notes) {
+      if (!String(n.text || '').trim()) continue;
+      out.push(`@note ${Math.round(n.x)} ${Math.round(n.y)} ${JSON.stringify(String(n.text))}`);
+    }
+    out.push('@end');
+    out.push('');
+
+    for (const d of devs) {
+      out.push('='.repeat(66));
+      out.push(`设备：${d.hostname}（${d.model}）`);
+      out.push('='.repeat(66));
+      out.push(...E.runningConfig(d));
+      out.push('');
+    }
+    return out.join('\n');
+  }
+
   /* ------------------------------ 应用 ------------------------------ */
 
   /**
@@ -4558,11 +5437,82 @@
       return { x, y };
     };
 
+    /* ---------------- 先还原拓扑（文件里带了 @topology 段才有） ----------------
+     * 顺序很重要：设备得先就位（并挪到导出时的坐标），连线和配置才有地方落。
+     * 同名设备一律复用，不会重复建一台。 */
+    const createdByTopo = new Set();
+    const warnings = [];
+    let wires = 0;
+    let notes = 0;
+    if (parsed.topo) {
+      const byIdx = [];
+      for (const td of parsed.topo.devices) {
+        let dev = E.Net.devices.find((d) => d.hostname === td.hostname) || null;
+        if (dev) {
+          dev.x = td.x;
+          dev.y = td.y;
+        } else {
+          const key = (E.TEMPLATES && E.TEMPLATES[td.key] ? td.key : null) || modelToKey(td.key);
+          if (!key) {
+            warnings.push(`设备「${td.hostname}」的型号 ${td.key} 无法识别，已跳过`);
+            byIdx[td.idx] = null;
+            continue;
+          }
+          dev = E.Net.addDevice(key, td.x, td.y);
+          dev.hostname = td.hostname;
+          created += 1;
+          createdByTopo.add(dev.hostname);
+        }
+        byIdx[td.idx] = dev;
+      }
+
+      for (const c of parsed.topo.cables) {
+        const A = byIdx[c.a];
+        const B = byIdx[c.b];
+        if (!A || !B) {
+          warnings.push(`连线 ${c.a}:${c.aPort} ↔ ${c.b}:${c.bPort}：设备缺失，已跳过`);
+          continue;
+        }
+        const pa = A.ports.find((p) => p.name === c.aPort);
+        const pb = B.ports.find((p) => p.name === c.bPort);
+        if (!pa || !pb) {
+          warnings.push(`${A.hostname} ${c.aPort} ↔ ${B.hostname} ${c.bPort}：端口不存在，已跳过`);
+          continue;
+        }
+        const already = E.Net.cables.some(
+          (x) =>
+            (x.aDeviceId === A.id && x.aPortId === pa.id && x.bDeviceId === B.id && x.bPortId === pb.id) ||
+            (x.aDeviceId === B.id && x.aPortId === pb.id && x.bDeviceId === A.id && x.bPortId === pa.id)
+        );
+        if (already) {
+          wires += 1;
+          continue;
+        }
+        if (pa.cableId || pb.cableId) {
+          warnings.push(`${A.hostname} ${pa.name} 或 ${B.hostname} ${pb.name} 已被占用，这条线跳过`);
+          continue;
+        }
+        const r = E.Net.addCable(A, pa, B, pb);
+        if (r && r.ok) wires += 1;
+        else warnings.push(`${A.hostname} ${pa.name} ↔ ${B.hostname} ${pb.name}：${(r && r.message) || '连接失败'}`);
+      }
+
+      for (const n of parsed.topo.notes) {
+        const dup = (E.Net.labels || []).some(
+          (l) => Math.abs(l.x - n.x) < 2 && Math.abs(l.y - n.y) < 2 && String(l.text) === String(n.text)
+        );
+        if (dup) continue;
+        E.Net.addLabel(n.x, n.y, n.text);
+        notes += 1;
+      }
+    }
+
     for (const b of parsed.blocks) {
       let dev = null;
       let isNew = false;
       if (b.hostname) dev = E.Net.devices.find((d) => d.hostname === b.hostname) || null;
       if (!dev && !b.hostname) dev = target;
+      if (dev && createdByTopo.has(dev.hostname)) isNew = true;
 
       if (!dev) {
         const key = modelToKey(b.model);
@@ -4628,22 +5578,29 @@
     return {
       ok: true,
       headered: parsed.headered,
+      hasTopology: !!parsed.topo,
       results,
       created,
+      wires,
+      notes,
+      warnings,
       bad,
       skipped,
       message:
         `共处理 ${results.length} 段配置` +
         (created ? `，新建 ${created} 台设备` : '') +
+        (wires ? `，还原 ${wires} 条连线` : '') +
+        (notes ? `，恢复 ${notes} 条注释` : '') +
         (bad ? `，${bad} 条命令未生效` : '，全部命令生效') +
         (skipped ? `，${skipped} 段已跳过` : '') +
+        (warnings.length ? `，${warnings.length} 条连线有异常` : '') +
         '。'
     };
   }
 
   global.NE = global.NE || {};
   Object.assign(global.NE, {
-    Import: { parse, plan, applyConfigText, modelToKey }
+    Import: { parse, parseTopology, plan, buildText, applyConfigText, modelToKey }
   });
 })(window);
 
@@ -4668,7 +5625,7 @@
   /* ------------------------------ 版本信息 ------------------------------ */
   /* 版本号的唯一来源：改这一处即可。
      build.mjs 会把它读出来写进产物开头的注释，所以交付文件本身也能看出是哪个版本。 */
-  const APP_VERSION = '1.3.0';
+  const APP_VERSION = '1.4.0';
   const APP_INFO = {
     studio: '新易科技工作室 NewE',
     author: 'Liuyi',
@@ -4725,6 +5682,8 @@
     panY: 0,
     selDev: null,
     selCable: null, // 当前选中的连线（可 Delete 删除）
+    selNote: null, // 当前选中的文字标签
+    editingNote: null, // 正在编辑文字（textarea 状态）
     replug: null, // 正在拖拽改接的连线 { id, end:'a'|'b', x, y }
     pend: null, // { devId, portId }
     tabs: [],
@@ -4930,6 +5889,7 @@
     }
 
     renderWires();
+    renderNotes();
     $('empty').style.display = E.Net.devices.length ? 'none' : 'flex';
   }
 
@@ -4937,6 +5897,7 @@
     const changed = UI.selDev !== dev.id;
     UI.selDev = dev.id;
     UI.selCable = null;
+    UI.selNote = null;
     if (changed) render();
   }
 
@@ -5199,6 +6160,146 @@
     render();
   }
 
+  /* ------------------------------ 画布文字标签 ------------------------------
+   * 用来在拓扑上写注释（"办公区 /24"、"这里是出口" 之类）。
+   * 交互与设备卡片保持一致：拖动移动、双击编辑、长按（手机）/右键（桌面）删除。
+   * 编辑时换成 textarea —— 手机上输入框字号 16px，否则 iOS 会自动放大整页。
+   */
+  function selectNote(l) {
+    const next = l ? l.id : null;
+    if (UI.selNote === next) return;
+    UI.selNote = next;
+    UI.selDev = null;
+    UI.selCable = null;
+    renderNotes();
+  }
+
+  function addNote() {
+    const w = screenToWorld(window.innerWidth / 2, window.innerHeight / 2);
+    const n = E.Net.addLabel(w.x - 40, w.y - 14, '');
+    UI.selNote = n.id;
+    UI.editingNote = n.id;
+    persist();
+    renderNotes();
+    return n;
+  }
+
+  function removeNote(l) {
+    E.Net.removeLabel(l.id);
+    if (UI.selNote === l.id) UI.selNote = null;
+    if (UI.editingNote === l.id) UI.editingNote = null;
+    persist();
+    renderNotes();
+  }
+
+  function commitNote(l, text) {
+    if (UI.editingNote !== l.id) return;
+    UI.editingNote = null;
+    const v = String(text == null ? '' : text).replace(/\s+$/, '');
+    // 留空就当作删除（和大部分注释工具的手感一致）
+    if (!v.trim()) E.Net.removeLabel(l.id);
+    else l.text = v;
+    persist();
+    renderNotes();
+  }
+
+  function startEditNote(l) {
+    UI.selNote = l.id;
+    UI.editingNote = l.id;
+    renderNotes();
+  }
+
+  function autoGrowNote(ta) {
+    ta.style.height = 'auto';
+    ta.style.height = Math.max(24, ta.scrollHeight) + 'px';
+    ta.style.width = 'auto';
+    ta.style.width = Math.min(260, Math.max(90, ta.scrollWidth + 4)) + 'px';
+  }
+
+  function renderNotes() {
+    const box = $('notes');
+    if (!box) return;
+    box.innerHTML = '';
+    for (const l of E.Net.labels || []) {
+      if (UI.editingNote === l.id) {
+        const wrap = document.createElement('div');
+        wrap.className = 'note editing';
+        wrap.dataset.note = l.id;
+        wrap.style.left = l.x + 'px';
+        wrap.style.top = l.y + 'px';
+        const ta = document.createElement('textarea');
+        ta.className = 'note-input';
+        ta.value = l.text || '';
+        ta.rows = 1;
+        ta.placeholder = '输入注释…';
+        wrap.appendChild(ta);
+        box.appendChild(wrap);
+        ta.addEventListener('input', () => autoGrowNote(ta));
+        ta.addEventListener('keydown', (ev) => {
+          ev.stopPropagation(); // 别让 Delete/Backspace 传到画布的删除逻辑
+          if (ev.key === 'Escape') {
+            ev.preventDefault();
+            UI.editingNote = null;
+            renderNotes();
+          } else if (ev.key === 'Enter' && (ev.ctrlKey || ev.metaKey)) {
+            ev.preventDefault();
+            commitNote(l, ta.value);
+          }
+        });
+        ta.addEventListener('blur', () => commitNote(l, ta.value));
+        requestAnimationFrame(() => {
+          autoGrowNote(ta);
+          try {
+            ta.focus();
+            ta.setSelectionRange(ta.value.length, ta.value.length);
+          } catch (e) { /* 忽略 */ }
+        });
+        continue;
+      }
+
+      const el = document.createElement('div');
+      el.className = 'note' + (UI.selNote === l.id ? ' sel' : '') + (String(l.text || '').trim() ? '' : ' blank');
+      el.dataset.note = l.id;
+      el.style.left = l.x + 'px';
+      el.style.top = l.y + 'px';
+      el.textContent = String(l.text || '').trim() ? l.text : '双击输入注释';
+      box.appendChild(el);
+      bindNoteGestures(el, l);
+    }
+  }
+
+  function bindNoteGestures(el, l) {
+    bindGestures(el, {
+      onDown: (ev, ctx) => {
+        ctx.ox = l.x;
+        ctx.oy = l.y;
+        // ❗这里只切高亮 class，**不能调 selectNote()** —— 它会整块重绘 #notes，
+        // 把正在拖的这个元素换掉，pointer capture 随之失效，表现就是「第一下拖不动」。
+        if (UI.selNote !== l.id) {
+          UI.selNote = l.id;
+          UI.selDev = null;
+          UI.selCable = null;
+          const box = $('notes');
+          if (box) box.querySelectorAll('.note').forEach((n) => n.classList.toggle('sel', n.dataset.note === l.id));
+        }
+      },
+      onMove: (ev, ctx) => {
+        if (!ctx.moved) return;
+        l.x = Math.round(ctx.ox + ctx.dx / UI.scale);
+        l.y = Math.round(ctx.oy + ctx.dy / UI.scale);
+        el.style.left = l.x + 'px';
+        el.style.top = l.y + 'px';
+      },
+      onUp: (ev, ctx) => {
+        if (ctx.moved) persist();
+      },
+      onTap: () => selectNote(l),
+      onDoubleTap: () => startEditNote(l),
+      onLongPress: () => removeNote(l),
+      onContextMenu: () => removeNote(l)
+    });
+  }
+
   /* ------------------------------ 连线 ------------------------------ */
   function onPortClick(dev, port) {
     if (!UI.pend) {
@@ -5226,6 +6327,7 @@
       return;
     }
     E.recomputeOspf();
+    E.recomputeRip();
     E.recomputeStp();
     persist();
     render();
@@ -5249,6 +6351,7 @@
     if (UI.selCable === id) UI.selCable = null;
     UI.pend = null;
     E.recomputeOspf();
+    E.recomputeRip();
     E.recomputeStp();
     persist();
     render();
@@ -5297,6 +6400,7 @@
       return render();
     }
     E.recomputeOspf();
+    E.recomputeRip();
     E.recomputeStp();
     persist();
     UI.selCable = null;
@@ -5367,6 +6471,7 @@
     if (UI.activeTab === dev.id) UI.activeTab = UI.tabs[UI.tabs.length - 1] || null;
     if (UI.selDev === dev.id) UI.selDev = null;
     E.recomputeOspf();
+    E.recomputeRip();
     E.recomputeStp();
     persist();
     render();
@@ -5527,6 +6632,7 @@
     for (const l of res.lines || []) d.logs.push({ t: l, c: classify(l) });
     if (res.traffic) showTraffic(d, res.traffic);
     E.recomputeOspf();
+    E.recomputeRip();
     E.recomputeStp();
     persist();
     renderConsole();
@@ -5597,8 +6703,8 @@
   }
 
   const CANDIDATES = {
-    'user-view': ['system-view', 'display version', 'display current-configuration', 'display ip interface brief', 'display interface ', 'display port vlan', 'display vlan', 'display ip routing-table', 'display mac-address', 'display arp', 'display stp brief', 'display eth-trunk', 'display ospf peer brief', 'display ospf interface', 'display ip pool', 'display acl all', 'display nat session all', 'display port-group all', 'ping ', 'tracert ', 'save', 'help'],
-    'system-view': ['sysname ', 'vlan ', 'vlan batch ', 'interface ', 'interface range GigabitEthernet0/0/1 to GigabitEthernet0/0/5', 'port-group group-member GigabitEthernet0/0/1 to GigabitEthernet0/0/8', 'port-group 1', 'ip route-static ', 'ip pool ', 'dhcp enable', 'nat address-group 1', 'ospf 1 router-id ', 'acl number 2000', 'acl number 3000', 'stp mode rstp', 'stp priority ', 'display current-configuration', 'display this', 'save', 'quit', 'return'],
+    'user-view': ['system-view', 'display version', 'display current-configuration', 'display ip interface brief', 'display interface ', 'display port vlan', 'display vlan', 'display ip routing-table', 'display mac-address', 'display arp', 'display stp brief', 'display eth-trunk', 'display ospf peer brief', 'display ospf interface', 'display ospf routing', 'display rip', 'display rip routing', 'display rip neighbor', 'display ip pool', 'display acl all', 'display nat session all', 'display port-group all', 'ping ', 'tracert ', 'save', 'help'],
+    'system-view': ['sysname ', 'vlan ', 'vlan batch ', 'interface ', 'interface range GigabitEthernet0/0/1 to GigabitEthernet0/0/5', 'port-group group-member GigabitEthernet0/0/1 to GigabitEthernet0/0/8', 'port-group 1', 'ip route-static ', 'ip pool ', 'dhcp enable', 'nat address-group 1', 'ospf 1 router-id ', 'rip 1', 'undo rip', 'acl number 2000', 'acl number 3000', 'stp mode rstp', 'stp priority ', 'display current-configuration', 'display this', 'save', 'quit', 'return'],
     'vlan-view': ['description ', 'name ', 'display this', 'display vlan', 'quit', 'return'],
     'interface-view': ['description ', 'shutdown', 'undo shutdown', 'port link-type access', 'port link-type trunk', 'port default vlan ', 'port trunk allow-pass vlan ', 'undo portswitch', 'ip address ', 'eth-trunk 1', 'stp edged-port enable', 'port-security enable', 'port-security max-mac-num 2', 'traffic-filter inbound acl 3000', 'nat outbound 2000', 'display this', 'display interface ', 'quit', 'return'],
     'portgroup-view': ['group-member GigabitEthernet0/0/1 to GigabitEthernet0/0/8', 'description ', 'shutdown', 'undo shutdown', 'port link-type access', 'port link-type trunk', 'port default vlan ', 'port trunk allow-pass vlan ', 'stp edged-port enable', 'port-security enable', 'display this', 'quit', 'return'],
@@ -5608,13 +6714,14 @@
     'nat-group-view': ['section 0 ', 'display this', 'quit', 'return'],
     'ospf-view': ['router-id ', 'area 0', 'display this', 'quit', 'return'],
     'ospf-area-view': ['network ', 'display this', 'quit', 'return'],
+    'rip-view': ['version 2', 'version 1', 'network ', 'undo network ', 'silent-interface all', 'silent-interface GigabitEthernet0/0/1', 'display this', 'quit', 'return'],
     'trunk-view': ['mode lacp-static', 'mode manual load-balance', 'ip address ', 'display this', 'quit', 'return']
   };
 
   function autocomplete(d, inp) {
     const cur = inp.value;
     let list = CANDIDATES[d.cli.view] || [];
-    if (d.type === 'pc') list = ['ipconfig', 'ipconfig /renew', 'ipconfig /release', 'ip ', 'ping ', 'tracert ', 'help'];
+    if (d.type === 'pc') list = ['ipconfig', 'ipconfig /renew', 'ipconfig /release', 'ip ', 'sysname ', 'ping ', 'tracert ', 'help'];
 
     if (!cur.trim()) {
       const d2 = activeDev();
@@ -5729,23 +6836,27 @@
 
     stage.addEventListener('pointerdown', (ev) => {
       if (ev.pointerType !== 'touch' && ev.button !== 0 && ev.button !== 1) return;
+      /* ❗必须先判断「按的是不是画布空白」，再决定要不要接管指针。
+         一旦 stage.setPointerCapture()，后续 pointermove 全被 stage 收走：
+           · 画布里的按钮（T 文字 / 缩放）收不到 click —— 真实鼠标点它们毫无反应；
+           · 文字标签收不到 pointermove —— 拖不动。
+         两根手指时 live.size 已经是 1，所以第二根手指不管按在哪都允许（捏合缩放要用）。 */
+      if (live.size === 0 && !blank(ev.target)) return;
       live.set(ev.pointerId, { x: ev.clientX, y: ev.clientY });
       try { stage.setPointerCapture(ev.pointerId); } catch (e) { /* 忽略 */ }
 
       if (live.size === 1) {
-        if (!blank(ev.target)) {
-          live.delete(ev.pointerId);
-          return;
-        }
         UI.pend = null;
         UI.selDev = null;
         UI.selCable = null;
+        UI.selNote = null;
         render();
         beginPan(ev);
       } else if (live.size === 2) {
         UI.pend = null;
         UI.selDev = null;
         UI.selCable = null;
+        UI.selNote = null;
         render();
         beginPinch();
       }
@@ -5805,9 +6916,18 @@
         UI.pend = null;
         UI.replug = null;
         UI.selCable = null;
+        UI.selNote = null;
         render();
       }
       if (ev.key === 'Delete' || ev.key === 'Backspace') {
+        if (UI.selNote) {
+          const n = E.Net.getLabel(UI.selNote);
+          if (n) {
+            ev.preventDefault();
+            removeNote(n);
+            return;
+          }
+        }
         if (UI.selCable) {
           ev.preventDefault();
           removeCable(UI.selCable);
@@ -5831,6 +6951,7 @@
         JSON.stringify({
           devices: E.Net.devices,
           cables: E.Net.cables,
+          labels: E.Net.labels || [],
           seq: nameSeq,
           pan: { x: UI.panX, y: UI.panY, s: UI.scale }
         })
@@ -5848,6 +6969,9 @@
       if (!data.devices || !data.devices.length) return false;
       E.Net.devices = (data.devices || []).map((d) => E.normalizeDevice(d));
       E.Net.cables = data.cables || [];
+      E.Net.labels = Array.isArray(data.labels)
+        ? data.labels.map((l) => ({ id: l.id, x: l.x | 0, y: l.y | 0, text: String(l.text == null ? '' : l.text), color: l.color || '#e6edf3' }))
+        : [];
       nameSeq = data.seq || {};
       if (data.pan) {
         UI.panX = data.pan.x || 0;
@@ -5891,6 +7015,8 @@
     UI.tabs = [];
     UI.activeTab = null;
     UI.selDev = null;
+    UI.selNote = null;
+    UI.editingNote = null;
     UI.pend = null;
     UI.panX = 0;
     UI.panY = 0;
@@ -6067,6 +7193,40 @@
       ]
     },
     {
+      id: 'rip',
+      name: '实验五·补 · RIP 动态路由',
+      level: '进阶',
+      desc: '沿用「两台路由器 + 两台 PC」的拓扑，把静态路由换成一个 RIP 进程，让路由器自己学路由。',
+      build() {
+        const r1 = mk('AR6121', 200, 90, 'R1');
+        const r2 = mk('AR6121', 520, 90, 'R2');
+        const p1 = mk('PC', 80, 340, 'PC1');
+        const p2 = mk('PC', 640, 340, 'PC2');
+        setPort(p1, 0, { ip: '192.168.1.10', mask: 24, gateway: '192.168.1.1' });
+        setPort(p2, 0, { ip: '192.168.2.10', mask: 24, gateway: '192.168.2.1' });
+        link(p1, 0, r1, 0);
+        link(p2, 0, r2, 0);
+        link(r1, 1, r2, 1);
+        setPort(r1, 0, { ip: '192.168.1.1', mask: 24 });
+        setPort(r2, 0, { ip: '192.168.2.1', mask: 24 });
+        return { focus: r1 };
+      },
+      goals: [
+        '互联口先配地址：R1 GE0/0/1 = 10.0.0.1/24，R2 GE0/0/1 = 10.0.0.2/24',
+        'R1 上：<code>rip 1</code> → <code>version 2</code> → <code>network 192.168.1.0</code> → <code>network 10.0.0.0</code>',
+        'R2 上同样配一遍（network 换成 192.168.2.0 和 10.0.0.0）',
+        '用 <code>display rip neighbor</code> 看到邻居，用 <code>display ip routing-table</code> 看到 Proto 为 RIP 的路由',
+        'PC1 ping 192.168.2.10 —— 一条静态路由都没写，照样通'
+      ],
+      tips: [
+        'RIP 的 <code>network</code> 只写网段时按主类网络处理（192.168.x.0 是 C 类 /24，10.x 是 A 类 /8），所以 <code>network 10.0.0.0</code> 会覆盖整个 10.0.0.0/8。',
+        '也可以写成 <code>network 10.0.0.0 0.0.0.255</code>（反掩码），和 OSPF 一样。',
+        '⚠️ 两端的 <code>version</code> 必须一致：RIP 缺省是 version 1，只在一端配了 version 2 就永远建不起邻居（<code>display rip neighbor</code> 会直接指出）。',
+        'RIP 按跳数选路，最大 15 跳；路由表里 RIP 的优先级（Pre）是 100，静态路由是 60 —— 静态路由优先。',
+        '想对比：别删 RIP，再补一条静态路由，观察 <code>display ip routing-table</code> 里同一网段会选谁。'
+      ]
+    },
+    {
       id: 'dhcp',
       name: '实验六 · DHCP 自动分配地址',
       level: '进阶',
@@ -6223,6 +7383,7 @@
     clearAll();
     const info = lab.build() || {};
     E.recomputeOspf();
+    E.recomputeRip();
     E.recomputeStp();
     // 适应画布：把所有设备一屏放好
     fitView();
@@ -6285,6 +7446,7 @@
           <div class="lv3"><code>[SW1-port-group]</code><span>interface range / port-group group-member（批量配置端口）</span></div>
           <div class="lv3"><code>[SW1-acl-adv-3000]</code><span>acl number 3000</span></div>
           <div class="lv3"><code>[SW1-ospf-1]</code><span>ospf 1</span></div>
+          <div class="lv3"><code>[SW1-rip-1]</code><span>rip 1</span></div>
           <div class="lv4"><code>[SW1-ospf-1-area-0.0.0.0]</code><span>area 0（再深一层）</span></div>
         </div>
         <div class="kv">
@@ -6299,10 +7461,11 @@
           <div class="r"><b>VLAN</b><span><code>vlan 10</code>（进入 VLAN 视图，可配 <code>description</code> / <code>name</code>）· <code>vlan batch 10 20</code> · <code>port link-type access</code> · <code>port default vlan 10</code></span></div>
           <div class="r"><b>Trunk</b><span><code>port link-type trunk</code> · <code>port trunk allow-pass vlan 10 20</code> 或 <code>all</code></span></div>
           <div class="r"><b>三层</b><span><code>interface Vlanif10</code> · <code>ip address 192.168.10.1 24</code></span></div>
-          <div class="r"><b>路由</b><span><code>ip route-static 192.168.2.0 24 10.0.0.2</code></span></div>
+          <div class="r"><b>静态路由</b><span><code>ip route-static 192.168.2.0 24 10.0.0.2</code>；下一跳也可以写成出接口 <code>ip route-static 192.168.2.0 24 GigabitEthernet0/0/1</code>。下一跳当前不可达时，路由表里那条的 Flags 只有 <code>R</code> 没有 <code>D</code>，并在表下面列出来。</span></div>
+          <div class="r"><b>RIP</b><span><code>rip 1</code> → <code>version 2</code> → <code>network 192.168.1.0</code>（只写网段按主类网络通告，也可写 <code>network 10.0.0.0 0.0.0.255</code>）；<code>display rip</code> / <code>display rip routing</code> / <code>display rip neighbor</code> 查看。<code>silent-interface all</code> 可抑制报文。<b>两端 version 必须一致</b>（缺省是 version 1，只配一端 version 2 会永远没邻居）。</span></div>
           <div class="r"><b>OSPF</b><span><code>ospf 1 router-id 1.1.1.1</code> → <code>area 0</code> → <code>network 10.0.0.0 0.0.0.255</code></span></div>
           <div class="r"><b>DHCP</b><span><code>dhcp enable</code> · <code>ip pool pool1</code> · <code>network 192.168.10.0 mask 24</code> · <code>gateway-list 192.168.10.1</code> · 接口下 <code>dhcp select global</code></span></div>
-          <div class="r"><b>查看</b><span><code>display this</code> · <code>display ip interface brief</code> · <code>display interface GE0/0/1</code> · <code>display port vlan</code> · <code>display vlan</code> · <code>display ip routing-table</code> · <code>display mac-address</code> · <code>display stp brief</code> · <code>display ospf peer brief</code> · <code>display ospf interface</code></span></div>
+          <div class="r"><b>查看</b><span><code>display this</code> · <code>display ip interface brief</code> · <code>display interface GE0/0/1</code> · <code>display port vlan</code> · <code>display vlan</code> · <code>display ip routing-table</code> · <code>display mac-address</code> · <code>display stp brief</code> · <code>display ospf peer brief</code> · <code>display ospf interface</code> · <code>display rip</code> · <code>display rip routing</code></span></div>
           <div class="r"><b>批量配端口</b><span>端口多的时候不用一个个进：<code>interface range GigabitEthernet0/0/1 to GigabitEthernet0/0/5</code>，或者 <code>port-group group-member GE0/0/1 to GE0/0/8</code>，都会进入端口组视图 <code>[SW1-port-group]</code>，之后敲的命令会批量下发到组内每个口。</span></div>
           <div class="r"><b>ACL</b><span><code>acl number 3000</code> → <code>rule 5 deny ip source 192.168.10.0 0.0.0.255 destination 192.168.20.0 0.0.0.255</code> → <code>rule 10 permit ip</code>；再到 <code>interface Vlanif10</code> 下 <code>traffic-filter inbound acl 3000</code>。注意 ACL 末尾缺省是「拒绝所有」，别只写 deny。</span></div>
           <div class="r"><b>NAT</b><span><code>acl number 2000</code> → <code>rule 5 permit source 192.168.1.0 0.0.0.255</code>；再到出口接口 <code>nat outbound 2000</code>（Easy IP，借用接口公网地址）。用 <code>display nat session all</code> 看转换表项。</span></div>
@@ -6320,6 +7483,7 @@
           <div class="r"><b>改接</b><span>在连线上按住拖动 → 拖到另一个空闲端口松手，就把那一端改接过去了</span></div>
           <div class="r"><b>打开命令行</b><span>双击设备卡片</span></div>
           <div class="r"><b>删除设备</b><span>点设备右上角 ×，或右键设备；选中后按 Delete 键</span></div>
+          <div class="r"><b>加文字注释</b><span>点画布左下角的 <b>T 文字</b>，直接在画布上写注释；拖动可移动，双击可改字，右键或长按删除</span></div>
           <div class="r"><b>端口颜色</b><span>灰＝未连线，绿＝已连通，红＝已 shutdown，紫＝Trunk 口，黄＝当前选中待连线</span></div>
         </div>
         <h4 class="sec">画布操作 · 手机 / 平板（触摸）</h4>
@@ -6333,6 +7497,7 @@
           <div class="r"><b>打开命令行</b><span><b>连点两下</b>设备卡片（点一下是选中）</span></div>
           <div class="r"><b>删除设备</b><span>点卡片右上角 ×；或<b>长按</b>卡片头部</span></div>
           <div class="r"><b>看端口详情</b><span>长按端口（手机的触摸屏没有"鼠标悬停"，用小气泡显示状态）</span></div>
+          <div class="r"><b>加文字注释</b><span>点左下角 <b>T 文字</b> → 直接写；<b>连点两下</b>改字、拖动移动、<b>长按</b>删除</span></div>
           <div class="r"><b>顶部按钮</b><span>窄屏只留「实训实验 / 命令行 / 更多 ⋯」，其余在「更多」里</span></div>
         </div>
         <h4 class="sec">命令行的展开与收起</h4>
@@ -6343,11 +7508,14 @@
         </p>
         <h4 class="sec">配置的导出与导入</h4>
         <div class="kv">
-          <div class="r"><b>导出配置</b><span>把每台设备的 <code>running-config</code> 导出成一个 .txt 文件，可以直接当作业提交。</span></div>
-          <div class="r"><b>导入配置</b><span>选一个由「导出配置」生成的文件（或任意 VRP 的 <code>current-configuration</code> 文本），模拟器会把里面的命令逐条重放回设备。<br />
-            画布上有同名设备 → 直接配到那台设备上；没有 → 按表头里的型号自动新建一台。<br />
-            导入结束会弹出一份报告，列出每台设备生效了多少条、哪些命令没生效以及原因。</span></div>
-          <div class="r"><b>注意</b><span>导出的是「设备配置」而不是「拓扑」，文件里不含连线。地址、VLAN、Trunk、ACL、NAT、路由这些配置会原样还原，但线缆要在画布上自己连回去。</span></div>
+          <div class="r"><b>导出配置</b><span>生成一个 .txt：<b>开头是拓扑段</b>（每台设备的型号/位置、每条连线、画布注释），后面是每台设备的 <code>running-config</code>。<br />
+            交作业、改完再交回来、在另一台电脑上接着做，都用它。</span></div>
+          <div class="r"><b>导入配置</b><span>选一个自己导出的文件 → <b>先把设备、位置、连线、注释一并还原</b>，再把配置逐条重放回去。<br />
+            也能导入任意 VRP 的 <code>current-configuration</code>：画布上有同名设备就配到那台，没有就按表头型号自动新建。</span></div>
+          <div class="r"><b>报告</b><span>导入结束会弹一份报告：新建设备 / 还原连线 / 恢复注释各多少，逐台列出「18/18 条生效」，没生效的命令会带设备当时的报错原文。</span></div>
+          <div class="r"><b>重复导入</b><span>不会翻倍 —— 同名设备复用、已经连好的线跳过，同一个文件导入几次都行。</span></div>
+          <div class="r"><b>小技巧</b><span>只想抄某台设备的配置？把它那一段（<code>设备：xxx</code> 到下一条 <code>====</code> 之前）单独复制到命令行粘贴即可；<br />
+            把文件里的 <code>@topology … @end</code> 删掉，导入时就只还原配置、不动拓扑。</span></div>
         </div>
       </div>`;
     openModal(html);
@@ -6409,26 +7577,20 @@
       toast('当前没有设备可导出', 'bad');
       return;
     }
-    const parts = [
-      '配置导出时间：' + new Date().toLocaleString(),
-      '（本文件可以用模拟器的「导入配置」原样读回：它会按下面的设备表头逐台重放这些命令）',
-      ''
-    ];
-    for (const d of E.Net.devices) {
-      parts.push('='.repeat(66));
-      parts.push(`设备：${d.hostname}（${d.model}）`);
-      parts.push('='.repeat(66));
-      parts.push(...E.runningConfig(d));
-      parts.push('');
-    }
-    const blob = new Blob([parts.join('\n')], { type: 'text/plain;charset=utf-8' });
+    const text = E.Import.buildText();
+    const blob = new Blob([text], { type: 'text/plain;charset=utf-8' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = '网络设备配置_' + new Date().toISOString().slice(0, 10) + '.txt';
+    a.download = '网络拓扑与配置_' + new Date().toISOString().slice(0, 10) + '.txt';
     a.click();
     setTimeout(() => URL.revokeObjectURL(url), 3000);
-    toast('配置已导出，可用「导入配置」再读回来', 'good');
+    toast(
+      `已导出 ${E.Net.devices.length} 台设备、${E.Net.cables.length} 条连线` +
+        ((E.Net.labels || []).length ? `、${E.Net.labels.length} 条注释` : '') +
+        '（可原样导入还原）',
+      'good'
+    );
   }
 
   /* ------------------------------ 导入配置 ------------------------------ */
@@ -6447,6 +7609,7 @@
   }
 
   function importConfigText(text, fileName) {
+    const before = E.Net.devices.length;
     const res = E.Import.applyConfigText(text, { target: activeDev() });
     if (res.ok) {
       // 新建了设备 → 把自动命名计数器抬高，避免以后手动加设备时重名
@@ -6456,13 +7619,18 @@
         if (!isNaN(n)) nameSeq[base] = Math.max(nameSeq[base] || 0, n);
       }
       E.recomputeOspf();
+      E.recomputeRip();
       E.recomputeStp();
       persist();
       render();
       renderConsole();
+      // 带拓扑的文件：设备是按导出时的坐标摆的，直接适应一下画布，免得落在视野外
+      if (res.hasTopology && E.Net.devices.length > before) {
+        setTimeout(() => fitView(), 60);
+      }
     }
     showImportResult(res, fileName);
-    if (res.ok) toast(res.bad ? '导入完成，有部分命令未生效' : '配置导入成功', res.bad ? 'bad' : 'good');
+    if (res.ok) toast(res.bad ? '导入完成，有部分命令未生效' : '导入成功', res.bad ? 'bad' : 'good');
     return res;
   }
 
@@ -6509,15 +7677,34 @@
       </div>
       <div class="mb">
         <p class="hint">${head}</p>
+        ${res.ok ? `<div class="impstat">${statChips(res)}</div>` : ''}
+        ${res.warnings && res.warnings.length ? `<div class="impwarn"><b>连线有 ${res.warnings.length} 处没能还原：</b>${res.warnings.map((w) => `<div>· ${esc(w)}</div>`).join('')}</div>` : ''}
         ${rows ? `<div class="imp">${rows}</div>` : ''}
         <h4 class="sec">请注意</h4>
         <p class="hint">
-          导出的是「设备配置」，不包含连线。地址、VLAN、Trunk、ACL、NAT、路由等配置会原样还原，
-          但线缆需要在画布上自己连回去（拖一个端口到另一个端口即可）。
+          ${
+            res.hasTopology
+              ? '这份文件里带了拓扑段：设备位置、连线、画布注释都已一并还原，配置逐条重放。<br />' +
+                '只想要某台设备的配置，把它那一段（从「设备：xxx」到下一个「====」之前）单独复制到命令行粘贴也可以。'
+              : '这份文件里没有拓扑段（可能是旧版导出，或从真机复制的 current-configuration）：' +
+                '只还原了配置，设备是按型号新建的、线缆需要自己在画布上连回去。'
+          }
         </p>
       </div>`;
     openModal(html);
     $('mClose').onclick = closeModal;
+  }
+
+  /** 导入结果的几个小统计块 */
+  function statChips(res) {
+    const chips = [];
+    if (res.created) chips.push(`新建设备 <b>${res.created}</b> 台`);
+    if (res.wires) chips.push(`还原连线 <b>${res.wires}</b> 条`);
+    if (res.notes) chips.push(`恢复注释 <b>${res.notes}</b> 条`);
+    if (res.bad) chips.push(`<span class="bad">${res.bad} 条命令未生效</span>`);
+    if (res.skipped) chips.push(`跳过 <b>${res.skipped}</b> 段`);
+    if (!chips.length) chips.push('没有需要新建的设备，配置已就地更新');
+    return chips.map((c) => `<span class="chip">${c}</span>`).join('');
   }
 
   /* ------------------------------ 启动 ------------------------------ */
@@ -6558,6 +7745,13 @@
       setTermOpen(!termIsOpen());
     };
     $('btnClear').onclick = acts.clear;
+    const noteBtn = $('btnNote');
+    if (noteBtn) {
+      noteBtn.onclick = () => {
+        addNote();
+        toast('输入注释文字，点空白处完成；长按/右键可删除', 'good');
+      };
+    }
 
     // 窄屏下顶栏放不下 7 个按钮，收进「更多」菜单
     const more = $('btnMore');
@@ -6625,6 +7819,7 @@
     const restored = restore();
     applyTransform();
     E.recomputeOspf();
+    E.recomputeRip();
     E.recomputeStp();
     render();
     renderConsole();
