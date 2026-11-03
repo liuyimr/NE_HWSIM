@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <!--
   NE_HWSIM —— 华为 VRP 网络实训模拟器（单文件版）
-  版本：v1.4.0
+  版本：v1.5.0
 
   Copyright (c) 2026 新易科技工作室 NewE
   作者：Liuyi  <yimr@sohu.com>
@@ -765,6 +765,8 @@
       ports: t.ports.map((p) => makePort(p.name, p.kind, isRouted ? 'routed' : 'access')),
       vlans: [1],
       vlanifs: [],
+      // 子接口（单臂路由用）：{ parentPortId, num, vid, ip, mask, enabled, arpBroadcast, desc }
+      subifs: [],
       routes: [],
       acl: [],
       aclBindings: [], // { portId | vlanifId, direction, aclId }
@@ -817,8 +819,17 @@
     if (!dev.vlanMeta) dev.vlanMeta = {};
     if (!Array.isArray(dev.vlans)) dev.vlans = [1];
     if (!dev.vlans.includes(1)) dev.vlans.unshift(1);
-    for (const k of ['vlanifs', 'routes', 'acl', 'aclBindings', 'staticMac', 'logs', 'portGroups', 'natAddrGroups', 'natSessions']) {
+    for (const k of ['vlanifs', 'subifs', 'routes', 'acl', 'aclBindings', 'staticMac', 'logs', 'portGroups', 'natAddrGroups', 'natSessions']) {
       if (!Array.isArray(dev[k])) dev[k] = [];
+    }
+    // 子接口字段补齐（老存档里没有）
+    for (const s of dev.subifs) {
+      if (s.enabled == null) s.enabled = true;
+      if (s.arpBroadcast == null) s.arpBroadcast = false;
+      if (s.vid === undefined) s.vid = null;
+      if (s.ip === undefined) s.ip = null;
+      if (s.mask === undefined) s.mask = null;
+      if (s.desc === undefined) s.desc = '';
     }
     if (!dev.dhcp) dev.dhcp = { enabled: false, pools: [], leases: [] };
     if (!Array.isArray(dev.dhcp.pools)) dev.dhcp.pools = [];
@@ -1094,6 +1105,16 @@
       const d = egressDomain(device, p);
       if (d && d.type === VLAN_DOMAIN && d.vlan === domain.vlan) return true;
     }
+    // 子接口：只在自己绑定的那个 VLAN 里、且必须经绑定的父端口进出才应答 ARP
+    for (const s of device.subifs || []) {
+      if (!s.enabled || s.ip !== ip) continue;
+      if (domain.type !== VLAN_DOMAIN || s.vid !== domain.vlan) continue;
+      if (viaPortId != null && s.parentPortId !== viaPortId) continue;
+      // 父端口 down 时子接口协议也 down，不会应答 ARP（真机行为）
+      const parent = (device.ports || []).find((p) => p.id === s.parentPortId);
+      if (!parent || parent.shutdown || !parent.cableId) continue;
+      return true;
+    }
     // PC 主机口
     if (device.type === 'pc') {
       for (const p of device.ports) {
@@ -1105,7 +1126,13 @@
     return false;
   }
 
-  /** 设备所有三层接口（含 Vlanif / 路由口） */
+  /** 子接口名：GigabitEthernet0/0/0.10（父端口名 + "." + 子接口编号） */
+  function subifName(device, s) {
+    const p = (device.ports || []).find((x) => x.id === s.parentPortId);
+    return p ? `${p.name}.${s.num}` : `?.${s.num}`;
+  }
+
+  /** 设备所有三层接口（含 Vlanif / 子接口 / 路由口） */
   function l3Interfaces(device) {
     const list = [];
     for (const vi of device.vlanifs) {
@@ -1116,6 +1143,24 @@
       if (p.mode !== 'routed') continue;
       if (!p.ip || p.mask == null) continue;
       list.push({ kind: 'port', name: p.name, portId: p.id, ip: p.ip, mask: p.mask, up: !p.shutdown && !!p.cableId });
+    }
+    // 子接口：三层地址 + 绑定 VLAN（单臂路由）。父端口必须存在。
+    for (const s of device.subifs || []) {
+      if (!s.enabled || !s.ip || s.mask == null) continue;
+      const parent = (device.ports || []).find((p) => p.id === s.parentPortId);
+      if (!parent) continue;
+      list.push({
+        kind: 'subif',
+        name: subifName(device, s),
+        portId: parent.id,
+        num: s.num,
+        vlanId: s.vid,
+        ip: s.ip,
+        mask: s.mask,
+        up: !parent.shutdown && !!parent.cableId,
+        arpBroadcast: !!s.arpBroadcast,
+        subif: s
+      });
     }
     return list;
   }
@@ -1177,7 +1222,7 @@
     const ifaces = l3Interfaces(device);
     // 1) 直连
     for (const i of ifaces) {
-      if (i.kind === 'port' && !i.up) continue;
+      if ((i.kind === 'port' || i.kind === 'subif') && !i.up) continue;
       if (sameSubnet(i.ip, i.mask, dstIp)) {
         return { type: 'direct', iface: i, nextHop: null };
       }
@@ -1290,6 +1335,35 @@
       domain = egressDomain(device, port);
       const res = forwardViaPort(device, dstIp, lookup, port, domain, ctx);
       return res || { ok: false, path, reason: `${device.hostname} 的二层域内无法到达 ${lookup.nextHop || dstIp}` };
+    }
+
+    // 子接口（单臂路由）：报文从父端口以「带 VLAN 标签」的形式进入该 VLAN 的广播域。
+    // 真机上有两个硬性前提，这里如实模拟，否则单臂路由就成了「配了 IP 就能通」的假象：
+    //   ① 必须 dot1q termination vid 绑定 VLAN —— 否则不知道该拆哪个 VLAN 的标签；
+    //   ② 必须 arp broadcast enable —— 三层转发要先 ARP 找目的 MAC，而子接口默认不发广播 ARP。
+    if (egress.kind === 'subif') {
+      const name = egress.name;
+      if (egress.vlanId == null) {
+        return {
+          ok: false,
+          path,
+          reason: `${device.hostname} 的 ${name} 没有绑定 VLAN（缺 dot1q termination vid），无法收发该 VLAN 的报文`
+        };
+      }
+      port = Net.getPort(device, egress.portId);
+      if (!port) return { ok: false, path, reason: `${device.hostname} 的 ${name} 父端口不存在` };
+      if (port.shutdown) return { ok: false, path, reason: `${device.hostname} 的父端口 ${port.name} 已 shutdown（子接口随之失效）` };
+      if (!port.cableId) return { ok: false, path, reason: `${device.hostname} 的父端口 ${port.name} 未连接线缆` };
+      if (!egress.arpBroadcast) {
+        return {
+          ok: false,
+          path,
+          reason: `${device.hostname} 的 ${name} 没有开 arp broadcast enable，子接口无法发起 ARP，报文发不出去`
+        };
+      }
+      domain = { type: VLAN_DOMAIN, vlan: egress.vlanId };
+      const res = forwardViaPort(device, dstIp, lookup, port, domain, ctx);
+      return res || { ok: false, path, reason: `${device.hostname} 的 VLAN ${egress.vlanId}（子接口 ${name}）内无法到达 ${lookup.nextHop || dstIp}` };
     }
 
     // Vlanif：在对应 VLAN 内寻找物理出端口
@@ -1511,6 +1585,7 @@
     }
     for (const vi of device.vlanifs) if (vi.enabled && vi.ip) return { ip: vi.ip, mask: vi.mask };
     for (const p of device.ports) if (p.mode === 'routed' && p.ip) return { ip: p.ip, mask: p.mask, port: p };
+    for (const s of device.subifs || []) if (s.enabled && s.ip) return { ip: s.ip, mask: s.mask };
     return null;
   }
 
@@ -1526,6 +1601,20 @@
 
     // 同网段：直连访问，与网关无关
     if (sameSubnet(p.ip, p.mask, dstIp)) {
+      // 目的地址正好是某台设备的接口 —— 如果那个接口 down 了，直接说，别让人去查线缆
+      for (const d of Net.devices) {
+        for (const s of d.subifs || []) {
+          if (s.ip !== dstIp) continue;
+          const parent = (d.ports || []).find((x) => x.id === s.parentPortId);
+          if (parent && parent.shutdown) {
+            return `${d.hostname} 的父端口 ${parent.name} 是 shutdown 的，子接口 ${subifName(d, s)} 随之失效`;
+          }
+          if (!s.enabled) return `${d.hostname} 的 ${subifName(d, s)} 被 shutdown 了`;
+        }
+        for (const x of d.ports) {
+          if (x.ip === dstIp && x.shutdown) return `${d.hostname} 的 ${x.name} 是 shutdown 的，所以 ${dstIp} 不可达`;
+        }
+      }
       return (
         `${pc.hostname}(${p.ip}/${p.mask}) 和 ${dstIp} 在同一网段，属于直连访问、不经过网关 —— ` +
         '查两点之间的线缆，以及中间交换机的 VLAN / 端口是否 shutdown'
@@ -1548,7 +1637,8 @@
     const owner = Net.devices.find(
       (d) =>
         d.ports.some((x) => x.ip === p.gateway) ||
-        d.vlanifs.some((v) => v.enabled && v.ip === p.gateway)
+        d.vlanifs.some((v) => v.enabled && v.ip === p.gateway) ||
+        (d.subifs || []).some((s) => s.ip === p.gateway)
     );
     if (!owner) {
       return (
@@ -1557,6 +1647,28 @@
       );
     }
     const gwDev = owner;
+
+    // 网关落在子接口上（单臂路由）—— 这里最常见的不是线缆，而是少配了一条命令
+    const gwSub = (gwDev.subifs || []).find((s) => s.ip === p.gateway);
+    if (gwSub) {
+      const label = subifName(gwDev, gwSub);
+      const parent = gwDev.ports.find((x) => x.id === gwSub.parentPortId);
+      if (parent && parent.shutdown) {
+        return `${gwDev.hostname} 的父端口 ${parent.name} 是 shutdown 的，子接口 ${label} 随之失效`;
+      }
+      if (!gwSub.enabled) return `${gwDev.hostname} 的 ${label} 被 shutdown 了`;
+      if (gwSub.vid == null) {
+        return `${gwDev.hostname} 的 ${label} 没有配 dot1q termination vid —— 子接口不知道自己负责哪个 VLAN，报文发不出去`;
+      }
+      if (!gwSub.arpBroadcast) {
+        return `${gwDev.hostname} 的 ${label} 没有配 arp broadcast enable —— 子接口发不出广播 ARP，网关不可达`;
+      }
+      return (
+        `${gwDev.hostname} 的 ${label}（VLAN ${gwSub.vid}）没有应答 —— ` +
+        `检查上联口是否配成 trunk 并且放行 VLAN ${gwSub.vid}（port trunk allow-pass vlan ${gwSub.vid}）`
+      );
+    }
+
     const gwPort = gwDev.ports.find((x) => x.ip === p.gateway) || null;
     if (gwPort && gwPort.shutdown) {
       return `${pc.hostname} 的默认网关 ${p.gateway} 所在的 ${gwDev.hostname} ${gwPort.name} 端口是 shutdown 的`;
@@ -2225,6 +2337,20 @@
     return lines;
   }
 
+  /**
+   * 单个子接口的非缺省配置行（不含 `interface X.n` 行本身）。
+   * 单臂路由的三件套：dot1q termination vid（脱 VLAN 标签）、ip address、arp broadcast enable。
+   */
+  function subifConfigLines(dev, s) {
+    const lines = [];
+    if (s.desc) lines.push(` description ${s.desc}`);
+    if (s.vid != null) lines.push(` dot1q termination vid ${s.vid}`);
+    if (s.ip) lines.push(` ip address ${s.ip} ${prefixToMask(s.mask)}`);
+    if (s.arpBroadcast) lines.push(' arp broadcast enable');
+    if (!s.enabled) lines.push(' shutdown');
+    return lines;
+  }
+
   /** 一条 ACL 规则回显成 VRP 配置行的样子 */
   function aclRuleText(r) {
     const parts = [`rule ${r.ruleId} ${r.action}`];
@@ -2285,6 +2411,11 @@
     for (const vi of dev.vlanifs) {
       out.push(`interface Vlanif${vi.vlanId}`);
       out.push(...vlanifConfigLines(dev, vi));
+      out.push('#');
+    }
+    for (const s of dev.subifs || []) {
+      out.push(`interface ${subifName(dev, s)}`);
+      out.push(...subifConfigLines(dev, s));
       out.push('#');
     }
     for (const p of dev.ports) {
@@ -2396,6 +2527,8 @@
     traceroute,
     portConfigLines,
     vlanifConfigLines,
+    subifConfigLines,
+    subifName,
     aclRuleText,
     hasNatConfig,
     // 协议
@@ -2553,7 +2686,8 @@
     'natGroupId',
     'ospfPid',
     'areaId',
-    'ripPid'
+    'ripPid',
+    'subifKey'
   ];
 
   /** 接口视图 / 端口组视图下当前被配置的端口列表 */
@@ -2642,6 +2776,10 @@
         // 真实 VRP：临时端口组与 interface range 都显示 [设备名-port-group]，
         // 永久端口组显示 [设备名-port-group-组名]。
         return `[${name}-port-group${dev.cli.groupName ? '-' + dev.cli.groupName : ''}]`;
+      case 'subif-view': {
+        const s = findSubif(dev, dev.cli.subifKey);
+        return `[${name}-${s ? E.subifName(dev, s) : ''}]`;
+      }
       case 'vlanif-view': {
         const vi = dev.vlanifs.find((v) => v.vlanId === dev.cli.vlanifId);
         return `[${name}-Vlanif${vi ? vi.vlanId : ''}]`;
@@ -2681,6 +2819,15 @@
     m = t.match(/^eth-?trunk\s*(\d+)$/);
     if (m) return { kind: 'trunk', trunkId: parseInt(m[1], 10), label: `Eth-Trunk${m[1]}` };
 
+    // 子接口：gigabitethernet 0/0/0.10 / ge0/0/0.10 —— 必须放在物理口之前匹配
+    m = t.match(/^(?:gigabitethernet|ge|g)\s*0\/0\/(\d+)\.(\d+)$/);
+    if (m) {
+      const idx = parseInt(m[1], 10);
+      const num = parseInt(m[2], 10);
+      const p = dev.ports.find((x) => x.name.toLowerCase().endsWith('0/0/' + idx));
+      return p ? { kind: 'subif', port: p, num, label: `${p.name}.${num}` } : null;
+    }
+
     m = t.match(/^(?:gigabitethernet|ge|g)\s*0\/0\/(\d+)$/);
     if (m) {
       const idx = parseInt(m[1], 10);
@@ -2688,6 +2835,13 @@
       return p ? { kind: 'eth', port: p, label: p.name } : null;
     }
     return null;
+  }
+
+  /** 按「父端口 id#编号」定位子接口对象 */
+  function findSubif(dev, key) {
+    if (!key) return null;
+    const parts = String(key).split('#');
+    return (dev.subifs || []).find((s) => s.parentPortId === parts[0] && String(s.num) === String(parts[1])) || null;
   }
 
   function vlanList(token) {
@@ -2860,6 +3014,15 @@
       return out;
     }
 
+    if (view === 'subif-view') {
+      const s = findSubif(dev, dev.cli.subifKey);
+      if (!s) return ['#', 'return'];
+      out.push(`interface ${E.subifName(dev, s)}`);
+      out.push(...E.subifConfigLines(dev, s));
+      out.push('#', 'return');
+      return out;
+    }
+
     if (view === 'vlanif-view') {
       const vi = dev.vlanifs.find((v) => v.vlanId === dev.cli.vlanifId);
       if (!vi) return ['#', 'return'];
@@ -2967,6 +3130,18 @@
           padEnd(up ? 'up' : 'down', 10) +
           padEnd(vi.ip || 'unassigned', 17) +
           (vi.ip ? E.prefixToMask(vi.mask) : '--')
+      );
+    }
+    // 子接口（单臂路由）：UP 与否跟随父端口
+    for (const s of dev.subifs || []) {
+      const parent = dev.ports.find((p) => p.id === s.parentPortId);
+      const up = s.enabled && parent && !parent.shutdown && !!parent.cableId;
+      rows.push(
+        padEnd(E.subifName(dev, s), 34) +
+          padEnd(up ? 'up' : 'down', 6) +
+          padEnd(up ? 'up' : 'down', 10) +
+          padEnd(s.ip || 'unassigned', 17) +
+          (s.ip ? E.prefixToMask(s.mask) : '--')
       );
     }
     if (ifaces.length === 0 && dev.type !== 'pc') {
@@ -4133,6 +4308,31 @@
 
         const iface = resolveIface(dev, toks[0]);
         if (!iface) return errWrong('interface');
+        if (iface.kind === 'subif') {
+          // 子接口（单臂路由）：不存在就创建，和真机一样「一进就有」
+          if (!Array.isArray(dev.subifs)) dev.subifs = [];
+          let sub = dev.subifs.find((s) => s.parentPortId === iface.port.id && s.num === iface.num);
+          const fresh = !sub;
+          if (!sub) {
+            sub = {
+              parentPortId: iface.port.id,
+              num: iface.num,
+              vid: null,
+              ip: null,
+              mask: null,
+              enabled: true,
+              arpBroadcast: false,
+              desc: ''
+            };
+            dev.subifs.push(sub);
+          }
+          enterView(dev, 'subif-view', { subifKey: `${iface.port.id}#${iface.num}` });
+          return {
+            lines: fresh
+              ? ['// 提示：单臂路由三件套 —— dot1q termination vid <VLAN>、ip address <网关>、arp broadcast enable（缺最后一条 ping 不通）。']
+              : []
+          };
+        }
         if (iface.kind === 'vlanif') {
           if (dev.l2only) {
             return { lines: ['Error: This is a layer 2 switch, Vlanif is not supported.', '// 提示：S3700 是二层交换机，三层接口请用 S5700/路由器。'] };
@@ -4578,6 +4778,72 @@
     }
 
     /* ================= Vlanif 视图 ================= */
+    /* ================= 子接口视图（单臂路由） ================= */
+    if (view === 'subif-view') {
+      const s = findSubif(dev, dev.cli.subifKey);
+      if (!s) { quitView(dev); return errUnrecognized(cmd); }
+      const port = E.Net.getPort(dev, s.parentPortId);
+
+      if (cmd === 'dot1q' && args[1] === 'termination' && args[2] === 'vid') {
+        const v = parseInt(args[3], 10);
+        if (isNaN(v) || v < 1 || v > 4094) return errWrong(args[3]);
+        s.vid = v;
+        if (!dev.vlans.includes(v)) dev.vlans.push(v);
+        const lines = [];
+        // 只有交换机做单臂路由时，上联口才必须是 trunk（路由器以太口本身就是三层口，不需要）
+        if (dev.type === 'switch' && port && port.mode !== 'trunk') {
+          lines.push(
+            `// 提示：父端口 ${port.name} 现在是 ${port.mode} 口。单臂路由的上联口要配 port link-type trunk + port trunk allow-pass vlan ${v}，` +
+              '否则带标签的报文进不了这台设备。'
+          );
+        }
+        return { lines };
+      }
+      if (cmd === 'undo' && args[1] === 'dot1q') {
+        s.vid = null;
+        return { lines: [] };
+      }
+      if (cmd === 'arp' && args[1] === 'broadcast' && args[2] === 'enable') {
+        s.arpBroadcast = true;
+        return { lines: [] };
+      }
+      if (cmd === 'undo' && args[1] === 'arp' && args[2] === 'broadcast') {
+        s.arpBroadcast = false;
+        return { lines: [] };
+      }
+      if (cmd === 'ip' && args[1] === 'address') {
+        const ip = args[2];
+        const mask = parseMask(args[3]);
+        if (!E.isValidIp(ip) || mask == null) return errWrong(!E.isValidIp(ip) ? ip : args[3]);
+        s.ip = ip;
+        s.mask = mask;
+        const lines = [];
+        if (s.vid == null) {
+          lines.push('// 提示：还没配 dot1q termination vid —— 这个子接口不知道自己属于哪个 VLAN，报文发不出去。');
+        }
+        if (!s.arpBroadcast) lines.push('// 提示：别忘 arp broadcast enable —— 单臂路由不下发这条，三层转发做不了 ARP。');
+        return { lines };
+      }
+      if (cmd === 'undo' && args[1] === 'ip' && args[2] === 'address') {
+        s.ip = null;
+        s.mask = null;
+        return { lines: [] };
+      }
+      if (cmd === 'description') {
+        s.desc = args.slice(1).join(' ');
+        return { lines: [] };
+      }
+      if (cmd === 'shutdown') {
+        s.enabled = false;
+        return { lines: [] };
+      }
+      if (cmd === 'undo' && args[1] === 'shutdown') {
+        s.enabled = true;
+        return { lines: [] };
+      }
+      return errUnrecognized(cmd);
+    }
+
     if (view === 'vlanif-view') {
       const vi = dev.vlanifs.find((v) => v.vlanId === dev.cli.vlanifId);
       if (!vi) { quitView(dev); return errUnrecognized(cmd); }
@@ -4871,6 +5137,7 @@
     'interface-view': '接口视图',
     'portgroup-view': '端口组视图',
     'vlanif-view': 'Vlanif 视图',
+    'subif-view': '子接口视图',
     'trunk-view': 'Eth-Trunk 视图',
     'pool-view': '地址池视图',
     'acl-view': 'ACL 视图',
@@ -4927,6 +5194,7 @@
         'undo vlan <id>               删除 VLAN',
         'undo vlan batch <ids>        批量删除 VLAN',
         'interface <接口名>           进入接口视图',
+        'interface <接口名>.<编号>     进入子接口（单臂路由，如 GigabitEthernet0/0/0.10）',
         'interface range <起> to <止>   批量进入多个端口（临时端口组）',
         'port-group group-member <起> to <止>  批量进入多个端口',
         'port-group <组名>            创建永久端口组，再 group-member 加成员',
@@ -4980,6 +5248,14 @@
         'description <描述>           接口描述',
         'shutdown / undo shutdown     关闭 / 开启接口',
         'display this                 查看本接口配置'
+      ],
+      'subif-view': [
+        'dot1q termination vid <VLAN> 绑定该子接口负责的 VLAN（单臂路由必配）',
+        'ip address <ip> <掩码>       配置该 VLAN 的网关地址',
+        'arp broadcast enable         允许子接口发送广播 ARP（不配则不通）',
+        'description <描述>           子接口描述',
+        'shutdown / undo shutdown     关闭 / 开启子接口',
+        'display this                 查看本子接口配置'
       ],
       'trunk-view': [
         'mode lacp-static             设置为 LACP 模式',
@@ -5625,7 +5901,7 @@
   /* ------------------------------ 版本信息 ------------------------------ */
   /* 版本号的唯一来源：改这一处即可。
      build.mjs 会把它读出来写进产物开头的注释，所以交付文件本身也能看出是哪个版本。 */
-  const APP_VERSION = '1.4.0';
+  const APP_VERSION = '1.5.0';
   const APP_INFO = {
     studio: '新易科技工作室 NewE',
     author: 'Liuyi',
@@ -6709,6 +6985,7 @@
     'interface-view': ['description ', 'shutdown', 'undo shutdown', 'port link-type access', 'port link-type trunk', 'port default vlan ', 'port trunk allow-pass vlan ', 'undo portswitch', 'ip address ', 'eth-trunk 1', 'stp edged-port enable', 'port-security enable', 'port-security max-mac-num 2', 'traffic-filter inbound acl 3000', 'nat outbound 2000', 'display this', 'display interface ', 'quit', 'return'],
     'portgroup-view': ['group-member GigabitEthernet0/0/1 to GigabitEthernet0/0/8', 'description ', 'shutdown', 'undo shutdown', 'port link-type access', 'port link-type trunk', 'port default vlan ', 'port trunk allow-pass vlan ', 'stp edged-port enable', 'port-security enable', 'display this', 'quit', 'return'],
     'vlanif-view': ['ip address ', 'dhcp select global', 'traffic-filter inbound acl 3000', 'description ', 'shutdown', 'undo shutdown', 'display this', 'quit', 'return'],
+    'subif-view': ['dot1q termination vid 10', 'ip address ', 'arp broadcast enable', 'undo arp broadcast enable', 'description ', 'shutdown', 'undo shutdown', 'display this', 'quit', 'return'],
     'pool-view': ['network ', 'gateway-list ', 'dns-list ', 'excluded-ip-address ', 'lease day 1', 'display this', 'quit', 'return'],
     'acl-view': ['rule 5 deny ip source 192.168.10.0 0.0.0.255 destination 192.168.20.0 0.0.0.255', 'rule 10 permit ip', 'rule 5 permit source ', 'undo rule 5', 'display this', 'quit', 'return'],
     'nat-group-view': ['section 0 ', 'display this', 'quit', 'return'],
@@ -7121,6 +7398,42 @@
       ]
     },
     {
+      id: 'one-arm',
+      name: '实验三·补 · 单臂路由（Router-on-a-Stick）',
+      level: '进阶',
+      desc: '1 台路由器 + 1 台二层交换机：只用一条链路，在路由器侧给 VLAN 10 / VLAN 20 各建一个子接口当网关。和实验三对比 —— 网关从交换机搬到了路由器。',
+      build() {
+        const r = mk('AR6121', 340, 70, 'R1');
+        const sw = mk('S3700', 340, 250, 'SW1');
+        const p1 = mk('PC', 110, 425, 'PC1');
+        const p2 = mk('PC', 580, 425, 'PC2');
+        setPort(p1, 0, { ip: '192.168.10.10', mask: 24, gateway: '192.168.10.254' });
+        setPort(p2, 0, { ip: '192.168.20.10', mask: 24, gateway: '192.168.20.254' });
+        link(p1, 0, sw, 0); // PC1 — SW1 GE0/0/1
+        link(p2, 0, sw, 1); // PC2 — SW1 GE0/0/2
+        link(sw, 2, r, 0); // SW1 GE0/0/3 — R1 GE0/0/0（唯一的「单臂」链路）
+        setPort(sw, 0, { mode: 'access', vlan: 10 });
+        setPort(sw, 1, { mode: 'access', vlan: 20 });
+        if (!sw.vlans.includes(10)) sw.vlans.push(10);
+        if (!sw.vlans.includes(20)) sw.vlans.push(20);
+        return { focus: r };
+      },
+      goals: [
+        '交换机侧：<code>vlan batch 10 20</code>，GE0/0/1 划 access vlan 10、GE0/0/2 划 access vlan 20',
+        '上联口 GE0/0/3 配 trunk：<code>port link-type trunk</code> → <code>port trunk allow-pass vlan 10 20</code>',
+        '路由器上建子接口：<code>interface GigabitEthernet0/0/0.10</code> → <code>dot1q termination vid 10</code> → <code>ip address 192.168.10.254 24</code> → <code>arp broadcast enable</code>',
+        '再配一个 <code>GigabitEthernet0/0/0.20</code>（vid 20，地址 192.168.20.254 24）',
+        '用 <code>display ip interface brief</code> 看到两个子接口，然后 PC1 ping 192.168.20.10 通了就成功'
+      ],
+      tips: [
+        '一条物理链路承载多个 VLAN，靠的是子接口上的 <code>dot1q termination vid</code> 按标签把帧分开 —— 这就是「单臂」的来历。',
+        '⚠️ <b>少配 <code>arp broadcast enable</code> 就 ping 不通</b>：子接口默认不发广播 ARP，路由器找不到目的 MAC。这是单臂路由最常踩的坑，模拟器会如实报出原因。',
+        '子接口编号（.10 / .20）只是名字，真正决定属于哪个 VLAN 的是 <code>dot1q termination vid</code>；习惯上让两者一致。',
+        '上联口必须是 trunk 且放行这两个 VLAN；配成 access 就只通一个 VLAN。',
+        '和实验三对比着看：三层交换机把网关放在 Vlanif 上，路由器只能靠子接口 —— 这就是「单臂路由」和「三层交换」的区别。'
+      ]
+    },
+    {
       id: 'static',
       name: '实验四 · 静态路由实现跨网段互通',
       level: '进阶',
@@ -7443,6 +7756,7 @@
           <div class="lv3"><code>[SW1-vlan10]</code><span>vlan 10 进入 VLAN 视图</span></div>
           <div class="lv3"><code>[SW1-GigabitEthernet0/0/1]</code><span>interface GE0/0/1 进入接口视图</span></div>
           <div class="lv3"><code>[SW1-Vlanif10]</code><span>interface Vlanif10</span></div>
+          <div class="lv3"><code>[R1-GigabitEthernet0/0/0.10]</code><span>interface GE0/0/0.10（子接口，单臂路由）</span></div>
           <div class="lv3"><code>[SW1-port-group]</code><span>interface range / port-group group-member（批量配置端口）</span></div>
           <div class="lv3"><code>[SW1-acl-adv-3000]</code><span>acl number 3000</span></div>
           <div class="lv3"><code>[SW1-ospf-1]</code><span>ospf 1</span></div>
@@ -7461,6 +7775,7 @@
           <div class="r"><b>VLAN</b><span><code>vlan 10</code>（进入 VLAN 视图，可配 <code>description</code> / <code>name</code>）· <code>vlan batch 10 20</code> · <code>port link-type access</code> · <code>port default vlan 10</code></span></div>
           <div class="r"><b>Trunk</b><span><code>port link-type trunk</code> · <code>port trunk allow-pass vlan 10 20</code> 或 <code>all</code></span></div>
           <div class="r"><b>三层</b><span><code>interface Vlanif10</code> · <code>ip address 192.168.10.1 24</code></span></div>
+          <div class="r"><b>单臂路由</b><span><code>interface GigabitEthernet0/0/0.10</code> → <code>dot1q termination vid 10</code> → <code>ip address 192.168.10.254 24</code> → <b><code>arp broadcast enable</code></b>（少这条 ping 不通）。上联口要 <code>port link-type trunk</code> + <code>port trunk allow-pass vlan 10 20</code>。</span></div>
           <div class="r"><b>静态路由</b><span><code>ip route-static 192.168.2.0 24 10.0.0.2</code>；下一跳也可以写成出接口 <code>ip route-static 192.168.2.0 24 GigabitEthernet0/0/1</code>。下一跳当前不可达时，路由表里那条的 Flags 只有 <code>R</code> 没有 <code>D</code>，并在表下面列出来。</span></div>
           <div class="r"><b>RIP</b><span><code>rip 1</code> → <code>version 2</code> → <code>network 192.168.1.0</code>（只写网段按主类网络通告，也可写 <code>network 10.0.0.0 0.0.0.255</code>）；<code>display rip</code> / <code>display rip routing</code> / <code>display rip neighbor</code> 查看。<code>silent-interface all</code> 可抑制报文。<b>两端 version 必须一致</b>（缺省是 version 1，只配一端 version 2 会永远没邻居）。</span></div>
           <div class="r"><b>OSPF</b><span><code>ospf 1 router-id 1.1.1.1</code> → <code>area 0</code> → <code>network 10.0.0.0 0.0.0.255</code></span></div>

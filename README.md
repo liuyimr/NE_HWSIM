@@ -3,7 +3,7 @@
 **一个 HTML 文件，双击就能练华为交换机 / 路由器命令 —— 不用装 eNSP，不用装 GNS3，不联网也能用。**
 
 [![在线试玩](https://img.shields.io/badge/%E5%9C%A8%E7%BA%BF%E8%AF%95%E7%8E%A9-GitHub%20Pages-orange)](https://liuyimr.github.io/NE_HWSIM/NE_HWSIM.html)
-![单文件](https://img.shields.io/badge/%E5%8D%95%E6%96%87%E4%BB%B6-335%20KB-brightgreen)
+![单文件](https://img.shields.io/badge/%E5%8D%95%E6%96%87%E4%BB%B6-351%20KB-brightgreen)
 ![无需安装](https://img.shields.io/badge/%E6%97%A0%E9%9C%80%E5%AE%89%E8%A3%85-%E5%8F%8C%E5%87%BB%E5%8D%B3%E7%94%A8-success)
 ![离线可用](https://img.shields.io/badge/%E7%A6%BB%E7%BA%BF%E5%8F%AF%E7%94%A8-100%25-informational)
 ![许可证](https://img.shields.io/badge/license-MIT-blue)
@@ -33,7 +33,7 @@
 
 给**网络课老师**和**备考华为认证的同学**做的一个练习工具。
 
-eNSP 要装 VirtualBox，GNS3 要配镜像，虚拟机镜像动辄几个 GB，还得看电脑配置。很多学生卡在第一步就放弃了，然后就没有然后。NE_HWSIM 的判断是：**先把门槛降到零** —— 一个 335 KB 的 HTML 文件，发过去、双击、开始敲命令，整个过程不需要任何解释。
+eNSP 要装 VirtualBox，GNS3 要配镜像，虚拟机镜像动辄几个 GB，还得看电脑配置。很多学生卡在第一步就放弃了，然后就没有然后。NE_HWSIM 的判断是：**先把门槛降到零** —— 一个 351 KB 的 HTML 文件，发过去、双击、开始敲命令，整个过程不需要任何解释。
 
 它**不是**真机的替代品，也跑不了复杂的园区网。它解决的是一个很具体的问题：**让学生能在自己的笔记本上、离线、零安装地，把 VLAN / Trunk / OSPF / ACL / NAT 这些命令反复敲到熟。**
 
@@ -90,7 +90,7 @@ eNSP 要装 VirtualBox，GNS3 要配镜像，虚拟机镜像动辄几个 GB，�
 
 ---
 
-## 内置 9 个实训实验
+## 内置 10 个实训实验
 
 点顶部 **「实训实验」** 按钮，选一个直接加载（会自动搭好拓扑、连好线）。
 
@@ -99,6 +99,7 @@ eNSP 要装 VirtualBox，GNS3 要配镜像，虚拟机镜像动辄几个 GB，�
 | 一 | VLAN 基础与端口划分 | `vlan` · `port link-type access` · `port default vlan` | 基础 |
 | 二 | Trunk 跨交换机 VLAN | `port link-type trunk` · `port trunk allow-pass vlan` | 基础 |
 | 三 | 三层交换实现 VLAN 间互通 | `interface Vlanif` · `ip address` | 基础 |
+| 三·补 | **单臂路由（子接口）** | `interface GE0/0/0.10` · `dot1q termination vid` · `arp broadcast enable` | 进阶 |
 | 四 | 静态路由实现跨网段互通 | `ip route-static` | 基础 |
 | 五 | OSPF 单区域动态路由 | `ospf 1` · `area 0` · `network` | 基础 |
 | 五·补 | **RIP 动态路由** | `rip 1` · `version 2` · `network` · `display rip neighbor` | 进阶 |
@@ -118,7 +119,7 @@ eNSP 要装 VirtualBox，GNS3 要配镜像，虚拟机镜像动辄几个 GB，�
 | | **NE_HWSIM** | eNSP | GNS3 | Cisco Packet Tracer |
 |---|---|---|---|---|
 | 安装 | **双击 HTML，零安装** | 需装 VirtualBox + eNSP | 需装虚拟机 + 导入镜像 | 需注册 Cisco 账号 |
-| 体积 | **335 KB** | 数 GB | 数 GB | 数百 MB |
+| 体积 | **351 KB** | 数 GB | 数 GB | 数百 MB |
 | 联网 | **可完全离线** | 首次需下载镜像 | 需下载镜像 | 需登录 |
 | 命令语法 | 华为 VRP | 华为 VRP | 多厂商 | Cisco IOS |
 | 上手门槛 | **极低** | 中（装环境容易失败） | 高 | 中 |
@@ -132,7 +133,7 @@ eNSP 要装 VirtualBox，GNS3 要配镜像，虚拟机镜像动辄几个 GB，�
 
 **二层**：VLAN（含 `vlan batch` / `undo vlan batch`）、Access / Trunk / Hybrid 端口、MAC 地址学习表、STP / RSTP 破环、链路聚合 Eth-Trunk、端口安全 Port-Security
 
-**三层**：直连路由、静态路由（下一跳 / 出接口两种写法，支持**路由递归**）、**RIP v1/v2**（版本必须两端一致）、OSPF 单区域、最长前缀匹配、ARP、Vlanif 三层接口
+**三层**：直连路由、静态路由（下一跳 / 出接口两种写法，支持**路由递归**）、**RIP v1/v2**（版本必须两端一致）、OSPF 单区域、最长前缀匹配、ARP、Vlanif 三层接口、**子接口 / 单臂路由**（`dot1q termination vid` + `arp broadcast enable`）
 
 **服务与安全**：DHCP 服务器（地址池 / 网关）、**ACL**（基本 2000-2999 / 高级 3000-3999，支持源 + 目的 + 协议匹配，含**隐含 `deny all`**，可绑物理口、端口组或 Vlanif，入向 / 出向都生效）、**NAT**（Easy IP 与 `nat address-group` 地址池）
 
@@ -195,7 +196,7 @@ A：能。把同一个 HTML 文件传到手机（微信 / QQ / 网盘都行）�
 长按端口看详情 —— 功能一个不少，只是手势不一样（见上面「手机 / 平板也能用」的对照表）。
 
 **Q：我怎么知道手上这个文件是哪个版本？**
-A：点顶栏 **「关于」**，里面写着版本号；用记事本打开文件，**开头的注释里也有**（比如 `版本：v1.4.0`）。下载单个 HTML 文件就能自带版本信息，不用去比对文件大小。
+A：点顶栏 **「关于」**，里面写着版本号；用记事本打开文件，**开头的注释里也有**（比如 `版本：v1.5.0`）。下载单个 HTML 文件就能自带版本信息，不用去比对文件大小。
 
 ---
 
@@ -212,6 +213,19 @@ A：点顶栏 **「关于」**，里面写着版本号；用记事本打开文�
 ---
 
 ## 最近更新
+
+**v1.5.0**
+
+- **新增单臂路由（Router-on-a-Stick）**：路由器上的子接口 —— `interface GigabitEthernet0/0/0.10` →
+  `dot1q termination vid 10` → `ip address 192.168.10.254 24` → `arp broadcast enable`，
+  一条链路给多个 VLAN 当网关。两个硬性前提都如实模拟：**没绑 `dot1q termination vid` 或没开
+  `arp broadcast enable` 就是不通**，失败原因直接点名缺哪一条；父端口 shutdown 时子接口跟着失效。
+  新增 **实验三·补 · 单臂路由**，和实验三的三层交换 Vlanif 对照着看。
+- **子接口进配置**：`running-config`、`display this`、`display ip interface brief` 都包含子接口，
+  导出导入、保存恢复能原样还原。
+- **TAB 补全**：子接口视图里的 `dot1q` / `arp broadcast enable` / `ip address` 等。
+- 修掉 `ping` 同网段时的一条误判：目的地址正好是某台设备的子接口、而它的父端口被 shutdown 时，
+  现在直接点出是哪个端口，不再让人去猜 VLAN。
 
 **v1.4.0**
 
@@ -294,7 +308,7 @@ A：点顶栏 **「关于」**，里面写着版本号；用记事本打开文�
 
 做工业自动控制与楼宇智能化的，这个是给网络教学做的小工具。
 
-> 程序里点顶栏 **「关于」** 也能看到版本号、作者与许可信息。当前版本 **v1.4.0**。
+> 程序里点顶栏 **「关于」** 也能看到版本号、作者与许可信息。当前版本 **v1.5.0**。
 
 ---
 
@@ -323,14 +337,14 @@ MIT License —— 随便用，商用也行，改了也不用说。详见 [LICEN
 
 **NE_HWSIM — a Huawei VRP network lab simulator that fits in one HTML file.**
 
-A single 335 KB HTML file. Double-click it and you get a drag-and-drop network topology builder plus a
+A single 351 KB HTML file. Double-click it and you get a drag-and-drop network topology builder plus a
 faithful Huawei VRP CLI (user view → system view → interface view → VLAN view → port-group view → ACL view
-→ NAT address-pool view → OSPF area view → RIP view), with authentic `^` error markers and `save` interaction.
+→ NAT address-pool view → OSPF area view → RIP view → sub-interface view), with authentic `^` error markers and `save` interaction.
 
 - **No installation, no backend, no account, works fully offline** — a lightweight alternative to eNSP / GNS3
   when you just need to practise Huawei CLI commands.
-- **9 built-in hands-on labs** for HCIA / HCIP practice: VLAN, Trunk, inter-VLAN routing, static routing,
-  OSPF, **RIP**, DHCP, **ACL**, **NAT**.
+- **10 built-in hands-on labs** for HCIA / HCIP practice: VLAN, Trunk, inter-VLAN routing, **router-on-a-stick**
+  (sub-interfaces), static routing, OSPF, **RIP**, DHCP, **ACL**, **NAT**.
 - Batch port configuration (`interface range`, `port-group`), config export / import, auto-save to browser storage.
 - **Cables can be deleted or re-plugged** — click to select and press `Delete`, click the `×` on the cable,
   right-click, or double-click a connected port; or just **drag a cable end onto another free port** to re-route it.
