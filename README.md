@@ -3,7 +3,7 @@
 **一个 HTML 文件，双击就能练华为交换机 / 路由器命令 —— 不用装 eNSP，不用装 GNS3，不联网也能用。**
 
 [![在线试玩](https://img.shields.io/badge/%E5%9C%A8%E7%BA%BF%E8%AF%95%E7%8E%A9-GitHub%20Pages-orange)](https://liuyimr.github.io/NE_HWSIM/NE_HWSIM.html)
-![单文件](https://img.shields.io/badge/%E5%8D%95%E6%96%87%E4%BB%B6-351%20KB-brightgreen)
+![单文件](https://img.shields.io/badge/%E5%8D%95%E6%96%87%E4%BB%B6-423%20KB-brightgreen)
 ![无需安装](https://img.shields.io/badge/%E6%97%A0%E9%9C%80%E5%AE%89%E8%A3%85-%E5%8F%8C%E5%87%BB%E5%8D%B3%E7%94%A8-success)
 ![离线可用](https://img.shields.io/badge/%E7%A6%BB%E7%BA%BF%E5%8F%AF%E7%94%A8-100%25-informational)
 ![许可证](https://img.shields.io/badge/license-MIT-blue)
@@ -33,7 +33,7 @@
 
 给**网络课老师**和**备考华为认证的同学**做的一个练习工具。
 
-eNSP 要装 VirtualBox，GNS3 要配镜像，虚拟机镜像动辄几个 GB，还得看电脑配置。很多学生卡在第一步就放弃了，然后就没有然后。NE_HWSIM 的判断是：**先把门槛降到零** —— 一个 351 KB 的 HTML 文件，发过去、双击、开始敲命令，整个过程不需要任何解释。
+eNSP 要装 VirtualBox，GNS3 要配镜像，虚拟机镜像动辄几个 GB，还得看电脑配置。很多学生卡在第一步就放弃了，然后就没有然后。NE_HWSIM 的判断是：**先把门槛降到零** —— 一个 423 KB 的 HTML 文件，发过去、双击、开始敲命令，整个过程不需要任何解释。
 
 它**不是**真机的替代品，也跑不了复杂的园区网。它解决的是一个很具体的问题：**让学生能在自己的笔记本上、离线、零安装地，把 VLAN / Trunk / OSPF / ACL / NAT 这些命令反复敲到熟。**
 
@@ -90,7 +90,7 @@ eNSP 要装 VirtualBox，GNS3 要配镜像，虚拟机镜像动辄几个 GB，�
 
 ---
 
-## 内置 10 个实训实验
+## 内置 14 个实训实验
 
 点顶部 **「实训实验」** 按钮，选一个直接加载（会自动搭好拓扑、连好线）。
 
@@ -104,8 +104,12 @@ eNSP 要装 VirtualBox，GNS3 要配镜像，虚拟机镜像动辄几个 GB，�
 | 五 | OSPF 单区域动态路由 | `ospf 1` · `area 0` · `network` | 基础 |
 | 五·补 | **RIP 动态路由** | `rip 1` · `version 2` · `network` · `display rip neighbor` | 进阶 |
 | 六 | DHCP 自动分配地址 | `dhcp enable` · `ip pool` · `dhcp select global` | 基础 |
+| 六·补 | **DHCP 中继** | `dhcp select relay` · `dhcp relay server-ip` | 进阶 |
 | 七 | **ACL 访问控制** | `acl number 3000` · `rule deny ip source ... destination ...` · `traffic-filter inbound` | 进阶 |
 | 八 | **NAT 网络地址转换** | `acl number 2000` · `nat outbound` · `nat address-group` | 进阶 |
+| 八·补 | **NAT Server 端口映射** | `nat server global ... inside ...` · `display nat server` | 进阶 |
+| 九 | **设备远程管理** | `telnet server enable` · `aaa` · `local-user` · `user-interface vty` | 进阶 |
+| 十 | **IPv6 基础** | `ipv6` · `ipv6 address` · `ipv6 route-static` · `ping ipv6` | 进阶 |
 
 每个实验加载后都会弹出**实验目标**和**操作提示**，学生照着做即可；做完点「导出配置」把 txt 交上来。
 
@@ -119,7 +123,7 @@ eNSP 要装 VirtualBox，GNS3 要配镜像，虚拟机镜像动辄几个 GB，�
 | | **NE_HWSIM** | eNSP | GNS3 | Cisco Packet Tracer |
 |---|---|---|---|---|
 | 安装 | **双击 HTML，零安装** | 需装 VirtualBox + eNSP | 需装虚拟机 + 导入镜像 | 需注册 Cisco 账号 |
-| 体积 | **351 KB** | 数 GB | 数 GB | 数百 MB |
+| 体积 | **423 KB** | 数 GB | 数 GB | 数百 MB |
 | 联网 | **可完全离线** | 首次需下载镜像 | 需下载镜像 | 需登录 |
 | 命令语法 | 华为 VRP | 华为 VRP | 多厂商 | Cisco IOS |
 | 上手门槛 | **极低** | 中（装环境容易失败） | 高 | 中 |
@@ -133,13 +137,22 @@ eNSP 要装 VirtualBox，GNS3 要配镜像，虚拟机镜像动辄几个 GB，�
 
 **二层**：VLAN（含 `vlan batch` / `undo vlan batch`）、Access / Trunk / Hybrid 端口、MAC 地址学习表、STP / RSTP 破环、链路聚合 Eth-Trunk、端口安全 Port-Security
 
+**IPv6**：地址配置、ND 邻居、IPv6 直连与静态路由（`ipv6` 全局开关、`ping ipv6`、`display ipv6 …`）
+
+**设备管理**：Telnet 服务、AAA 本地用户（`local-user`）、VTY 认证（`user-interface vty 0 4`），一台设备可 `telnet` 登录另一台
+
 **三层**：直连路由、静态路由（下一跳 / 出接口两种写法，支持**路由递归**）、**RIP v1/v2**（版本必须两端一致）、OSPF 单区域、最长前缀匹配、ARP、Vlanif 三层接口、**子接口 / 单臂路由**（`dot1q termination vid` + `arp broadcast enable`）
 
-**服务与安全**：DHCP 服务器（地址池 / 网关）、**ACL**（基本 2000-2999 / 高级 3000-3999，支持源 + 目的 + 协议匹配，含**隐含 `deny all`**，可绑物理口、端口组或 Vlanif，入向 / 出向都生效）、**NAT**（Easy IP 与 `nat address-group` 地址池）
+**服务与安全**：DHCP 服务器（地址池 / 网关）与 **DHCP 中继**（`dhcp select relay` + `dhcp relay server-ip`）、**ACL**（基本 2000-2999 / 高级 3000-3999，支持源 + 目的 + 协议匹配，含**隐含 `deny all`**，可绑物理口、端口组或 Vlanif，入向 / 出向都生效）、**NAT**（Easy IP、`nat address-group` 地址池、**NAT Server 端口映射**）
 
 **`display` 系列**：`display vlan` · `display interface` · `display port vlan` · `display ip interface brief` · `display ip routing-table` · `display mac-address` · `display arp` · `display stp brief` · `display ospf peer brief` · `display ospf interface` · `display acl` · `display nat session all` · `display rip` · `display rip routing` · `display rip neighbor` · `display port-group all` · `display eth-trunk` · `display ip pool` · `display this`（任意视图可用）· `display current-configuration`
 
-**设备型号**：S5700（三层交换机）· S3700（二层交换机）· AR6121（路由器）· PC
+**设备型号**：**S5700-28C-EI** 三层交换机（24×GE 电口 `GE0/0/1~24` + 4×GE 插卡光口 `GE0/1/1~4`）·
+**S3700-28TP-EI** 二层交换机（24×10/100 电口 `E0/0/1~24` + 4×GE 上行 `GE0/0/1~4`，共 28 口）·
+**AR6121E** 路由器（2×GE Combo WAN + 1×10GE `10GE0/0/0` + 9×GE LAN `GE0/0/2~10`，共 12 口）· PC
+
+接口命名按真机：中间那段是**槽位**（`GE0/0/1` 板载、`GE0/1/1` 插卡）；交换机物理口默认二层、路由器以太口默认三层，
+两种口用 `portswitch` / `undo portswitch` 互相切换，命令不通用（用错会报错并给提示）。
 
 **运行环境**：电脑上用 Chrome / Edge / Firefox / Safari 双击打开即可，不需要服务器；
 手机 / 平板上同样一个文件，用系统浏览器打开就行（iOS Safari 13+ / Android Chrome）；
@@ -196,7 +209,7 @@ A：能。把同一个 HTML 文件传到手机（微信 / QQ / 网盘都行）�
 长按端口看详情 —— 功能一个不少，只是手势不一样（见上面「手机 / 平板也能用」的对照表）。
 
 **Q：我怎么知道手上这个文件是哪个版本？**
-A：点顶栏 **「关于」**，里面写着版本号；用记事本打开文件，**开头的注释里也有**（比如 `版本：v1.5.0`）。下载单个 HTML 文件就能自带版本信息，不用去比对文件大小。
+A：点顶栏 **「关于」**，里面写着版本号；用记事本打开文件，**开头的注释里也有**（比如 `版本：v1.6.0`）。下载单个 HTML 文件就能自带版本信息，不用去比对文件大小。
 
 ---
 
@@ -213,6 +226,30 @@ A：点顶栏 **「关于」**，里面写着版本号；用记事本打开文�
 ---
 
 ## 最近更新
+
+**v1.6.0**
+
+- **IPv6 基础**：`ipv6` 全局开关 → 接口 `ipv6 address` → `ipv6 route-static` 静态路由；
+  `ping ipv6`、`display ipv6 interface brief` / `routing-table` / `neighbors`（ND 邻居表）。
+  地址会做规范化（`2001:0db8:0000::1` 与 `2001:db8::1` 视为同一个）。**忘了全局 `ipv6` 地址就不生效**，
+  模拟器会直接提示 —— 这是 IPv6 最常见的坑。
+- **DHCP 中继**：`dhcp select relay` + `dhcp relay server-ip`，服务器在另一个网段也能分配地址。
+  中继没开 `dhcp enable`、服务器缺回程路由，都会给出明确原因。
+- **NAT Server 端口映射**：`nat server global <公网IP> inside <私网IP>`（可带协议与端口），
+  外网访问公网地址会被转到内网服务器；`display nat server` / `display nat session all` 可查。
+- **设备管理与 Telnet 登录**：`telnet server enable`、`aaa` + `local-user`、`user-interface vty 0 4` +
+  `authentication-mode`；从一台设备 `telnet <IP>` 会走真实的用户名 / 密码交互，登录后终端切到对端。
+- 新增 4 个实验：**六·补 DHCP 中继**、**八·补 NAT Server**、**九 设备远程管理**、**十 IPv6 基础**。
+- 修掉导出导入时 PC 的 IPv6 地址与网关丢失的问题。
+- **S3700 补齐到真机的 28 口**：24 个百兆电口 `Ethernet0/0/1~24` + 4 个千兆上行口
+  `GigabitEthernet0/0/1~4`（两套编号各自从 1 起，`E0/0/1` 与 `GE0/0/1` 是两个口）。
+  补全 `E` / `Eth` / `Ethernet` 前缀与批量写法，二层交换机也会拒绝子接口。
+- **S3700 支持 Vlanif 管理地址**：可以 `interface Vlanif1` 配管理 IP，被 PC ping 通、被 telnet 登录，
+  但仍不做 VLAN 间路由（不会因为配了 Vlanif 就变成网关）。
+- **S5700 型号纠正为 S5700-28C-EI、路由器纠正为 AR6121E**，端口数量与类型按真机重建：
+  S5700 的 4 个光口在插卡槽（`GE0/1/1~4`），AR6121E 是 2×GE Combo WAN + 1×10GE + 9×GE LAN。
+- **接口二层/三层语义按真机**：路由器以太口默认三层（可直接 `ip address`），交换机物理口默认二层
+  （要配 IP 先 `undo portswitch`）；三层口上敲 `port link-type` 会报错并提示先 `portswitch`。
 
 **v1.5.0**
 
@@ -308,7 +345,7 @@ A：点顶栏 **「关于」**，里面写着版本号；用记事本打开文�
 
 做工业自动控制与楼宇智能化的，这个是给网络教学做的小工具。
 
-> 程序里点顶栏 **「关于」** 也能看到版本号、作者与许可信息。当前版本 **v1.5.0**。
+> 程序里点顶栏 **「关于」** 也能看到版本号、作者与许可信息。当前版本 **v1.6.0**。
 
 ---
 
@@ -337,14 +374,15 @@ MIT License —— 随便用，商用也行，改了也不用说。详见 [LICEN
 
 **NE_HWSIM — a Huawei VRP network lab simulator that fits in one HTML file.**
 
-A single 351 KB HTML file. Double-click it and you get a drag-and-drop network topology builder plus a
+A single 423 KB HTML file. Double-click it and you get a drag-and-drop network topology builder plus a
 faithful Huawei VRP CLI (user view → system view → interface view → VLAN view → port-group view → ACL view
 → NAT address-pool view → OSPF area view → RIP view → sub-interface view), with authentic `^` error markers and `save` interaction.
 
 - **No installation, no backend, no account, works fully offline** — a lightweight alternative to eNSP / GNS3
   when you just need to practise Huawei CLI commands.
-- **10 built-in hands-on labs** for HCIA / HCIP practice: VLAN, Trunk, inter-VLAN routing, **router-on-a-stick**
-  (sub-interfaces), static routing, OSPF, **RIP**, DHCP, **ACL**, **NAT**.
+- **14 built-in hands-on labs** for HCIA / HCIP practice: VLAN, Trunk, inter-VLAN routing, **router-on-a-stick**
+  (sub-interfaces), static routing, OSPF, **RIP**, DHCP (+ **relay**), **ACL**, **NAT** (+ **NAT Server**),
+  **Telnet / AAA**, and **IPv6**.
 - Batch port configuration (`interface range`, `port-group`), config export / import, auto-save to browser storage.
 - **Cables can be deleted or re-plugged** — click to select and press `Delete`, click the `×` on the cable,
   right-click, or double-click a connected port; or just **drag a cable end onto another free port** to re-route it.
@@ -353,7 +391,10 @@ faithful Huawei VRP CLI (user view → system view → interface view → VLAN v
   pinch to zoom, double-tap to open the CLI, long-press to delete.
 - **RIP v1/v2** (matching version required on both ends) and **OSPF** dynamic routing, static routes with route recursion, and canvas text notes
   (`T` button) for annotating a topology.
-- Devices: S5700 (L3 switch), S3700 (L2 switch), AR6121 (router), PC.
+- Devices: **S5700-28C-EI** L3 switch (24×GE `GE0/0/1~24` + 4×GE card SFP `GE0/1/1~4`), **S3700-28TP-EI**
+  L2 switch (24×10/100 `E0/0/1~24` + 4×GE uplinks `GE0/0/1~4`; Vlanif as management address only),
+  **AR6121E** router (2×GE Combo WAN + 1×10GE + 9×GE LAN), PC. Port names follow the real
+  unit/slot/port scheme; L2/L3 port semantics match real devices (`portswitch` / `undo portswitch`).
 
 **Try it online:** <https://liuyimr.github.io/NE_HWSIM/NE_HWSIM.html> ·
 **Download:** [`NE_HWSIM.html`](NE_HWSIM.html) — that single file is the whole program.

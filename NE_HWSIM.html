@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <!--
   NE_HWSIM —— 华为 VRP 网络实训模拟器（单文件版）
-  版本：v1.5.0
+  版本：v1.6.0
 
   Copyright (c) 2026 新易科技工作室 NewE
   作者：Liuyi  <yimr@sohu.com>
@@ -209,6 +209,8 @@
     cursor:crosshair;position:relative;transition:.12s;touch-action:none;
   }
   .port:hover{background:var(--cy);border-color:#79b8ff;transform:scale(1.16);z-index:3}
+  /* 光口（SFP）画成圆形：真机 LC 接口是圆的，RJ45 是方的，一眼能分开 */
+  .port.sfp{border-radius:50%}
   .port.up{background:#1f6f36;border-color:#2ea043}
   .port.shut{background:#6e2c2c;border-color:#8b3a3a}
   .port.pend{background:var(--or);border-color:#f0c674;transform:scale(1.2);box-shadow:0 0 8px rgba(210,153,34,.7)}
@@ -684,14 +686,17 @@
   const TEMPLATES = {
     'S5700': {
       key: 'S5700',
-      model: 'S5700-28TP-EI',
+      model: 'S5700-28C-EI',
       type: 'switch',
       label: '三层交换机',
       vendor: 'Huawei',
-      desc: '24×GE 电口 + 4×GE 光口',
+      // 真机 S5700-28C-EI：24 个 10/100/1000Base-T 板载电口（GigabitEthernet0/0/1-24）
+      // + 1 个接口插卡槽，插 4 口 GE 光接口卡后是 GigabitEthernet0/1/1-4。
+      // ❗第二段是槽位：0/0/x 是板载，0/1/x 是插卡，两者不会重号。
+      desc: '24×GE 电口 + 4×GE 光口（插卡）',
       ports: [
         ...Array.from({ length: 24 }, (_, i) => ({ name: `GigabitEthernet0/0/${i + 1}`, kind: 'RJ45' })),
-        ...Array.from({ length: 4 }, (_, i) => ({ name: `GigabitEthernet0/0/${i + 25}`, kind: 'SFP' }))
+        ...Array.from({ length: 4 }, (_, i) => ({ name: `GigabitEthernet0/1/${i + 1}`, kind: 'SFP' }))
       ]
     },
     'S3700': {
@@ -700,18 +705,31 @@
       type: 'switch',
       label: '二层交换机',
       vendor: 'Huawei',
-      desc: '24×GE 电口（纯二层）',
+      desc: '24×10/100 电口 + 4×GE 上行',
       l2only: true,
-      ports: Array.from({ length: 24 }, (_, i) => ({ name: `GigabitEthernet0/0/${i + 1}`, kind: 'RJ45' }))
+      // 真机 S3700-28TP-EI：24 个 10/100Base-TX 电口（Ethernet0/0/1-24）
+      // + 4 个千兆上行口（GigabitEthernet0/0/1-4，其中 2 个 SFP、2 个 Combo）
+      ports: [
+        ...Array.from({ length: 24 }, (_, i) => ({ name: `Ethernet0/0/${i + 1}`, kind: 'RJ45', speed: '100M' })),
+        ...Array.from({ length: 4 }, (_, i) => ({ name: `GigabitEthernet0/0/${i + 1}`, kind: 'SFP', speed: '1G' }))
+      ]
     },
     'AR6121': {
       key: 'AR6121',
-      model: 'AR6121',
+      // 真机 NetEngine AR6121E：2×GE Combo WAN + 1×10GE SFP+ WAN + 8×GE 电口 LAN + 1×GE Combo LAN
+      // （共 11 个 GE + 1 个 10GE）。Combo 口是光电复用，这里按「插电口」建模（RJ45）。
+      model: 'AR6121E',
       type: 'router',
       label: '企业路由器',
       vendor: 'Huawei',
-      desc: '4×GE 路由口',
-      ports: Array.from({ length: 4 }, (_, i) => ({ name: `GigabitEthernet0/0/${i}`, kind: 'RJ45' }))
+      desc: '2×GE Combo WAN + 1×10GE + 9×GE LAN',
+      ports: [
+        { name: 'GigabitEthernet0/0/0', kind: 'RJ45', role: 'WAN' },
+        { name: 'GigabitEthernet0/0/1', kind: 'RJ45', role: 'WAN' },
+        { name: '10GE0/0/0', kind: 'SFP', role: 'WAN' },
+        ...Array.from({ length: 8 }, (_, i) => ({ name: `GigabitEthernet0/0/${i + 2}`, kind: 'RJ45', role: 'LAN' })),
+        { name: 'GigabitEthernet0/0/10', kind: 'RJ45', role: 'LAN' }
+      ]
     },
     'PC': {
       key: 'PC',
@@ -725,12 +743,13 @@
   };
 
   /** 创建端口对象 */
-  function makePort(name, kind, mode) {
+  function makePort(name, kind, mode, extra) {
     return {
       id: uid('p'),
       name,
       kind, // RJ45 | SFP
       mode, // access | trunk | hybrid | routed
+      role: (extra && extra.role) || null, // WAN | LAN（路由器固定口的面板角色）
       shutdown: false,
       vlan: 1, // access / hybrid 缺省 VLAN
       allowedVlans: 'all', // trunk 允许的 VLAN：'all' 或 number[]
@@ -743,6 +762,8 @@
       portSec: { enabled: false, maxMac: 1 },
       dhcpSelect: false,
       nat: null, // { aclId, addrGroup } —— 接口下的 nat outbound 配置
+      natServers: [], // 接口下的 nat server（入向映射）：{ proto, globalIp, globalPort, insideIp, insidePort }
+      ipv6: null, // { addr, prefix } / PC 上还有 gw
       cableId: null
     };
   }
@@ -762,7 +783,7 @@
       hostname: t.type === 'pc' ? 'PC' : t.type === 'router' ? 'Router' : 'Huawei',
       x: x == null ? 120 : x,
       y: y == null ? 120 : y,
-      ports: t.ports.map((p) => makePort(p.name, p.kind, isRouted ? 'routed' : 'access')),
+      ports: t.ports.map((p) => makePort(p.name, p.kind, isRouted ? 'routed' : 'access', p)),
       vlans: [1],
       vlanifs: [],
       // 子接口（单臂路由用）：{ parentPortId, num, vid, ip, mask, enabled, arpBroadcast, desc }
@@ -778,6 +799,12 @@
       // RIP：version 只影响回显（本模拟器两种版本都按「有类网络 + 跳数」收敛）
       rip: { enabled: false, pid: null, version: 1, networks: [], silent: [] },
       stp: { mode: 'rstp', priority: 32768 },
+      ipv6Enabled: false, // 系统视图执行 ipv6 之后才为 true（与真机一致）
+      // 设备管理：Telnet/SSH 登录 + AAA 本地用户 + VTY 认证
+      telnetServer: false,
+      sshServer: false,
+      aaa: { enabled: false, users: [] },
+      vty: { authMode: 'none', protocol: 'all', idleTimeout: 10, password: null },
       staticMac: [],
       netconf: { enabled: false },
       savedConfig: null,
@@ -841,6 +868,14 @@
     if (!Array.isArray(dev.rip.silent)) dev.rip.silent = [];
     if (dev.rip.version == null) dev.rip.version = 1;
     if (!dev.stp) dev.stp = { mode: 'rstp', priority: 32768 };
+    if (!dev.aaa) dev.aaa = { enabled: false, users: [] };
+    if (!Array.isArray(dev.aaa.users)) dev.aaa.users = [];
+    if (!dev.vty) dev.vty = { authMode: 'none', protocol: 'all', idleTimeout: 10, password: null };
+    if (dev.telnetServer == null) dev.telnetServer = false;
+    if (dev.ipv6Enabled == null) dev.ipv6Enabled = false;
+    for (const p of dev.ports || []) if (p.ipv6 === undefined) p.ipv6 = null;
+    for (const vi of dev.vlanifs || []) if (vi.ipv6 === undefined) vi.ipv6 = null;
+    if (dev.sshServer == null) dev.sshServer = false;
     if (!dev.cli || typeof dev.cli !== 'object') dev.cli = {};
     const c = dev.cli;
     if (!Array.isArray(c.stack)) c.stack = [];
@@ -852,6 +887,13 @@
     for (const p of dev.ports || []) {
       if (!p.portSec) p.portSec = { enabled: false, maxMac: 1 };
       if (p.nat === undefined) p.nat = null;
+      if (!p.dhcpRelay) p.dhcpRelay = { enabled: false, servers: [] };
+      if (!Array.isArray(p.dhcpRelay.servers)) p.dhcpRelay.servers = [];
+      if (!Array.isArray(p.natServers)) p.natServers = [];
+    }
+    for (const vi of dev.vlanifs || []) {
+      if (!vi.dhcpRelay) vi.dhcpRelay = { enabled: false, servers: [] };
+      if (!Array.isArray(vi.dhcpRelay.servers)) vi.dhcpRelay.servers = [];
     }
     return dev;
   }
@@ -1016,13 +1058,15 @@
    * 从 (device, port) 出发，在二层域内做 BFS，寻找「拥有 targetIp 三层地址」的设备。
    * 返回 { device, path:[devId...], reason } 或 null
    */
-  function deliverL2(device, port, domain, targetIp, aclCtx) {
+  function deliverL2(device, port, domain, targetIp, aclCtx, family) {
+    // family === 'v6' 时按 IPv6 地址判断「谁拥有这个地址」，其余逻辑（BFS / VLAN / ACL）完全复用
+    const owns = family === 'v6' ? ownsIpInDomain6 : ownsIpInDomain;
     const visited = new Set([device.id]);
     // 队列元素：{ device, path, ingressPortId }
     const queue = [{ device, path: [device.id], ingressPortId: null }];
 
     // 起点设备自身是否拥有该 IP（例如本地 Vlanif）
-    if (ownsIpInDomain(device, domain, targetIp, port.id)) {
+    if (owns(device, domain, targetIp, port.id)) {
       return { device, path: [device.id], ingressPortId: null };
     }
 
@@ -1057,13 +1101,13 @@
         const path = [...cur.path, peer.device.id];
 
         // 报文经过的每一台设备都要检查入接口绑定的 ACL
-        if (aclCtx && aclCtx.srcIp) {
+        if (aclCtx && aclCtx.srcIp && family !== 'v6') {
           const dv = domain.type === VLAN_DOMAIN ? domain.vlan : null;
           const deny = checkAcl(peer.device, aclCtx.srcIp, aclCtx.dstIp, peer.port.id, dv);
           if (deny) return { denied: deny, path };
         }
 
-        if (ownsIpInDomain(peer.device, domain, targetIp, peer.port.id)) {
+        if (owns(peer.device, domain, targetIp, peer.port.id)) {
           return {
             device: peer.device,
             path,
@@ -1223,6 +1267,9 @@
     // 1) 直连
     for (const i of ifaces) {
       if ((i.kind === 'port' || i.kind === 'subif') && !i.up) continue;
+      // 二层交换机（S3700）的 Vlanif 只是管理地址：能应答 ping / telnet，
+      // 但绝不能当出接口把它变成三层网关。
+      if (device.l2only && i.kind === 'vlanif') continue;
       if (sameSubnet(i.ip, i.mask, dstIp)) {
         return { type: 'direct', iface: i, nextHop: null };
       }
@@ -1270,6 +1317,40 @@
     return null;
   }
 
+  /** 命中 NAT Server 表项？（按公网地址匹配；端口/协议在转发层不细分，仅作展示） */
+  function matchNatServer(device, dstIp) {
+    for (const p of device.ports) {
+      for (const ns of p.natServers || []) {
+        if (ns.globalIp === dstIp) return { ...ns, portName: p.name, portId: p.id };
+      }
+    }
+    return null;
+  }
+
+  /** 记一条 NAT Server 会话（供 display nat session 查看） */
+  function recordNatServerSession(device, ns, globalIp, srcIp) {
+    if (!Array.isArray(device.natSessions)) device.natSessions = [];
+    const key = `NS|${globalIp}|${srcIp || '-'}`;
+    const old = device.natSessions.find((s) => s.key === key);
+    if (old) {
+      old.count = (old.count || 1) + 1;
+      old.t = Date.now();
+      return;
+    }
+    device.natSessions.push({
+      key,
+      type: 'NAT-SERVER',
+      protocol: ns.proto || 'any',
+      globalIp,
+      globalPort: ns.globalPort || 0,
+      insideIp: ns.insideIp,
+      insidePort: ns.insidePort || 0,
+      srcIp: srcIp || '-',
+      count: 1,
+      t: Date.now()
+    });
+  }
+
   /**
    * 核心：从 device 转发一个报文到 dstIp。
    * 返回 { ok, path:[devId], reason, blocked }
@@ -1282,6 +1363,18 @@
     const visitedDevices = options.visitedDevices || new Set([device.id]);
 
     if (maxHops <= 0) return { ok: false, path, reason: 'TTL 超时（路由环路）' };
+
+    // NAT Server（入向）：公网地址映射到私网服务器。
+    // 放在「本机地址」判断之前，外部访问 global 地址才会被转到 inside；
+    // 但本机自己 ping 这个地址不转（否则路由器 ping 自己的接口地址会莫名其妙跑到内网去）。
+    const nsHit = matchNatServer(device, dstIp);
+    if (nsHit) {
+      const srcIsLocal = srcIp && l3Interfaces(device).some((i) => i.ip === srcIp);
+      if (!srcIsLocal) {
+        recordNatServerSession(device, nsHit, dstIp, srcIp);
+        dstIp = nsHit.insideIp;
+      }
+    }
 
     // 目的地址是否就是本机
     for (const i of l3Interfaces(device)) {
@@ -1406,6 +1499,20 @@
     const arrived = hit.device;
 
     if (lookup.type === 'direct' && target === dstIp) {
+      // 目的地址直连可达（或就是落脚设备的接口地址）。但如果落脚的那台设备上配了
+      // NAT Server 映射这个地址，就不能在「送到」这里收工 —— 要交给它做入向转换。
+      if (arrived.id !== device.id && !ctx.visitedDevices.has(arrived.id) && matchNatServer(arrived, dstIp)) {
+        const nv = new Set(ctx.visitedDevices);
+        nv.add(arrived.id);
+        return forward(arrived, dstIp, {
+          srcIp: ctx.srcIp,
+          path: newPath,
+          visitedDevices: nv,
+          maxHops: ctx.maxHops - 1,
+          ingressPortId: hit.ingressPortId,
+          ingressVlanId: hit.ingressVlanId
+        });
+      }
       return { ok: true, path: newPath, reason: 'direct' };
     }
     if (arrived.id === device.id) {
@@ -1764,6 +1871,377 @@
       r.reason = pcHint(srcDevice, dstIp) || r.reason;
     }
     return r;
+  }
+
+  /* ------------------------------ IPv6 ------------------------------ */
+
+  /** IPv6 文本 → 128 位整数（支持 :: 压缩与 ::ffff:1.2.3.4 混合写法） */
+  function ipv6ToBigInt(input) {
+    if (typeof input !== 'string') return null;
+    let t = input.trim().toLowerCase();
+    if (!t || !/^[0-9a-f:.]+$/.test(t) || !t.includes(':')) return null;
+    if (t.includes('.')) {
+      const idx = t.lastIndexOf(':');
+      const v4 = t.slice(idx + 1);
+      const q = v4.split('.');
+      if (q.length !== 4) return null;
+      const oct = q.map((x) => parseInt(x, 10));
+      if (oct.some((x) => isNaN(x) || x < 0 || x > 255)) return null;
+      t = t.slice(0, idx + 1) + ((oct[0] << 8) | oct[1]).toString(16) + ':' + ((oct[2] << 8) | oct[3]).toString(16);
+    }
+    const dbl = t.indexOf('::');
+    let head = [];
+    let tail = [];
+    if (dbl >= 0) {
+      if (t.indexOf('::', dbl + 1) >= 0) return null;
+      head = t.slice(0, dbl) ? t.slice(0, dbl).split(':') : [];
+      tail = t.slice(dbl + 2) ? t.slice(dbl + 2).split(':') : [];
+    } else {
+      head = t.split(':');
+    }
+    const groups = [...head, ...tail];
+    if (groups.some((g) => !/^[0-9a-f]{1,4}$/.test(g))) return null;
+    if (dbl >= 0) {
+      if (groups.length > 7) return null;
+    } else if (groups.length !== 8) {
+      return null;
+    }
+    const full = dbl >= 0 ? [...head, ...Array(8 - groups.length).fill('0'), ...tail] : head;
+    return full.reduce((acc, g) => (acc << 16n) | BigInt(parseInt(g, 16)), 0n);
+  }
+
+  /** 128 位整数 → 规范化 IPv6 文本（压缩最长的一段连续 0） */
+  function bigIntToIpv6(n) {
+    const parts = [];
+    for (let i = 7; i >= 0; i--) parts.push(((n >> BigInt(i * 16)) & 0xffffn).toString(16));
+    let best = -1;
+    let bestLen = 0;
+    let cur = -1;
+    let curLen = 0;
+    parts.forEach((p, i) => {
+      if (p === '0') {
+        if (cur < 0) cur = i;
+        curLen++;
+        if (curLen > bestLen) {
+          best = cur;
+          bestLen = curLen;
+        }
+      } else {
+        cur = -1;
+        curLen = 0;
+      }
+    });
+    if (bestLen > 1) {
+      return parts.slice(0, best).join(':') + '::' + parts.slice(best + bestLen).join(':');
+    }
+    return parts.join(':');
+  }
+
+  function isValidIpv6(s) {
+    return ipv6ToBigInt(s) != null;
+  }
+
+  /** 规范化：所有比较都走它，避免 2001:db8::1 与 2001:0db8:0000::1 被当成两个地址 */
+  function normIpv6(v) {
+    const n = ipv6ToBigInt(v);
+    return n == null ? null : bigIntToIpv6(n);
+  }
+
+  function sameSubnet6(a, prefix, b) {
+    const na = ipv6ToBigInt(a);
+    const nb = ipv6ToBigInt(b);
+    if (na == null || nb == null) return false;
+    const p = Math.max(0, Math.min(128, Number(prefix) || 0));
+    if (p === 0) return true;
+    const shift = BigInt(128 - p);
+    return na >> shift === nb >> shift;
+  }
+
+  /** 设备的三层 IPv6 接口（全局 ipv6 未开启时为空 —— 和真机一样） */
+  function l3Interfaces6(device) {
+    const list = [];
+    // PC 是主机，配了就有地址，不要求 ipv6 全局开关
+    if (device.type === 'pc') {
+      for (const p of device.ports) {
+        if (!p.ipv6 || !p.ipv6.addr) continue;
+        list.push({ kind: 'pc', name: p.name, portId: p.id, addr: p.ipv6.addr, prefix: p.ipv6.prefix, up: !!p.cableId });
+      }
+      return list;
+    }
+    if (!device.ipv6Enabled) return list;
+    for (const vi of device.vlanifs) {
+      if (!vi.enabled || !vi.ipv6 || !vi.ipv6.addr) continue;
+      list.push({
+        kind: 'vlanif',
+        name: `Vlanif${vi.vlanId}`,
+        vlanId: vi.vlanId,
+        addr: vi.ipv6.addr,
+        prefix: vi.ipv6.prefix,
+        up: true
+      });
+    }
+    for (const p of device.ports) {
+      if (p.mode !== 'routed' || !p.ipv6 || !p.ipv6.addr) continue;
+      list.push({
+        kind: 'port',
+        name: p.name,
+        portId: p.id,
+        addr: p.ipv6.addr,
+        prefix: p.ipv6.prefix,
+        up: !p.shutdown && !!p.cableId
+      });
+    }
+    for (const s of device.subifs || []) {
+      if (!s.enabled || !s.ipv6 || !s.ipv6.addr) continue;
+      const parent = (device.ports || []).find((p) => p.id === s.parentPortId);
+      if (!parent) continue;
+      list.push({
+        kind: 'subif',
+        name: subifName(device, s),
+        portId: parent.id,
+        num: s.num,
+        vlanId: s.vid,
+        addr: s.ipv6.addr,
+        prefix: s.ipv6.prefix,
+        up: !parent.shutdown && !!parent.cableId
+      });
+    }
+    return list;
+  }
+
+  /** IPv6 版「本设备在这个二层域里是否拥有该地址」 */
+  function ownsIpInDomain6(device, domain, ip, viaPortId) {
+    const want = normIpv6(ip);
+    if (!want) return false;
+    const hit = (addr) => normIpv6(addr) === want;
+    for (const vi of device.vlanifs) {
+      if (!vi.enabled || !vi.ipv6 || !vi.ipv6.addr) continue;
+      if (!hit(vi.ipv6.addr)) continue;
+      if (domain.type === VLAN_DOMAIN && vi.vlanId === domain.vlan) return true;
+      if (domain.type === P2P_DOMAIN) continue;
+    }
+    for (const p of device.ports) {
+      if (p.mode === 'routed' && p.ipv6 && p.ipv6.addr && hit(p.ipv6.addr)) {
+        if (domain.type === P2P_DOMAIN && (viaPortId == null || p.id === viaPortId)) return true;
+        const d = egressDomain(device, p);
+        if (d && d.type === VLAN_DOMAIN && d.vlan === domain.vlan) return true;
+      }
+    }
+    for (const s of device.subifs || []) {
+      if (!s.enabled || !s.ipv6 || !s.ipv6.addr || !hit(s.ipv6.addr)) continue;
+      if (domain.type !== VLAN_DOMAIN || s.vid !== domain.vlan) continue;
+      if (viaPortId != null && s.parentPortId !== viaPortId) continue;
+      const parent = (device.ports || []).find((p) => p.id === s.parentPortId);
+      if (!parent || parent.shutdown || !parent.cableId) continue;
+      return true;
+    }
+    if (device.type === 'pc') {
+      for (const p of device.ports) {
+        if (p.ipv6 && p.ipv6.addr && hit(p.ipv6.addr) && p.cableId) {
+          if (domain.type === P2P_DOMAIN && viaPortId != null && p.id !== viaPortId) continue;
+          return true;
+        }
+      }
+    }
+    return false;
+  }
+
+  /** IPv6 路由查找：直连 → 最长前缀匹配（静态）→ PC 缺省网关 */
+  function routeLookup6(device, dst) {
+    const ifs = l3Interfaces6(device);
+    for (const i of ifs) {
+      if (i.up === false) continue;
+      if (sameSubnet6(i.addr, i.prefix, dst)) return { type: 'direct', iface: i, nextHop: null };
+    }
+    let best = null;
+    for (const r of device.routes) {
+      if (r.family !== 'v6' || r.prefix == null) continue;
+      if (!sameSubnet6(r.dest, r.prefix, dst)) continue;
+      if (!best || r.prefix > best.prefix) best = r;
+    }
+    if (best) {
+      const iface =
+        ifs.find((i) => r0Name(best) && i.name === r0Name(best)) ||
+        ifs.find((i) => best.nextHop && sameSubnet6(i.addr, i.prefix, best.nextHop)) ||
+        null;
+      return { type: 'route', iface, nextHop: best.nextHop, route: best };
+    }
+    if (device.type === 'pc') {
+      const p = device.ports.find((x) => x.ipv6 && x.ipv6.gw && x.cableId);
+      if (p) {
+        return {
+          type: 'route',
+          iface: ifs.find((i) => i.portId === p.id) || null,
+          nextHop: p.ipv6.gw,
+          route: { family: 'v6', dest: '::', prefix: 0, nextHop: p.ipv6.gw, proto: 'Static', pre: 0 }
+        };
+      }
+    }
+    return { type: 'none' };
+  }
+
+  function r0Name(r) {
+    return r && r.ifaceName ? r.ifaceName : null;
+  }
+
+  function forwardViaPort6(device, dst, lookup, port, domain, ctx) {
+    const target = lookup.type === 'direct' ? dst : lookup.nextHop || dst;
+    const hit = deliverL2(device, port, domain, target, null, 'v6');
+    if (!hit) {
+      return {
+        ok: false,
+        path: ctx.path,
+        reason: `${device.hostname} 的二层域内无法到达 ${target}（检查 VLAN 划分、Trunk 放行、端口是否 shutdown，以及对端是否配了 IPv6 地址）`
+      };
+    }
+    const newPath = [...ctx.path, ...hit.path.slice(1)];
+    const arrived = hit.device;
+    if (lookup.type === 'direct' && normIpv6(target) === normIpv6(dst)) {
+      return { ok: true, path: newPath, reason: 'direct' };
+    }
+    if (arrived.id === device.id) {
+      return { ok: false, path: newPath, reason: `${device.hostname} 的下一跳 ${target} 不可达` };
+    }
+    if (ctx.visitedDevices.has(arrived.id)) return { ok: false, path: newPath, reason: '路由环路' };
+    const nv = new Set(ctx.visitedDevices);
+    nv.add(arrived.id);
+    return forward6(arrived, dst, { path: newPath, visitedDevices: nv, maxHops: ctx.maxHops - 1 });
+  }
+
+  /** IPv6 转发：只做直连 + 静态（不含 NAT / ACL，和当前 IPv6 教学范围一致） */
+  function forward6(device, dst, opts) {
+    const o = opts || {};
+    const maxHops = o.maxHops == null ? 16 : o.maxHops;
+    const path = o.path ? [...o.path] : [device.id];
+    const visited = o.visitedDevices || new Set([device.id]);
+    const want = normIpv6(dst);
+
+    if (maxHops <= 0) return { ok: false, path, reason: 'TTL 超时（路由环路）' };
+    if (l3Interfaces6(device).some((i) => normIpv6(i.addr) === want)) {
+      return { ok: true, path, reason: 'local' };
+    }
+
+    const lookup = routeLookup6(device, dst);
+    if (lookup.type === 'none') {
+      return {
+        ok: false,
+        path,
+        reason: `${device.hostname} 上没有到达 ${dst} 的 IPv6 路由（直连网段之外要配 ipv6 route-static，或检查 ipv6 全局开关）`
+      };
+    }
+    const egress = lookup.iface;
+    if (!egress) {
+      return {
+        ok: false,
+        path,
+        reason: `${device.hostname} 上找不到去往 ${lookup.nextHop || dst} 的 IPv6 出接口（下一跳不在任何直连网段内？）`
+      };
+    }
+
+    const ctx = { path, visitedDevices: visited, maxHops };
+    if (egress.kind === 'port' || egress.kind === 'pc') {
+      const port = Net.getPort(device, egress.portId);
+      if (!port || port.shutdown) return { ok: false, path, reason: `${device.hostname} 的 ${egress.name} 接口已关闭（shutdown）` };
+      if (!port.cableId) return { ok: false, path, reason: `${device.hostname} 的出接口 ${egress.name} 未连接线缆` };
+      return forwardViaPort6(device, dst, lookup, port, egressDomain(device, port), ctx);
+    }
+    if (egress.kind === 'subif') {
+      const port = Net.getPort(device, egress.portId);
+      if (!port || !port.cableId) return { ok: false, path, reason: `${device.hostname} 的父端口未连线` };
+      if (egress.vlanId == null) return { ok: false, path, reason: `${device.hostname} 的 ${egress.name} 没有绑定 VLAN` };
+      return forwardViaPort6(device, dst, lookup, port, { type: VLAN_DOMAIN, vlan: egress.vlanId }, ctx);
+    }
+
+    const cands = device.ports.filter((p) => !p.shutdown && p.cableId && portPassesVlan(p, egress.vlanId));
+    if (!cands.length) {
+      return {
+        ok: false,
+        path,
+        reason: `${device.hostname} 的 VLAN ${egress.vlanId} 内没有可用物理端口（检查连线与 VLAN 划分）`
+      };
+    }
+    let last = null;
+    for (const cp of cands) {
+      const r = forwardViaPort6(device, dst, lookup, cp, { type: VLAN_DOMAIN, vlan: egress.vlanId }, ctx);
+      if (r && r.ok) return r;
+      if (r) last = r;
+    }
+    return last || { ok: false, path, reason: `${device.hostname} 的 VLAN ${egress.vlanId} 内无法到达 ${lookup.nextHop || dst}` };
+  }
+
+  /** IPv6 ping：失败原因按主机/路由器分别说清楚 */
+  function ping6(srcDevice, dstRaw) {
+    const dst = normIpv6(dstRaw);
+    if (!dst) return { ok: false, reason: 'IPv6 地址格式不正确', path: [srcDevice.id], dstIp: dstRaw };
+    const ifs = l3Interfaces6(srcDevice);
+    const src = ifs.find((i) => i.up !== false);
+    if (!src) {
+      return {
+        ok: false,
+        reason:
+          srcDevice.type === 'pc'
+            ? `${srcDevice.hostname} 还没有配置 IPv6 地址（ipv6 <地址> <前缀长度> <网关>）`
+            : `${srcDevice.hostname} 没有可用的 IPv6 接口地址（先 ipv6 全局开启，再在接口下 ipv6 address）`,
+        path: [srcDevice.id],
+        dstIp: dst
+      };
+    }
+    const res = forward6(srcDevice, dst, {});
+    if (!res.ok && srcDevice.type === 'pc' && String(res.reason || '').includes(srcDevice.hostname)) {
+      const p = srcDevice.ports.find((x) => x.ipv6 && x.ipv6.addr);
+      if (p && sameSubnet6(p.ipv6.addr, p.ipv6.prefix, dst)) {
+        res.reason = `${srcDevice.hostname} 和 ${dst} 在同一 IPv6 网段，属于直连访问 —— 查中间链路的 VLAN / 端口状态`;
+      } else if (p && !p.ipv6.gw) {
+        res.reason = `${srcDevice.hostname} 没有配置 IPv6 默认网关 —— 跨网段访问必须配网关`;
+      }
+    }
+    return { ...res, srcIp: src.addr, dstIp: dst };
+  }
+
+  /**
+   * IPv6 邻居（模拟 ND）：只列「这条链路二层域内」的邻居。
+   * 关键是不能穿过路由器 —— 三层设备是广播域的边界，跨过去就会把对端后面的主机也算成邻居。
+   */
+  function ipv6Neighbors(device) {
+    const out = [];
+    const seen = new Set();
+    for (const i of l3Interfaces6(device)) {
+      if (i.kind !== 'port' && i.kind !== 'pc') continue;
+      const port = Net.getPort(device, i.portId);
+      if (!port || !port.cableId) continue;
+      const domain = egressDomain(device, port);
+      const visited = new Set([device.id]);
+      const q = [];
+      const first = Net.peerOf(device, port);
+      if (first && first.device && !visited.has(first.device.id)) {
+        visited.add(first.device.id);
+        q.push({ dev: first.device, via: first.port });
+      }
+      while (q.length) {
+        const cur = q.shift();
+        const d = cur.dev;
+        for (const j of l3Interfaces6(d)) {
+          if (j.kind === 'vlanif') continue; // Vlanif 不是链路对端
+          if (normIpv6(j.addr) === normIpv6(i.addr)) continue;
+          if (!ownsIpInDomain6(d, domain, j.addr, cur.via ? cur.via.id : null)) continue;
+          const key = j.addr + '|' + d.id;
+          if (seen.has(key)) continue;
+          seen.add(key);
+          out.push({ addr: j.addr, iface: i.name, device: d.hostname, mac: macOf(d) });
+        }
+        // 只有交换机才继续扩散（路由器是三层边界，到此为止）
+        if (d.type !== 'switch') continue;
+        for (const p of d.ports) {
+          if (p.shutdown || !p.cableId) continue;
+          if (domain.type === VLAN_DOMAIN && !portPassesVlan(p, domain.vlan)) continue;
+          const np = Net.peerOf(d, p);
+          if (!np || !np.device || visited.has(np.device.id)) continue;
+          visited.add(np.device.id);
+          q.push({ dev: np.device, via: np.port });
+        }
+      }
+    }
+    return out;
   }
 
   /* ------------------------------ OSPF 计算 ------------------------------ */
@@ -2215,6 +2693,52 @@
   /* ------------------------------ DHCP ------------------------------ */
 
   /** 在 PC 所在二层域里寻找可用的 DHCP 服务器设备与地址池 */
+  /** 中继设备在这个二层域里的网关接口（配了 dhcp select relay 且填了 server-ip） */
+  function relayIfacesOf(device, domain, vlan) {
+    const out = [];
+    for (const vi of device.vlanifs) {
+      if (!vi.enabled || !vi.ip) continue;
+      if (domain.type === VLAN_DOMAIN && vi.vlanId !== vlan) continue;
+      const rl = vi.dhcpRelay;
+      if (rl && rl.enabled && (rl.servers || []).length) {
+        out.push({ name: `Vlanif${vi.vlanId}`, ip: vi.ip, mask: vi.mask, servers: rl.servers });
+      }
+    }
+    if (domain.type === P2P_DOMAIN) {
+      for (const p of device.ports) {
+        if (p.mode !== 'routed' || !p.ip) continue;
+        const rl = p.dhcpRelay;
+        if (rl && rl.enabled && (rl.servers || []).length) {
+          out.push({ name: p.name, ip: p.ip, mask: p.mask, servers: rl.servers });
+        }
+      }
+    }
+    return out;
+  }
+
+  /**
+   * 按中继配置找真正的 DHCP 服务器。
+   * 三个前提缺一不可，和真机一致：
+   *   ① 中继设备到 server-ip 可达；② 服务器开了 DHCP 且有匹配「客户端网段」的地址池；
+   *   ③ 服务器有回程路由（否则请求能到、回应回不来，一样拿不到地址）。
+   */
+  function resolveRelayedServer(relayDev, relay, domain, vlan) {
+    for (const sip of relay.servers) {
+      if (routeLookup(relayDev, sip).type === 'none') continue;
+      const server = Net.devices.find(
+        (d) => d.ports.some((x) => x.ip === sip) || d.vlanifs.some((v) => v.enabled && v.ip === sip)
+      );
+      if (!server || !server.dhcp || !server.dhcp.enabled) continue;
+      const pool = (server.dhcp.pools || []).find(
+        (pl) => pl.network && pl.mask != null && sameSubnet(relay.ip, relay.mask, pl.network)
+      );
+      if (!pool) continue;
+      const backOk = routeLookup(server, relay.ip).type !== 'none';
+      return { server, pool, vlan, relayed: true, relayDev, relayIface: relay.name, relayIp: sip, backOk };
+    }
+    return null;
+  }
+
   function findDhcpServer(pc) {
     const port = pc.ports.find((p) => p.cableId);
     if (!port) return null;
@@ -2245,6 +2769,12 @@
           (pl) => pl.network && pl.mask != null && serving.some((s) => sameSubnet(s.ip, s.mask, pl.network))
         );
         if (pool) return { server: d, pool, vlan };
+
+        // 本地没池子，看看这台设备是不是 DHCP 中继
+        for (const rl of relayIfacesOf(d, domain, vlan)) {
+          const hit = resolveRelayedServer(d, rl, domain, vlan);
+          if (hit) return hit;
+        }
       }
       // 继续在同 VLAN 内扩散
       for (const p of d.ports) {
@@ -2303,7 +2833,16 @@
     if (p.mode === 'access' && p.vlan !== 1) lines.push(` port default vlan ${p.vlan}`);
     if (p.mode === 'routed') lines.push(' undo portswitch');
     if (p.ip) lines.push(` ip address ${p.ip} ${prefixToMask(p.mask)}`);
-    if (p.dhcpSelect) lines.push(' dhcp select global');
+    if (p.ipv6 && p.ipv6.addr) {
+      lines.push(' ipv6 enable');
+      lines.push(` ipv6 address ${p.ipv6.addr} ${p.ipv6.prefix}`);
+    }
+    if (p.dhcpRelay && p.dhcpRelay.enabled) {
+      lines.push(' dhcp select relay');
+      for (const s of p.dhcpRelay.servers || []) lines.push(` dhcp relay server-ip ${s}`);
+    } else if (p.dhcpSelect) {
+      lines.push(' dhcp select global');
+    }
     if (p.trunkId != null) lines.push(` eth-trunk ${p.trunkId}`);
     if (p.stpEdged) lines.push(' stp edged-port enable');
     if (p.bpduProtect) lines.push(' bpdu-protection');
@@ -2317,6 +2856,13 @@
     if (p.nat && p.nat.aclId != null) {
       lines.push(` nat outbound ${p.nat.aclId}${p.nat.addrGroup != null ? ' address-group ' + p.nat.addrGroup : ''}`);
     }
+    for (const ns of p.natServers || []) {
+      const gp = ns.globalPort ? ` ${ns.globalPort}` : '';
+      const ip = ns.insidePort ? ` ${ns.insidePort}` : '';
+      lines.push(
+        ` nat server${ns.proto ? ' protocol ' + ns.proto : ''} global ${ns.globalIp}${gp} inside ${ns.insideIp}${ip}`
+      );
+    }
     if (p.shutdown) lines.push(' shutdown');
     return lines;
   }
@@ -2329,7 +2875,16 @@
     const lines = [];
     if (vi.desc) lines.push(` description ${vi.desc}`);
     if (vi.ip) lines.push(` ip address ${vi.ip} ${prefixToMask(vi.mask)}`);
-    if (vi.dhcpSelect) lines.push(' dhcp select global');
+    if (vi.ipv6 && vi.ipv6.addr) {
+      lines.push(' ipv6 enable');
+      lines.push(` ipv6 address ${vi.ipv6.addr} ${vi.ipv6.prefix}`);
+    }
+    if (vi.dhcpRelay && vi.dhcpRelay.enabled) {
+      lines.push(' dhcp select relay');
+      for (const s of vi.dhcpRelay.servers || []) lines.push(` dhcp relay server-ip ${s}`);
+    } else if (vi.dhcpSelect) {
+      lines.push(' dhcp select global');
+    }
     for (const b of (dev.aclBindings || []).filter((b) => b.vlanifId === vi.vlanId)) {
       lines.push(` traffic-filter ${b.direction} acl ${b.aclId}`);
     }
@@ -2368,6 +2923,10 @@
         out.push(`ip address ${p.ip} ${prefixToMask(p.mask)}`);
         if (p.gateway) out.push(`ip gateway ${p.gateway}`);
       }
+      if (p.ipv6 && p.ipv6.addr) {
+        out.push(`ipv6 address ${p.ipv6.addr} ${p.ipv6.prefix}`);
+        if (p.ipv6.gw) out.push(`ipv6 gateway ${p.ipv6.gw}`);
+      }
       return out;
     }
 
@@ -2389,6 +2948,38 @@
     if (dev.stp && dev.stp.priority != null && dev.stp.priority !== 32768) stpLines.push(`stp priority ${dev.stp.priority}`);
     if (stpLines.length) {
       out.push(...stpLines);
+      out.push('#');
+    }
+
+    if (dev.ipv6Enabled) {
+      out.push('ipv6');
+      out.push('#');
+    }
+
+    // 设备管理：AAA 本地用户 / Telnet 服务 / VTY 认证（缺省值不写，保持配置干净）
+    if (dev.aaa && dev.aaa.enabled && (dev.aaa.users || []).length) {
+      out.push('aaa');
+      for (const u of dev.aaa.users) {
+        if (u.password) out.push(` local-user ${u.name} password irreversible-cipher ${u.password}`);
+        if (u.level != null) out.push(` local-user ${u.name} privilege level ${u.level}`);
+        if (u.serviceType) out.push(` local-user ${u.name} service-type ${u.serviceType}`);
+      }
+      out.push('#');
+    }
+    if (dev.telnetServer) {
+      out.push('telnet server enable');
+      out.push('#');
+    }
+    if (dev.sshServer) {
+      out.push('stelnet server enable');
+      out.push('#');
+    }
+    if (dev.vty && (dev.vty.authMode !== 'none' || dev.vty.protocol !== 'all' || dev.vty.password || dev.vty.idleTimeout !== 10)) {
+      out.push('user-interface vty 0 4');
+      out.push(` authentication-mode ${dev.vty.authMode}`);
+      if (dev.vty.protocol !== 'all') out.push(` protocol inbound ${dev.vty.protocol}`);
+      if (dev.vty.password) out.push(` set authentication password cipher ${dev.vty.password}`);
+      if (dev.vty.idleTimeout !== 10) out.push(` idle-timeout ${dev.vty.idleTimeout} 0`);
       out.push('#');
     }
 
@@ -2463,7 +3054,10 @@
       for (const s of dev.rip.silent || []) out.push(` silent-interface ${s}`);
       out.push('#');
     }
-    for (const r of dev.routes.filter((x) => x.proto === 'Static')) {
+    for (const r of dev.routes.filter((x) => x.proto === 'Static' && x.family === 'v6')) {
+      out.push(`ipv6 route-static ${r.dest} ${r.prefix} ${r.nextHop}`);
+    }
+    for (const r of dev.routes.filter((x) => x.proto === 'Static' && x.family !== 'v6')) {
       out.push(`ip route-static ${r.dest} ${prefixToMask(r.mask)} ${r.nextHop}`);
     }
     for (const pl of dev.dhcp.pools) {
@@ -2519,6 +3113,13 @@
     normalizeDevice,
     // 转发
     l3Interfaces,
+    l3Interfaces6,
+    ping6,
+    isValidIpv6,
+    normIpv6,
+    sameSubnet6,
+    routeLookup6,
+    ipv6Neighbors,
     routeLookup,
     portPassesVlan,
     portVlan,
@@ -2687,7 +3288,8 @@
     'ospfPid',
     'areaId',
     'ripPid',
-    'subifKey'
+    'subifKey',
+    'uiType'
   ];
 
   /** 接口视图 / 端口组视图下当前被配置的端口列表 */
@@ -2776,6 +3378,10 @@
         // 真实 VRP：临时端口组与 interface range 都显示 [设备名-port-group]，
         // 永久端口组显示 [设备名-port-group-组名]。
         return `[${name}-port-group${dev.cli.groupName ? '-' + dev.cli.groupName : ''}]`;
+      case 'vty-view':
+        return `[${name}-ui-vty0-4]`;
+      case 'aaa-view':
+        return `[${name}-aaa]`;
       case 'subif-view': {
         const s = findSubif(dev, dev.cli.subifKey);
         return `[${name}-${s ? E.subifName(dev, s) : ''}]`;
@@ -2809,6 +3415,39 @@
   /* --------------------------- 接口名解析 --------------------------- */
 
   /** 解析接口名，返回 { kind:'eth'|'vlanif'|'trunk', port?, label } 或 null */
+  /** 接口名里的前缀 → 介质族（ge=千兆 / eth=百兆） */
+  function portFamilyOf(token) {
+    const t = String(token || '').toLowerCase();
+    if (t === 'gigabitethernet' || t === 'ge' || t === 'g') return 'ge';
+    if (t === 'ethernet' || t === 'eth' || t === 'e') return 'eth';
+    if (t === '10ge' || t === 'xgigabitethernet' || t === 'xge') return '10ge';
+    return null;
+  }
+
+  /**
+   * 端口名 → { fam, unit, slot, port }
+   *   GigabitEthernet0/0/1 → ge,  0, 0, 1   （板载电口）
+   *   GigabitEthernet0/1/1 → ge,  0, 1, 1   （插卡光口）
+   *   Ethernet0/0/1        → eth, 0, 0, 1   （百兆电口）
+   *   10GE0/0/0            → 10ge,0, 0, 0   （万兆光口）
+   */
+  function parsePortName(name) {
+    const m = String(name || '').match(/^(gigabitethernet|ethernet|10ge)(\d+)\/(\d+)\/(\d+)$/i);
+    if (!m) return null;
+    const fam = /^gigabit/i.test(m[1]) ? 'ge' : /^ethernet/i.test(m[1]) ? 'eth' : '10ge';
+    return { fam, unit: parseInt(m[2], 10), slot: parseInt(m[3], 10), port: parseInt(m[4], 10) };
+  }
+
+  /** 按「族 + 槽位 + 端口号」找口：0/0/1 与 0/1/1 是两口，E0/0/1 与 GE0/0/1 也是两口 */
+  function findPortByName(dev, fam, slot, idx) {
+    return (
+      dev.ports.find((x) => {
+        const p = parsePortName(x.name);
+        return p && p.fam === fam && p.slot === slot && p.port === idx;
+      }) || null
+    );
+  }
+
   function resolveIface(dev, token) {
     if (!token) return null;
     const t = token.toLowerCase();
@@ -2820,18 +3459,23 @@
     if (m) return { kind: 'trunk', trunkId: parseInt(m[1], 10), label: `Eth-Trunk${m[1]}` };
 
     // 子接口：gigabitethernet 0/0/0.10 / ge0/0/0.10 —— 必须放在物理口之前匹配
-    m = t.match(/^(?:gigabitethernet|ge|g)\s*0\/0\/(\d+)\.(\d+)$/);
+    m = t.match(/^(gigabitethernet|ge|g|ethernet|eth|e|10ge|xgigabitethernet|xge)\s*(\d+)\/(\d+)\/(\d+)\.(\d+)$/);
     if (m) {
-      const idx = parseInt(m[1], 10);
-      const num = parseInt(m[2], 10);
-      const p = dev.ports.find((x) => x.name.toLowerCase().endsWith('0/0/' + idx));
+      const fam = portFamilyOf(m[1]);
+      const slot = parseInt(m[3], 10);
+      const idx = parseInt(m[4], 10);
+      const num = parseInt(m[5], 10);
+      const p = findPortByName(dev, fam, slot, idx);
       return p ? { kind: 'subif', port: p, num, label: `${p.name}.${num}` } : null;
     }
 
-    m = t.match(/^(?:gigabitethernet|ge|g)\s*0\/0\/(\d+)$/);
+    // 物理口：`<型号><单元>/<槽位>/<端口>` —— 中间那段是**槽位**（0=板载，1=插卡），不是端口号。
+    // ❗必须按「前缀族 + 槽位 + 端口号」找：
+    //   S5700 的 GE0/0/1 是板载电口、GE0/1/1 是插卡光口；
+    //   S3700 的 E0/0/1 是百兆电口、GE0/0/1 是上行光口。
+    m = t.match(/^(gigabitethernet|ge|g|ethernet|eth|e|10ge|xgigabitethernet|xge)\s*(\d+)\/(\d+)\/(\d+)$/);
     if (m) {
-      const idx = parseInt(m[1], 10);
-      const p = dev.ports.find((x) => x.name.toLowerCase().endsWith('0/0/' + idx));
+      const p = findPortByName(dev, portFamilyOf(m[1]), parseInt(m[3], 10), parseInt(m[4], 10));
       return p ? { kind: 'eth', port: p, label: p.name } : null;
     }
     return null;
@@ -2842,6 +3486,34 @@
     if (!key) return null;
     const parts = String(key).split('#');
     return (dev.subifs || []).find((s) => s.parentPortId === parts[0] && String(s.num) === String(parts[1])) || null;
+  }
+
+  /**
+   * 解析 nat server 参数：
+   *   nat server [protocol tcp|udp|icmp] global <ip> [port] inside <ip> [port]
+   * 返回 { proto, globalIp, globalPort, insideIp, insidePort }，非法返回 null。
+   */
+  function parseNatServerArgs(args) {
+    let i = 2; // args[0]='nat', args[1]='server'
+    let proto = null;
+    if (String(args[i] || '').toLowerCase() === 'protocol') {
+      proto = String(args[i + 1] || '').toLowerCase();
+      if (!['tcp', 'udp', 'icmp'].includes(proto)) return null;
+      i += 2;
+    }
+    if (String(args[i] || '').toLowerCase() !== 'global') return null;
+    i++;
+    const globalIp = args[i++];
+    if (!E.isValidIp(globalIp)) return null;
+    let globalPort = null;
+    if (/^\d+$/.test(args[i] || '')) globalPort = parseInt(args[i++], 10);
+    if (String(args[i] || '').toLowerCase() !== 'inside') return null;
+    i++;
+    const insideIp = args[i++];
+    if (!E.isValidIp(insideIp)) return null;
+    let insidePort = null;
+    if (/^\d+$/.test(args[i] || '')) insidePort = parseInt(args[i++], 10);
+    return { proto, globalIp, globalPort, insideIp, insidePort };
   }
 
   function vlanList(token) {
@@ -2872,7 +3544,11 @@
     const out = [];
     for (let i = 0; i < tokens.length; i++) {
       const t = tokens[i];
-      if (/^(vlanif|eth-?trunk|gigabitethernet|ge|g)$/i.test(t) && tokens[i + 1] && !/^to$/i.test(tokens[i + 1])) {
+      if (
+        /^(vlanif|eth-?trunk|gigabitethernet|ge|g|ethernet|eth|e|10ge|xgigabitethernet|xge)$/i.test(t) &&
+        tokens[i + 1] &&
+        !/^to$/i.test(tokens[i + 1])
+      ) {
         out.push(t + tokens[i + 1]);
         i++;
       } else {
@@ -3010,6 +3686,27 @@
       out.push(`vlan ${n}`);
       if (m.desc) out.push(` description ${m.desc}`);
       if (m.name) out.push(` name ${m.name}`);
+      out.push('#', 'return');
+      return out;
+    }
+
+    if (view === 'vty-view') {
+      out.push('user-interface vty 0 4');
+      out.push(` authentication-mode ${dev.vty.authMode}`);
+      if (dev.vty.protocol !== 'all') out.push(` protocol inbound ${dev.vty.protocol}`);
+      if (dev.vty.password) out.push(` set authentication password cipher ${dev.vty.password}`);
+      if (dev.vty.idleTimeout !== 10) out.push(` idle-timeout ${dev.vty.idleTimeout} 0`);
+      out.push('#', 'return');
+      return out;
+    }
+
+    if (view === 'aaa-view') {
+      out.push('aaa');
+      for (const u of dev.aaa.users || []) {
+        if (u.password) out.push(` local-user ${u.name} password irreversible-cipher ${u.password}`);
+        if (u.level != null) out.push(` local-user ${u.name} privilege level ${u.level}`);
+        if (u.serviceType) out.push(` local-user ${u.name} service-type ${u.serviceType}`);
+      }
       out.push('#', 'return');
       return out;
     }
@@ -3613,18 +4310,50 @@
     const list = dev.natSessions || [];
     if (!list.length) return ['  The number of NAT sessions is 0.'];
     const out = [`  The number of NAT sessions is ${list.length}.`, ''];
-    out.push(padEnd('Protocol', 10) + padEnd('InsideAddr:Port', 23) + padEnd('OutsideAddr:Port', 24) + 'DestAddr:Port');
-    out.push('-'.repeat(79));
+    out.push(padEnd('', 1) + padEnd('Protocol', 9) + padEnd('InsideAddr:Port', 23) + padEnd('OutsideAddr:Port', 24) + 'DestAddr:Port');
+    out.push('-'.repeat(80));
     for (const s of list) {
+      // NAT Server（入向映射）：Inside=私网服务器，Outside=公网映射地址，Dest=发起访问的公网源
+      if (s.type === 'NAT-SERVER') {
+        out.push(
+          '*' +
+            padEnd(s.protocol || 'any', 9) +
+            padEnd(`${s.insideIp}:${s.insidePort || 0}`, 23) +
+            padEnd(`${s.globalIp}:${s.globalPort || 0}`, 24) +
+            `${s.srcIp}`
+        );
+        continue;
+      }
       out.push(
-        padEnd(s.proto, 10) +
+        ' ' +
+          padEnd(s.proto, 9) +
           padEnd(`${s.inside}:${s.insidePort}`, 23) +
           padEnd(`${s.outside}:${s.outsidePort}`, 24) +
           `${s.dest}:${s.destPort}`
       );
     }
     out.push('');
-    out.push(`  转换出口：${[...new Set(list.map((s) => s.iface))].join(', ')}`);
+    const ifs = [...new Set(list.filter((s) => s.iface).map((s) => s.iface))];
+    if (ifs.length) out.push(`  转换出口：${ifs.join(', ')}`);
+    if (list.some((s) => s.type === 'NAT-SERVER')) {
+      out.push('  标 * 的是 NAT Server 入向会话（外网访问内网服务器）。');
+    }
+    return out;
+  }
+
+  function cmdDisplayNatServer(dev) {
+    const rows = [];
+    for (const p of dev.ports) for (const ns of p.natServers || []) rows.push({ ns, port: p });
+    if (!rows.length) return ['  (no nat server configured)'];
+    const out = [
+      padEnd('Protocol', 10) + padEnd('Global', 26) + padEnd('Inside', 26) + 'Interface',
+      '-'.repeat(78)
+    ];
+    for (const r of rows) {
+      const g = r.ns.globalIp + (r.ns.globalPort ? ':' + r.ns.globalPort : '');
+      const i = r.ns.insideIp + (r.ns.insidePort ? ':' + r.ns.insidePort : '');
+      out.push(padEnd(r.ns.proto || 'any', 10) + padEnd(g, 26) + padEnd(i, 26) + r.port.name);
+    }
     return out;
   }
 
@@ -3888,7 +4617,13 @@
       case 'nat':
         if (a[2] === 'session') return cmdDisplayNatSession(dev);
         if (a[2] === 'outbound') return cmdDisplayNatOutbound(dev);
+        if (a[2] === 'server') return cmdDisplayNatServer(dev);
         return errUnrecognized('display nat');
+      case 'ipv6':
+        if (a[2] === 'interface') return cmdDisplayIpv6Interface(dev, a[3] === 'brief');
+        if (a[2] === 'routing-table') return cmdDisplayIpv6Routing(dev);
+        if (a[2] === 'neighbors' || a[2] === 'neighbor') return cmdDisplayIpv6Neighbors(dev);
+        return errUnrecognized('display ipv6');
       case 'port-group':
         return cmdDisplayPortGroup(dev, rest[1]);
       case 'saved-configuration':
@@ -4013,12 +4748,92 @@
     return { lines: out, device: dev };
   }
 
+  function cmdPing6(dev, dstRaw) {
+    if (!dstRaw) return errIncomplete('ping ipv6');
+    const dst = E.normIpv6(dstRaw);
+    if (!dst) return errWrong(dstRaw);
+    const res = E.ping6(dev, dst);
+    const out = [`PING ${dst}: 56 data bytes, press CTRL_C to break`];
+    if (res.ok) {
+      for (let i = 1; i <= 4; i++) {
+        out.push(`    Reply from ${dst}: bytes=56 Sequence=${i} ttl=${Math.max(1, 64 - res.path.length + 1)} time=${1 + i} ms`);
+      }
+      out.push('');
+      out.push(`--- ${dst} ping statistics ---`);
+      out.push('    4 packet(s) transmitted');
+      out.push('    4 packet(s) received');
+      out.push('    0.00% packet loss');
+      return { lines: out, traffic: res };
+    }
+    out.push('    Request time out');
+    out.push('');
+    out.push(`--- ${dst} ping statistics ---`);
+    out.push('    4 packet(s) transmitted');
+    out.push('    0 packet(s) received');
+    out.push('    100.00% packet loss');
+    out.push(`失败原因：${res.reason}`);
+    return { lines: out, traffic: res };
+  }
+
+  function cmdDisplayIpv6Interface(dev, brief) {
+    void brief;
+    const rows = [padEnd('Interface', 34) + padEnd('PHY', 6) + 'IPv6 Address'];
+    for (const p of dev.ports) {
+      if (dev.type === 'pc') break;
+      const up = p.cableId && !p.shutdown;
+      const v6 = p.ipv6 && p.ipv6.addr ? `${p.ipv6.addr}/${p.ipv6.prefix}` : 'unassigned';
+      rows.push(padEnd(p.name, 34) + padEnd(up ? 'up' : 'down', 6) + v6);
+    }
+    for (const vi of dev.vlanifs) {
+      const v6 = vi.ipv6 && vi.ipv6.addr ? `${vi.ipv6.addr}/${vi.ipv6.prefix}` : 'unassigned';
+      rows.push(padEnd(`Vlanif${vi.vlanId}`, 34) + padEnd(vi.enabled ? 'up' : 'down', 6) + v6);
+    }
+    if (!dev.ipv6Enabled && dev.type !== 'pc') {
+      rows.push('');
+      rows.push('// 提示：本机没有执行 ipv6（全局未开启 IPv6），接口地址不会生效。');
+    }
+    return rows;
+  }
+
+  function cmdDisplayIpv6Routing(dev) {
+    if (!dev.ipv6Enabled) return ['Error: IPv6 is not enabled.', '// 提示：先在系统视图执行 ipv6。'];
+    const out = ['Route Flags: R - relay, D - download to fib', '-'.repeat(80)];
+    out.push(padEnd('Destination', 34) + padEnd('Proto', 8) + padEnd('Pre', 5) + padEnd('Cost', 5) + padEnd('Flags', 6) + 'NextHop');
+    let n = 0;
+    for (const i of E.l3Interfaces6(dev)) {
+      out.push(padEnd(`${i.addr}/${i.prefix}`, 34) + padEnd('Direct', 8) + padEnd('0', 5) + padEnd('0', 5) + padEnd('D', 6) + i.addr);
+      n++;
+    }
+    for (const r of dev.routes.filter((x) => x.family === 'v6')) {
+      out.push(
+        padEnd(`${r.dest}/${r.prefix}`, 34) +
+          padEnd(r.proto, 8) +
+          padEnd(String(r.pre == null ? 60 : r.pre), 5) +
+          padEnd(String(r.cost || 0), 5) +
+          padEnd('RD', 6) +
+          (r.nextHop || '-')
+      );
+      n++;
+    }
+    if (!n) out.push('(没有 IPv6 路由 —— 先给接口配 ipv6 address)');
+    return out;
+  }
+
+  function cmdDisplayIpv6Neighbors(dev) {
+    const list = E.ipv6Neighbors(dev);
+    if (!list.length) return ['  (没有 IPv6 邻居 —— 对端要配 IPv6 地址，且链路二层可达)'];
+    const out = [padEnd('IPv6 Address', 40) + padEnd('MAC', 20) + padEnd('Interface', 26) + 'Device'];
+    for (const nb of list) out.push(padEnd(nb.addr, 40) + padEnd(nb.mac, 20) + padEnd(nb.iface, 26) + nb.device);
+    return out;
+  }
+
   function doDhcp(pc) {
     const found = E.findDhcpServer(pc);
     if (!found) {
       return [
         'DHCP 请求失败：没有找到可用的 DHCP 服务器。',
-        '请检查：① 服务器是否执行 dhcp enable ② 是否创建 ip pool ③ 三层接口是否配置 dhcp select global ④ 链路与 VLAN 是否正确。'
+        '请检查：① 服务器是否执行 dhcp enable ② 是否创建 ip pool ③ 三层接口是否配置 dhcp select global ④ 链路与 VLAN 是否正确。',
+        '跨网段的话还要配中继：网关接口下 dhcp select relay + dhcp relay server-ip <服务器地址>。'
       ];
     }
     const { server, pool } = found;
@@ -4034,9 +4849,20 @@
     server.dhcp.leases.push({ ip, mac: E.macOf(pc), poolName: pool.name, t: Date.now() });
     const lines = [
       `已通过 DHCP 获取地址：${ip}/${pool.mask}`,
-      `  网关：${pool.gateway || '--'}    DNS：${pool.dns || '--'}`,
-      `  （来自 ${server.hostname} 的地址池 ${pool.name}）`
+      `  网关：${pool.gateway || '--'}    DNS：${pool.dns || '--'}`
     ];
+    if (found.relayed) {
+      lines.push(
+        `  （经 DHCP 中继：${found.relayDev.hostname} ${found.relayIface} → 服务器 ${server.hostname} ${found.relayIp}，地址池 ${pool.name}）`
+      );
+      if (!found.backOk) {
+        lines.push('');
+        lines.push('// 注意：服务器上没有到客户端网段的路由 —— 请求能到、回应回不来，真机上拿不到地址。');
+        lines.push(`//   在 ${server.hostname} 上补一条回程路由（或把该网段也通告出去）。`);
+      }
+    } else {
+      lines.push(`  （来自 ${server.hostname} 的地址池 ${pool.name}）`);
+    }
     // 地址池漏配 gateway-list 是「PC 上 ping 不通、路由器上能通」最常见的原因，必须当场提醒
     if (!pool.gateway) {
       lines.push('');
@@ -4094,6 +4920,48 @@
           'Now saving the current configuration to the slot 0.',
           'Save the configuration successfully.'
         ]
+      };
+    }
+
+    if (p.kind === 'telnet-user') {
+      const target = E.Net.devices.find((d) => d.id === p.hostId);
+      if (!target) return { lines: ['Error: Connection lost.'] };
+      dev.cli.pending = { kind: 'telnet-pass', hostId: p.hostId, targetIp: p.targetIp, user: ans };
+      return { lines: ['Password:'] };
+    }
+
+    if (p.kind === 'telnet-pass') {
+      const target = E.Net.devices.find((d) => d.id === p.hostId);
+      if (!target) return { lines: ['Error: Connection lost.'] };
+      const mode = (target.vty && target.vty.authMode) || 'none';
+      let pass = false;
+      if (mode === 'password') {
+        pass = !!target.vty.password && ans === target.vty.password;
+      } else if (mode === 'aaa') {
+        const u = (target.aaa && target.aaa.users ? target.aaa.users : []).find((x) => x.name === p.user);
+        pass = !!u && !!u.password && u.password === ans;
+        if (pass && u.serviceType && !/telnet/i.test(u.serviceType) && /ssh/i.test(u.serviceType)) {
+          return {
+            lines: ['', 'Error: The user is not allowed to use telnet service.', `// 原因：${u.name} 的 service-type 只包含 ssh（service-type ${u.serviceType}）。`]
+          };
+        }
+      }
+      if (!pass) {
+        return {
+          lines: [
+            '',
+            'Error: Authentication fail.',
+            '// 提示：核对 aaa 里的 local-user 用户名/密码，以及 VTY 的 authentication-mode。'
+          ]
+        };
+      }
+      return {
+        lines: [
+          '',
+          `<${target.hostname}>`,
+          `（模拟器：已登录 ${target.hostname}，上方标签可切回原设备）`
+        ],
+        remoteDevice: target.id
       };
     }
 
@@ -4162,7 +5030,10 @@
     }
 
     // ---- ping / tracert ----
-    if (cmd === 'ping') return cmdPing(dev, args);
+    if (cmd === 'ping' && String(args[1] || '').toLowerCase() === 'ipv6') {
+      return cmdPing6(dev, args[2]);
+    }
+    if (cmd === 'ping') return cmdPing(dev, args);    if (cmd === 'ping') return cmdPing(dev, args);
     if (cmd === 'tracert' || cmd === 'traceroute') return cmdTracert(dev, args);
 
     // ---- save：真实设备会先问 y/n，再问文件名 ----
@@ -4199,6 +5070,65 @@
     }
 
     /* ================= 用户视图以下为 PC 命令 ================= */
+    /* ---- Telnet 登录：连得上、服务开着、认证通过才进入对端 ---- */
+    if (cmd === 'telnet' && view === 'user-view') {
+      const ip = args[1];
+      if (!E.isValidIp(ip)) return errIncomplete('telnet');
+      const reach = E.ping(dev, ip);
+      const target =
+        reach.dstDevice ||
+        E.Net.devices.find(
+          (d) =>
+            d.id !== dev.id &&
+            (d.ports.some((p) => p.ip === ip) || d.vlanifs.some((v) => v.enabled && v.ip === ip))
+        );
+      if (!reach.ok || !target) {
+        return {
+          lines: [
+            `Trying ${ip} ...`,
+            'Error: Can not connect to the remote host.',
+            `// 原因：${reach.reason || '该地址不属于任何设备'}`
+          ]
+        };
+      }
+      if (!target.telnetServer) {
+        return {
+          lines: [
+            `Trying ${ip} ...`,
+            'Error: Failed to connect to the remote host.',
+            `// 原因：${target.hostname} 没有开启 Telnet 服务（${target.hostname} 上执行 telnet server enable）。`
+          ]
+        };
+      }
+      if (target.vty && target.vty.protocol && target.vty.protocol !== 'all' && target.vty.protocol !== 'telnet') {
+        return {
+          lines: [
+            `Trying ${ip} ...`,
+            'Error: The server does not support telnet.',
+            `// 原因：${target.hostname} 的 VTY 只允许 ${target.vty.protocol}（protocol inbound ${target.vty.protocol}）。`
+          ]
+        };
+      }
+      const mode = (target.vty && target.vty.authMode) || 'none';
+      if (mode === 'none') {
+        dev.logs.push({ t: `[模拟器] 已登录 ${target.hostname}`, c: 'hint' });
+        return {
+          lines: [
+            `Trying ${ip} ...`,
+            `Connected to ${ip} ...`,
+            '',
+            'Info: The max number of VTY users is 5, and the number',
+            '      of current VTY users on line is 1.',
+            '',
+            `（模拟器：已进入 ${target.hostname} 的用户视图，上方标签可切回原设备）`
+          ],
+          remoteDevice: target.id
+        };
+      }
+      dev.cli.pending = { kind: 'telnet-user', hostId: target.id, targetIp: ip };
+      return { lines: [`Trying ${ip} ...`, `Connected to ${ip} ...`, '', 'Login authentication', '', 'Username:'] };
+    }
+
     if (dev.type === 'pc' && view === 'user-view') {
       if (cmd === 'ipconfig') return cmdIpconfig(dev, args);
       if (cmd === 'ip') {
@@ -4228,6 +5158,25 @@
         }
         return { lines };
       }
+      if (cmd === 'ipv6') {
+        const addr = E.normIpv6(args[1]);
+        const pfx = parseInt(args[2], 10);
+        const gw = args[3] ? E.normIpv6(args[3]) : null;
+        if (!addr || isNaN(pfx) || pfx < 1 || pfx > 128) {
+          return [...errWrong(args[1] || 'ipv6'), '// 提示：写法为 ipv6 2001:db8:1::10 64 2001:db8:1::254。'];
+        }
+        if (args[3] && !gw) return errWrong(args[3]);
+        const pt = dev.ports[0];
+        pt.ipv6 = { addr, prefix: pfx, gw };
+        const lines = [`已设置 IPv6 地址：${addr}/${pfx}${gw ? '  网关：' + gw : ''}`];
+        if (!gw) {
+          lines.push('// 提示：没有配置 IPv6 默认网关 —— 只能访问同一网段，跨网段一律不通。');
+        } else if (!E.sameSubnet6(addr, pfx, gw)) {
+          lines.push(`// 提示：网关 ${gw} 不在 ${addr}/${pfx} 这个网段内 —— 请核对地址、前缀长度和网关。`);
+        }
+        return { lines };
+      }
+
       if (cmd === 'dhcp') return { lines: doDhcp(dev) };
       // PC 上没有 system-view，改名字就直接在用户视图里做（真机是在图形界面改的）
       if (cmd === 'sysname') {
@@ -4309,6 +5258,14 @@
         const iface = resolveIface(dev, toks[0]);
         if (!iface) return errWrong('interface');
         if (iface.kind === 'subif') {
+          if (dev.l2only) {
+            return {
+              lines: [
+                'Error: The sub-interface is not supported on a layer 2 switch.',
+                '// 提示：S3700 是二层交换机，没有子接口；单臂路由请用路由器（AR6121）或三层交换机（S5700）。'
+              ]
+            };
+          }
           // 子接口（单臂路由）：不存在就创建，和真机一样「一进就有」
           if (!Array.isArray(dev.subifs)) dev.subifs = [];
           let sub = dev.subifs.find((s) => s.parentPortId === iface.port.id && s.num === iface.num);
@@ -4334,15 +5291,18 @@
           };
         }
         if (iface.kind === 'vlanif') {
-          if (dev.l2only) {
-            return { lines: ['Error: This is a layer 2 switch, Vlanif is not supported.', '// 提示：S3700 是二层交换机，三层接口请用 S5700/路由器。'] };
-          }
+          // 二层交换机（S3700）也允许配 Vlanif —— 真机上它就是管理地址，
+          // 用来 telnet / 网管，只是不参与路由转发（见 engine 的 routeLookup）。
           if (!dev.vlans.includes(iface.vlanId)) dev.vlans.push(iface.vlanId);
           if (!dev.vlanifs.find((v) => v.vlanId === iface.vlanId)) {
             dev.vlanifs.push({ vlanId: iface.vlanId, enabled: true, ip: null, mask: null, desc: '', dhcpSelect: false });
           }
           enterView(dev, 'vlanif-view', { vlanifId: iface.vlanId });
-          return { lines: [] };
+          return {
+            lines: dev.l2only
+              ? ['// 提示：二层交换机的 Vlanif 只作管理地址（ping / telnet 用），不做 VLAN 间路由、也不会当网关。']
+              : []
+          };
         }
         if (iface.kind === 'trunk') {
           const members = dev.ports.filter((p) => p.trunkId === iface.trunkId);
@@ -4440,6 +5400,72 @@
         dev.dhcp.enabled = false;
         return { lines: [] };
       }
+      /* ---- IPv6：全局开关与静态路由 ---- */
+      if (cmd === 'ipv6') {
+        if (args[1] === 'route-static') {
+          const dest = E.normIpv6(args[2]);
+          const pfx = parseInt(args[3], 10);
+          const nh = E.normIpv6(args[4]);
+          if (!dest || isNaN(pfx) || pfx < 0 || pfx > 128) {
+            return [...errWrong(args[2] || 'route-static'), '// 提示：写法为 ipv6 route-static 2001:db8:2:: 64 2001:db8:1::2。'];
+          }
+          if (!nh) {
+            return [...errWrong(args[4] || 'route-static'), '// 提示：IPv6 静态路由必须写出下一跳地址。'];
+          }
+          dev.routes = dev.routes.filter((r) => !(r.family === 'v6' && r.dest === dest && r.prefix === pfx));
+          dev.routes.push({ family: 'v6', dest, prefix: pfx, nextHop: nh, proto: 'Static', pre: 60, cost: 0 });
+          return { lines: [] };
+        }
+        if (args[1] === 'undo' || (args[1] || '').toLowerCase() === 'disable') {
+          dev.ipv6Enabled = false;
+          return { lines: [] };
+        }
+        dev.ipv6Enabled = true;
+        return { lines: [] };
+      }
+      if (cmd === 'undo' && args[1] === 'ipv6' && args[2] === 'route-static') {
+        const dest = E.normIpv6(args[3]);
+        const pfx = parseInt(args[4], 10);
+        dev.routes = dev.routes.filter((r) => !(r.family === 'v6' && r.dest === dest && r.prefix === pfx));
+        return { lines: [] };
+      }
+
+      /* ---- 设备管理：Telnet / SSH 服务、AAA 本地用户、VTY ---- */
+      if (cmd === 'telnet' && args[1] === 'server') {
+        dev.telnetServer = (args[2] || '').toLowerCase() !== 'disable';
+        return { lines: dev.telnetServer ? [] : [] };
+      }
+      if (cmd === 'undo' && args[1] === 'telnet' && args[2] === 'server') {
+        dev.telnetServer = false;
+        return { lines: [] };
+      }
+      if (cmd === 'stelnet' && args[1] === 'server') {
+        dev.sshServer = (args[2] || '').toLowerCase() !== 'disable';
+        return { lines: [] };
+      }
+      if (cmd === 'undo' && args[1] === 'stelnet') {
+        dev.sshServer = false;
+        return { lines: [] };
+      }
+      if (cmd === 'aaa') {
+        if (!dev.aaa) dev.aaa = { enabled: false, users: [] };
+        dev.aaa.enabled = true;
+        enterView(dev, 'aaa-view');
+        return { lines: [] };
+      }
+      if (cmd === 'undo' && args[1] === 'aaa') {
+        dev.aaa = { enabled: false, users: [] };
+        return { lines: [] };
+      }
+      if (cmd === 'user-interface') {
+        const t = (args[1] || '').toLowerCase();
+        if (!['vty', 'console'].includes(t)) {
+          return [...errWrong(args[1] || 'user-interface'), '// 提示：写法为 user-interface vty 0 4。'];
+        }
+        enterView(dev, 'vty-view', { uiType: t });
+        return { lines: [] };
+      }
+
       if (cmd === 'nat') {
         if (args[1] !== 'address-group') {
           return [
@@ -4611,6 +5637,15 @@
         return { lines: [] };
       }
       if (cmd === 'port') {
+        // 三层路由口上没有 port link-type / port default vlan 这些二层命令（真机同样报 Unrecognized）
+        if (ports.some((p) => p.mode === 'routed')) {
+          return {
+            lines: [
+              "Error: Unrecognized command found at '^' position.",
+              '// 提示：这是三层路由口，`port` 开头的二层命令在这里不适用。要当交换口用，先在本接口执行 `portswitch`。'
+            ]
+          };
+        }
         if (args[1] === 'link-type') {
           const t = args[2];
           if (!['access', 'trunk', 'hybrid'].includes(t)) return errWrong(t);
@@ -4669,8 +5704,13 @@
         return { lines: [] };
       }
       if (cmd === 'undo' && args[1] === 'portswitch') {
-        ports.forEach((p) => { p.mode = 'routed'; });
-        return { lines: [] };
+        ports.forEach((p) => { p.mode = 'routed'; p.vlan = 1; p.allowedVlans = 'all'; });
+        return { lines: ['Info: The port has been switched to a Layer 3 port.'] };
+      }
+      if (cmd === 'portswitch') {
+        if (dev.type === 'pc') return errUnrecognized(cmd);
+        ports.forEach((p) => { p.mode = 'access'; });
+        return { lines: ['Info: The port has been switched to a Layer 2 port.'] };
       }
       if (cmd === 'eth-trunk') {
         const n = parseInt(args[1], 10);
@@ -4728,8 +5768,77 @@
         if (args[2] === 'enable') ports.forEach((p) => { p.portSec.enabled = false; });
         return { lines: [] };
       }
+      if (cmd === 'ipv6') {
+        if (args[1] === 'address') {
+          const addr = E.normIpv6(args[2]);
+          const pfx = parseInt(args[3], 10);
+          if (!addr || isNaN(pfx) || pfx < 1 || pfx > 128) {
+            return [...errWrong(args[2] || 'address'), '// 提示：写法为 ipv6 address 2001:db8:1::1 64。'];
+          }
+          if (!dev.ipv6Enabled) {
+            return ['// 提示：还没在系统视图执行 ipv6（全局开启 IPv6），接口地址配了也不会生效。'];
+          }
+          ports.forEach((p) => {
+            p.ipv6 = { addr, prefix: pfx };
+          });
+          return { lines: [] };
+        }
+        if (args[1] === 'enable') {
+          if (!dev.ipv6Enabled) return { lines: ['// 提示：先到系统视图执行 ipv6 全局开启。'] };
+          return { lines: [] };
+        }
+        if (args[1] === 'undo') {
+          ports.forEach((p) => {
+            p.ipv6 = null;
+          });
+          return { lines: [] };
+        }
+        return errUnrecognized('ipv6');
+      }
+      if (cmd === 'undo' && args[1] === 'ipv6' && args[2] === 'address') {
+        ports.forEach((p) => {
+          p.ipv6 = null;
+        });
+        return { lines: [] };
+      }
+
       if (cmd === 'dhcp' && args[1] === 'select') {
-        ports.forEach((p) => { p.dhcpSelect = true; });
+        const mode = String(args[2] || 'global').toLowerCase();
+        if (!['global', 'relay'].includes(mode)) return errWrong(args[2]);
+        ports.forEach((p) => {
+          p.dhcpSelect = mode === 'global';
+          if (!p.dhcpRelay) p.dhcpRelay = { enabled: false, servers: [] };
+          p.dhcpRelay.enabled = mode === 'relay';
+        });
+        const lines = [];
+        if (mode === 'relay') lines.push('// 提示：中继还要在本接口配 dhcp relay server-ip <服务器地址>，并且本机要 dhcp enable。');
+        if (!dev.dhcp.enabled) lines.push('// 提示：本机还没执行 dhcp enable，DHCP（含中继）不会生效。');
+        return { lines };
+      }
+      if (cmd === 'undo' && args[1] === 'dhcp' && args[2] === 'select') {
+        ports.forEach((p) => {
+          p.dhcpSelect = false;
+          if (p.dhcpRelay) p.dhcpRelay.enabled = false;
+        });
+        return { lines: [] };
+      }
+      if (cmd === 'dhcp' && args[1] === 'relay' && args[2] === 'server-ip') {
+        const sip = args[3];
+        if (!E.isValidIp(sip)) return errWrong(sip || 'server-ip');
+        ports.forEach((p) => {
+          if (!p.dhcpRelay) p.dhcpRelay = { enabled: false, servers: [] };
+          if (!p.dhcpRelay.servers.includes(sip)) p.dhcpRelay.servers.push(sip);
+        });
+        const lines = [];
+        if (!dev.dhcp.enabled) lines.push('// 提示：本机还没执行 dhcp enable，中继不会生效。');
+        if (!ports.some((p) => p.dhcpRelay.enabled)) lines.push('// 提示：本接口还没配 dhcp select relay，只填 server-ip 不会生效。');
+        return { lines };
+      }
+      if (cmd === 'undo' && args[1] === 'dhcp' && args[2] === 'relay' && args[3] === 'server-ip') {
+        const sip = args[4];
+        ports.forEach((p) => {
+          if (p.dhcpRelay) p.dhcpRelay.servers = p.dhcpRelay.servers.filter((s) => s !== sip);
+        });
         return { lines: [] };
       }
       if (cmd === 'traffic-filter') {
@@ -4750,6 +5859,49 @@
         const dir = args[2];
         ports.forEach((p) => {
           dev.aclBindings = dev.aclBindings.filter((b) => !(b.portId === p.id && b.direction === dir));
+        });
+        return { lines: [] };
+      }
+      if (cmd === 'nat' && args[1] === 'server') {
+        const parsed = parseNatServerArgs(args);
+        if (!parsed) {
+          return [
+            ...errWrong('nat server'),
+            '// 提示：写法为 nat server [protocol tcp|udp] global <公网IP> [公网端口] inside <私网IP> [私网端口]。'
+          ];
+        }
+        ports.forEach((p) => {
+          if (!Array.isArray(p.natServers)) p.natServers = [];
+          // 同一「公网地址 + 端口」视为同一条，后配的覆盖前面的
+          p.natServers = p.natServers.filter(
+            (x) => !(x.globalIp === parsed.globalIp && (x.globalPort || 0) === (parsed.globalPort || 0))
+          );
+          p.natServers.push(parsed);
+        });
+        const lines = [];
+        const first = ports[0];
+        if (first && first.ip && parsed.globalIp !== first.ip) {
+          lines.push(
+            `// 提示：global 地址 ${parsed.globalIp} 不是本接口地址（本接口是 ${first.ip}）—— 外部报文要能走到这里，网络上必须有到它的路由。`
+          );
+        }
+        return { lines };
+      }
+      if (cmd === 'undo' && args[1] === 'nat' && args[2] === 'server') {
+        // undo nat server                      → 清空本接口全部映射
+        // undo nat server global <ip> [port]   → 删指定一条
+        const gi = args.findIndex((a) => a.toLowerCase() === 'global');
+        const gip = gi > 0 ? args[gi + 1] : null;
+        const gport = gi > 0 && /^\d+$/.test(args[gi + 2] || '') ? parseInt(args[gi + 2], 10) : null;
+        ports.forEach((p) => {
+          if (!Array.isArray(p.natServers)) return;
+          if (!gip) {
+            p.natServers = [];
+            return;
+          }
+          p.natServers = p.natServers.filter(
+            (x) => !(x.globalIp === gip && (gport == null || (x.globalPort || 0) === gport))
+          );
         });
         return { lines: [] };
       }
@@ -4778,6 +5930,89 @@
     }
 
     /* ================= Vlanif 视图 ================= */
+    /* ================= VTY 用户界面视图 ================= */
+    if (view === 'vty-view') {
+      if (cmd === 'authentication-mode') {
+        const m = (args[1] || '').toLowerCase();
+        if (!['aaa', 'password', 'none'].includes(m)) return errWrong(args[1]);
+        dev.vty.authMode = m;
+        const lines = [];
+        if (m === 'aaa' && !(dev.aaa && dev.aaa.enabled && (dev.aaa.users || []).length)) {
+          lines.push('// 提示：选了 aaa 认证，但还没有本地用户 —— 先 aaa，再 local-user <名字> password irreversible-cipher <密码>。');
+        }
+        if (m === 'password' && !dev.vty.password) {
+          lines.push('// 提示：password 模式还要 set authentication password cipher <密码>。');
+        }
+        return { lines };
+      }
+      if (cmd === 'set' && args[1] === 'authentication' && args[2] === 'password') {
+        const rest = args.slice(3);
+        const pwd = rest.length ? rest[rest.length - 1] : null;
+        if (!pwd) return errWrong('password');
+        dev.vty.password = pwd;
+        return { lines: [] };
+      }
+      if (cmd === 'protocol' && args[1] === 'inbound') {
+        const p = (args[2] || '').toLowerCase();
+        if (!['telnet', 'ssh', 'all'].includes(p)) return errWrong(args[2]);
+        dev.vty.protocol = p;
+        return { lines: [] };
+      }
+      if (cmd === 'idle-timeout') {
+        const n = parseInt(args[1], 10);
+        if (isNaN(n)) return errWrong(args[1]);
+        dev.vty.idleTimeout = n;
+        return { lines: [] };
+      }
+      if (cmd === 'user' && args[1] === 'privilege' && args[2] === 'level') {
+        const lv = parseInt(args[3], 10);
+        if (isNaN(lv) || lv < 0 || lv > 15) return errWrong(args[3]);
+        dev.vty.privilege = lv;
+        return { lines: [] };
+      }
+      return errUnrecognized(cmd);
+    }
+
+    /* ================= AAA 视图 ================= */
+    if (view === 'aaa-view') {
+      if (cmd === 'local-user') {
+        const name = args[1];
+        if (!name) return errWrong('local-user');
+        if (!dev.aaa) dev.aaa = { enabled: true, users: [] };
+        const ensure = () => {
+          let u = dev.aaa.users.find((x) => x.name === name);
+          if (!u) {
+            u = { name, password: null, level: 0, serviceType: 'telnet' };
+            dev.aaa.users.push(u);
+          }
+          return u;
+        };
+        if (args[2] === 'password') {
+          const rest = args.slice(3);
+          const pwd = rest.length ? rest[rest.length - 1] : null;
+          if (!pwd) return errWrong('password');
+          ensure().password = pwd;
+          return { lines: [] };
+        }
+        if (args[2] === 'privilege' && args[3] === 'level') {
+          const lv = parseInt(args[4], 10);
+          if (isNaN(lv) || lv < 0 || lv > 15) return errWrong(args[4]);
+          ensure().level = lv;
+          return { lines: [] };
+        }
+        if (args[2] === 'service-type') {
+          ensure().serviceType = args.slice(3).join(' ') || 'telnet';
+          return { lines: [] };
+        }
+        return [...errWrong(args[2] || 'local-user'), '// 提示：local-user <名字> password irreversible-cipher <密码> | privilege level 0-15 | service-type telnet。'];
+      }
+      if (cmd === 'undo' && args[1] === 'local-user') {
+        dev.aaa.users = (dev.aaa.users || []).filter((x) => x.name !== args[2]);
+        return { lines: [] };
+      }
+      return errUnrecognized(cmd);
+    }
+
     /* ================= 子接口视图（单臂路由） ================= */
     if (view === 'subif-view') {
       const s = findSubif(dev, dev.cli.subifKey);
@@ -4864,8 +6099,56 @@
       if (cmd === 'description') { vi.desc = args.slice(1).join(' '); return { lines: [] }; }
       if (cmd === 'shutdown') { vi.enabled = false; return { lines: [] }; }
       if (cmd === 'undo' && args[1] === 'shutdown') { vi.enabled = true; return { lines: [] }; }
-      if (cmd === 'dhcp' && args[1] === 'select') { vi.dhcpSelect = true; return { lines: [] }; }
-      if (cmd === 'undo' && args[1] === 'dhcp' && args[2] === 'select') { vi.dhcpSelect = false; return { lines: [] }; }
+      if (cmd === 'ipv6' && args[1] === 'address') {
+        const addr = E.normIpv6(args[2]);
+        const pfx = parseInt(args[3], 10);
+        if (!addr || isNaN(pfx) || pfx < 1 || pfx > 128) {
+          return [...errWrong(args[2] || 'address'), '// 提示：写法为 ipv6 address 2001:db8:1::1 64。'];
+        }
+        if (!dev.ipv6Enabled) return ['// 提示：还没在系统视图执行 ipv6（全局开启 IPv6），地址配了也不会生效。'];
+        vi.ipv6 = { addr, prefix: pfx };
+        return { lines: [] };
+      }
+      if (cmd === 'undo' && args[1] === 'ipv6' && args[2] === 'address') {
+        vi.ipv6 = null;
+        return { lines: [] };
+      }
+      if (cmd === 'ipv6' && args[1] === 'enable') {
+        if (!dev.ipv6Enabled) return { lines: ['// 提示：先到系统视图执行 ipv6 全局开启。'] };
+        return { lines: [] };
+      }
+
+      if (cmd === 'dhcp' && args[1] === 'select') {
+        const mode = String(args[2] || 'global').toLowerCase();
+        if (!['global', 'relay'].includes(mode)) return errWrong(args[2]);
+        vi.dhcpSelect = mode === 'global';
+        if (!vi.dhcpRelay) vi.dhcpRelay = { enabled: false, servers: [] };
+        vi.dhcpRelay.enabled = mode === 'relay';
+        const lines = [];
+        if (mode === 'relay') lines.push('// 提示：中继还要配 dhcp relay server-ip <服务器地址>，并且本机要 dhcp enable。');
+        if (!dev.dhcp.enabled) lines.push('// 提示：本机还没执行 dhcp enable，DHCP（含中继）不会生效。');
+        return { lines };
+      }
+      if (cmd === 'undo' && args[1] === 'dhcp' && args[2] === 'select') {
+        vi.dhcpSelect = false;
+        if (vi.dhcpRelay) vi.dhcpRelay.enabled = false;
+        return { lines: [] };
+      }
+      if (cmd === 'dhcp' && args[1] === 'relay' && args[2] === 'server-ip') {
+        const sip = args[3];
+        if (!E.isValidIp(sip)) return errWrong(sip || 'server-ip');
+        if (!vi.dhcpRelay) vi.dhcpRelay = { enabled: false, servers: [] };
+        if (!vi.dhcpRelay.servers.includes(sip)) vi.dhcpRelay.servers.push(sip);
+        const lines = [];
+        if (!dev.dhcp.enabled) lines.push('// 提示：本机还没执行 dhcp enable，中继不会生效。');
+        if (!vi.dhcpRelay.enabled) lines.push('// 提示：本接口还没配 dhcp select relay，只填 server-ip 不会生效。');
+        return { lines };
+      }
+      if (cmd === 'undo' && args[1] === 'dhcp' && args[2] === 'relay' && args[3] === 'server-ip') {
+        const sip = args[4];
+        if (vi.dhcpRelay) vi.dhcpRelay.servers = vi.dhcpRelay.servers.filter((s) => s !== sip);
+        return { lines: [] };
+      }
       // Vlanif 上应用 ACL：过滤该 VLAN 内主机进出三层的流量（最常用的 ACL 应用方式）
       if (cmd === 'traffic-filter') {
         const dir = args[1];
@@ -5138,6 +6421,8 @@
     'portgroup-view': '端口组视图',
     'vlanif-view': 'Vlanif 视图',
     'subif-view': '子接口视图',
+    'vty-view': 'VTY 用户界面视图',
+    'aaa-view': 'AAA 视图',
     'trunk-view': 'Eth-Trunk 视图',
     'pool-view': '地址池视图',
     'acl-view': 'ACL 视图',
@@ -5243,7 +6528,9 @@
       ],
       'vlanif-view': [
         'ip address <ip> <掩码>       配置 VLAN 三层网关地址',
-        'dhcp select global           指定使用全局地址池',
+        'dhcp select global           在本接口用本地全局地址池（服务器与客户端同网段）',
+        'dhcp select relay            改用 DHCP 中继（跨网段找服务器）',
+        'dhcp relay server-ip <地址>  指定 DHCP 服务器地址（中继）',
         'traffic-filter inbound acl <编号>   在 VLAN 网关上下发 ACL',
         'description <描述>           接口描述',
         'shutdown / undo shutdown     关闭 / 开启接口',
@@ -5310,7 +6597,8 @@
         'ip <地址> <掩码> <网关>      手工配置 IP',
         'sysname <名字>               给这台 PC 改名',
         'ping <ip>                    连通性测试',
-        'tracert <ip>                 路由跟踪'
+        'tracert <ip>                 路由跟踪',
+        'telnet <ip>                  远程登录到路由器 / 三层交换机（需要对方开了 telnet server）'
       ];
     }
     return [...common, ...(map[v] || [])];
@@ -5526,23 +6814,69 @@
    * running-config 是「结果快照」，没有视图层级信息，所以这里要按段落补回
    * quit / return / system-view，否则重放到第二个段落就会因为停在旧视图里而报错。
    */
-  function plan(dev, lines) {
+  function plan(dev, lines, legacyFix) {
     const cmds = [];
     const unknown = [];
-    const src = (lines || []).map((l) => String(l).trim()).filter(Boolean);
+    let src = (lines || []).map((l) => String(l).trim()).filter(Boolean);
+
+    // v1.6.0：S3700 的电口按真机改名为 Ethernet0/0/1-24（GigabitEthernet0/0/1-4 变成上行光口）。
+    // 旧作业里的 S3700 配置全是 interface GigabitEthernet0/0/N，这里把 5-24 号自动换算回来，
+    // 免得重放时「命令报错」或者更糟——静默配到上行口上。1-4 号有歧义，保留原样。
+    if (dev.key === 'S3700') {
+      const FIX = /GigabitEthernet0\/0\/(\d+)\b/g;
+      src = src.map((l) => {
+        if (!/^(interface|port-group|undo\s+interface)\b/i.test(l)) return l;
+        const fixed = legacyFix && legacyFix.get(dev.id);
+        return l.replace(FIX, (m, n) => {
+          const k = parseInt(n, 10);
+          if (k >= 5 && k <= 24) return `Ethernet0/0/${n}`;
+          // 1-4 号有歧义：拓扑阶段判定过（对端是电口）就按判定结果走
+          if (fixed && fixed.has(m)) return fixed.get(m);
+          return m;
+        });
+      });
+    }
 
     /* --- PC 没有 VRP 命令行：导出的是 ip address / ip gateway 两行，要合并成一条 ip 命令 --- */
     if (dev.type === 'pc') {
       let ip = null;
       let mask = null;
       let gw = null;
+      // PC 的 IPv6 也是两行（ipv6 address / ipv6 gateway），合并成一条 ipv6 命令
+      let ip6 = null;
+      let pfx6 = null;
+      let gw6 = null;
       const flush = () => {
         if (ip && mask) cmds.push(`ip ${ip} ${mask}${gw ? ' ' + gw : ''}`);
         ip = mask = gw = null;
       };
+      const flush6 = () => {
+        if (ip6 && pfx6 != null) cmds.push(`ipv6 ${ip6} ${pfx6}${gw6 ? ' ' + gw6 : ''}`);
+        ip6 = pfx6 = gw6 = null;
+      };
       for (const t of src) {
         if (RE_META.test(t) || /^sysname\b/i.test(t)) continue; // 主机名由设备本身维护，重放会覆盖成导出时的名字
-        let m = t.match(/^ip\s+address\s+(\S+)\s+(\S+)$/i);
+        let m = t.match(/^ipv6\s+address\s+(\S+)\s+(\d+)$/i);
+        if (m) {
+          flush6();
+          ip6 = m[1];
+          pfx6 = m[2];
+          continue;
+        }
+        m = t.match(/^ipv6\s+gateway\s+(\S+)$/i);
+        if (m) {
+          gw6 = m[1];
+          continue;
+        }
+        m = t.match(/^ipv6\s+(\S+)\s+(\d+)(?:\s+(\S+))?$/i);
+        if (m) {
+          flush6();
+          ip6 = m[1];
+          pfx6 = m[2];
+          gw6 = m[3] || null;
+          continue;
+        }
+        m = t.match(/^ip\s+address\s+(\S+)\s+(\S+)$/i);
         if (m) {
           flush();
           ip = m[1];
@@ -5565,6 +6899,7 @@
         unknown.push(t);
       }
       flush();
+      flush6();
       return { cmds, unknown };
     }
 
@@ -5703,6 +7038,8 @@
     }
 
     const results = [];
+    // 拓扑阶段判定出的「旧端口名 → 真实端口名」映射（devId → Map），配置重放时要跟着改
+    const legacyFix = new Map();
     let created = 0;
     let cursor = 0;
     const startY = E.Net.devices.length ? Math.max(...E.Net.devices.map((d) => d.y)) + 190 : 60;
@@ -5749,8 +7086,40 @@
           warnings.push(`连线 ${c.a}:${c.aPort} ↔ ${c.b}:${c.bPort}：设备缺失，已跳过`);
           continue;
         }
-        const pa = A.ports.find((p) => p.name === c.aPort);
-        const pb = B.ports.find((p) => p.name === c.bPort);
+        // v1.6.0 起 S3700 的电口按真机改名为 Ethernet0/0/1-24，GigabitEthernet0/0/1-4 才是上行光口。
+        // 旧文件里的 S3700 连线全写的是 GigabitEthernet0/0/N —— 在可能的情况下自动换算回来，
+        // 免得老作业导进来「线还在，但接错了口」。
+        const fixLegacy = (dev, name, peerPort) => {
+          if (dev.key !== 'S3700') return { name, warn: null };
+          const m = String(name).match(/^GigabitEthernet0\/0\/(\d+)$/i);
+          if (!m) return { name, warn: null };
+          const n = parseInt(m[1], 10);
+          if (n >= 5 && n <= 24) {
+            return { name: `Ethernet0/0/${n}`, warn: `旧版 S3700 电口写作 GigabitEthernet，已自动换算 ${dev.hostname} ${name} → Ethernet0/0/${n}` };
+          }
+          if (n >= 1 && n <= 4) {
+            // 1-4 号在新命名里是上行光口，和旧文件的电口重号。上行口是 SFP，接不了 RJ45 电口 ——
+            // 所以对端只要是个电口，这条线在旧文件里指的必然是电口 E0/0/n。
+            if (peerPort && peerPort.kind === 'RJ45') {
+              return {
+                name: `Ethernet0/0/${n}`,
+                warn: `${dev.hostname} ${name}：对端是电口，判定为旧文件的电口，已换算成 Ethernet0/0/${n}`
+              };
+            }
+            // 对端也是光口 → 确实是上行口互联，不用提醒
+            if (peerPort && peerPort.kind === 'SFP') return { name, warn: null };
+            return { name, warn: `${dev.hostname} ${name}：旧文件里这可能指电口 E0/0/${n}；现在 GE0/0/${n} 是上行光口，已按上行口连接` };
+          }
+          return { name, warn: null };
+        };
+        const pa0 = A.ports.find((p) => p.name === c.aPort);
+        const pb0 = B.ports.find((p) => p.name === c.bPort);
+        const fa = fixLegacy(A, c.aPort, pb0);
+        const fb = fixLegacy(B, c.bPort, pa0 && pa0.name === fa.name ? pa0 : A.ports.find((p) => p.name === fa.name));
+        if (fa.warn) warnings.push(fa.warn);
+        if (fb.warn) warnings.push(fb.warn);
+        const pa = A.ports.find((p) => p.name === fa.name);
+        const pb = B.ports.find((p) => p.name === fb.name);
         if (!pa || !pb) {
           warnings.push(`${A.hostname} ${c.aPort} ↔ ${B.hostname} ${c.bPort}：端口不存在，已跳过`);
           continue;
@@ -5769,7 +7138,17 @@
           continue;
         }
         const r = E.Net.addCable(A, pa, B, pb);
-        if (r && r.ok) wires += 1;
+        if (r && r.ok) {
+          wires += 1;
+          if (fa.name !== c.aPort) {
+            if (!legacyFix.has(A.id)) legacyFix.set(A.id, new Map());
+            legacyFix.get(A.id).set(c.aPort, fa.name);
+          }
+          if (fb.name !== c.bPort) {
+            if (!legacyFix.has(B.id)) legacyFix.set(B.id, new Map());
+            legacyFix.get(B.id).set(c.bPort, fb.name);
+          }
+        }
         else warnings.push(`${A.hostname} ${pa.name} ↔ ${B.hostname} ${pb.name}：${(r && r.message) || '连接失败'}`);
       }
 
@@ -5814,7 +7193,7 @@
         created++;
       }
 
-      const p = plan(dev, b.lines);
+      const p = plan(dev, b.lines, legacyFix);
       const failed = [];
       let applied = 0;
       for (const c of p.cmds) {
@@ -5901,7 +7280,7 @@
   /* ------------------------------ 版本信息 ------------------------------ */
   /* 版本号的唯一来源：改这一处即可。
      build.mjs 会把它读出来写进产物开头的注释，所以交付文件本身也能看出是哪个版本。 */
-  const APP_VERSION = '1.5.0';
+  const APP_VERSION = '1.6.0';
   const APP_INFO = {
     studio: '新易科技工作室 NewE',
     author: 'Liuyi',
@@ -6041,9 +7420,9 @@
   /* ------------------------------ 设备库 ------------------------------ */
   function renderPalette() {
     const items = [
-      { key: 'S5700', ic: '🔀', name: '三层交换机', sub: 'S5700-28TP-EI' },
+      { key: 'S5700', ic: '🔀', name: '三层交换机', sub: 'S5700-28C-EI' },
       { key: 'S3700', ic: '🔀', name: '二层交换机', sub: 'S3700-28TP-EI' },
-      { key: 'AR6121', ic: '📡', name: '路由器', sub: 'AR6121' },
+      { key: 'AR6121', ic: '📡', name: '路由器', sub: 'AR6121E' },
       { key: 'PC', ic: '💻', name: 'PC 终端', sub: 'Windows 主机' }
     ];
     $('palette').innerHTML = items
@@ -6110,7 +7489,7 @@
         const pe = document.createElement('div');
         pe.className = 'port ' + portClass(d, p);
         pe.title = `${p.name}\n${portTitle(d, p)}`;
-        pe.innerHTML = `<span class="lab">${p.name.replace('GigabitEthernet', 'GE')}</span>`;
+        pe.innerHTML = `<span class="lab">${p.name.replace('GigabitEthernet', 'GE').replace('Ethernet', 'E')}</span>`;
         // 端口不参与卡片拖动，事件也不往卡片冒泡（否则点端口会顺手把卡片拖走）
         pe.addEventListener('pointerdown', (ev) => ev.stopPropagation());
         bindGestures(pe, {
@@ -6187,13 +7566,14 @@
     if (p.shutdown) cls.push('shut');
     if (p.mode === 'trunk') cls.push('trunk');
     if (UI.pend && UI.pend.devId === dev.id && UI.pend.portId === p.id) cls.push('pend');
+    if (p.kind === 'SFP') cls.push('sfp'); // 光口画成圆形，和电口区分开
     return cls.join(' ');
   }
 
   function portTitle(dev, p) {
     const rows = [];
     rows.push(p.shutdown ? '状态：已关闭（shutdown）' : p.cableId ? '状态：已连线 Up' : '状态：未连线 Down');
-    rows.push('类型：' + (p.mode === 'routed' ? '路由口' : p.mode === 'trunk' ? 'Trunk' : p.mode === 'hybrid' ? 'Hybrid' : 'Access'));
+    rows.push('类型：' + (p.mode === 'routed' ? '路由口' : p.mode === 'trunk' ? 'Trunk' : p.mode === 'hybrid' ? 'Hybrid' : 'Access') + (p.role ? '（' + p.role + ' 口）' : ''));
     if (p.mode === 'access') rows.push('VLAN：' + p.vlan);
     if (p.mode === 'trunk') rows.push('放行 VLAN：' + (p.allowedVlans === 'all' ? 'all' : (p.allowedVlans || []).join(',')));
     if (p.ip) rows.push('IP：' + p.ip + '/' + p.mask);
@@ -6906,6 +8286,17 @@
       return;
     }
     for (const l of res.lines || []) d.logs.push({ t: l, c: classify(l) });
+    // telnet 登录成功：把终端切到对端设备（对端日志里补一行，免得看着像"换了个空屏"）
+    if (res.remoteDevice) {
+      const target = E.Net.devices.find((x) => x.id === res.remoteDevice);
+      if (target) {
+        target.logs.push({ t: `（来自 ${d.hostname} 的 Telnet 登录）`, c: 'hint' });
+        persist();
+        toast(`已登录 ${target.hostname}`, 'good');
+        openConsole(target);
+        return;
+      }
+    }
     if (res.traffic) showTraffic(d, res.traffic);
     E.recomputeOspf();
     E.recomputeRip();
@@ -6979,26 +8370,28 @@
   }
 
   const CANDIDATES = {
-    'user-view': ['system-view', 'display version', 'display current-configuration', 'display ip interface brief', 'display interface ', 'display port vlan', 'display vlan', 'display ip routing-table', 'display mac-address', 'display arp', 'display stp brief', 'display eth-trunk', 'display ospf peer brief', 'display ospf interface', 'display ospf routing', 'display rip', 'display rip routing', 'display rip neighbor', 'display ip pool', 'display acl all', 'display nat session all', 'display port-group all', 'ping ', 'tracert ', 'save', 'help'],
-    'system-view': ['sysname ', 'vlan ', 'vlan batch ', 'interface ', 'interface range GigabitEthernet0/0/1 to GigabitEthernet0/0/5', 'port-group group-member GigabitEthernet0/0/1 to GigabitEthernet0/0/8', 'port-group 1', 'ip route-static ', 'ip pool ', 'dhcp enable', 'nat address-group 1', 'ospf 1 router-id ', 'rip 1', 'undo rip', 'acl number 2000', 'acl number 3000', 'stp mode rstp', 'stp priority ', 'display current-configuration', 'display this', 'save', 'quit', 'return'],
+    'user-view': ['system-view', 'display version', 'display current-configuration', 'display ip interface brief', 'display interface ', 'display port vlan', 'display vlan', 'display ip routing-table', 'display mac-address', 'display arp', 'display stp brief', 'display eth-trunk', 'display ospf peer brief', 'display ospf interface', 'display ospf routing', 'display rip', 'display rip routing', 'display rip neighbor', 'display ip pool', 'display acl all', 'display nat session all', 'display port-group all', 'display ipv6 interface brief', 'display ipv6 routing-table', 'display ipv6 neighbors', 'display nat server', 'display nat outbound', 'ping ', 'ping ipv6 ', 'tracert ', 'telnet ', 'save', 'help'],
+    'system-view': ['sysname ', 'vlan ', 'vlan batch ', 'interface ', 'interface range GigabitEthernet0/0/1 to GigabitEthernet0/0/5', 'interface Ethernet0/0/1', 'interface GigabitEthernet0/1/1', 'interface 10GE0/0/0', 'interface range Ethernet0/0/1 to Ethernet0/0/8', 'port-group group-member GigabitEthernet0/0/1 to GigabitEthernet0/0/8', 'port-group group-member Ethernet0/0/1 to Ethernet0/0/8', 'port-group 1', 'ip route-static ', 'ip pool ', 'dhcp enable', 'nat address-group 1', 'ospf 1 router-id ', 'rip 1', 'undo rip', 'acl number 2000', 'acl number 3000', 'stp mode rstp', 'stp priority ', 'ipv6', 'ipv6 route-static ', 'telnet server enable', 'stelnet server enable', 'aaa', 'user-interface vty 0 4', 'display current-configuration', 'display this', 'save', 'quit', 'return'],
     'vlan-view': ['description ', 'name ', 'display this', 'display vlan', 'quit', 'return'],
-    'interface-view': ['description ', 'shutdown', 'undo shutdown', 'port link-type access', 'port link-type trunk', 'port default vlan ', 'port trunk allow-pass vlan ', 'undo portswitch', 'ip address ', 'eth-trunk 1', 'stp edged-port enable', 'port-security enable', 'port-security max-mac-num 2', 'traffic-filter inbound acl 3000', 'nat outbound 2000', 'display this', 'display interface ', 'quit', 'return'],
-    'portgroup-view': ['group-member GigabitEthernet0/0/1 to GigabitEthernet0/0/8', 'description ', 'shutdown', 'undo shutdown', 'port link-type access', 'port link-type trunk', 'port default vlan ', 'port trunk allow-pass vlan ', 'stp edged-port enable', 'port-security enable', 'display this', 'quit', 'return'],
-    'vlanif-view': ['ip address ', 'dhcp select global', 'traffic-filter inbound acl 3000', 'description ', 'shutdown', 'undo shutdown', 'display this', 'quit', 'return'],
+    'interface-view': ['description ', 'shutdown', 'undo shutdown', 'port link-type access', 'port link-type trunk', 'port default vlan ', 'port trunk allow-pass vlan ', 'portswitch', 'undo portswitch', 'ip address ', 'eth-trunk 1', 'stp edged-port enable', 'port-security enable', 'port-security max-mac-num 2', 'traffic-filter inbound acl 3000', 'nat outbound 2000', 'nat server global ', 'dhcp select relay', 'dhcp relay server-ip ', 'ipv6 address ', 'ipv6 enable', 'display this', 'display interface ', 'quit', 'return'],
+    'portgroup-view': ['group-member GigabitEthernet0/0/1 to GigabitEthernet0/0/8', 'group-member Ethernet0/0/1 to Ethernet0/0/8', 'description ', 'shutdown', 'undo shutdown', 'port link-type access', 'port link-type trunk', 'port default vlan ', 'port trunk allow-pass vlan ', 'stp edged-port enable', 'port-security enable', 'display this', 'quit', 'return'],
+    'vlanif-view': ['ip address ', 'dhcp select global', 'dhcp select relay', 'dhcp relay server-ip ', 'traffic-filter inbound acl 3000', 'ipv6 address ', 'description ', 'shutdown', 'undo shutdown', 'display this', 'quit', 'return'],
     'subif-view': ['dot1q termination vid 10', 'ip address ', 'arp broadcast enable', 'undo arp broadcast enable', 'description ', 'shutdown', 'undo shutdown', 'display this', 'quit', 'return'],
+    'vty-view': ['authentication-mode aaa', 'authentication-mode password', 'authentication-mode none', 'protocol inbound all', 'protocol inbound ssh', 'set authentication password cipher ', 'idle-timeout 10 0', 'display this', 'quit', 'return'],
+    'aaa-view': ['local-user admin password irreversible-cipher ', 'local-user admin privilege level 15', 'local-user admin service-type telnet', 'undo local-user admin', 'display this', 'quit', 'return'],
     'pool-view': ['network ', 'gateway-list ', 'dns-list ', 'excluded-ip-address ', 'lease day 1', 'display this', 'quit', 'return'],
     'acl-view': ['rule 5 deny ip source 192.168.10.0 0.0.0.255 destination 192.168.20.0 0.0.0.255', 'rule 10 permit ip', 'rule 5 permit source ', 'undo rule 5', 'display this', 'quit', 'return'],
     'nat-group-view': ['section 0 ', 'display this', 'quit', 'return'],
     'ospf-view': ['router-id ', 'area 0', 'display this', 'quit', 'return'],
     'ospf-area-view': ['network ', 'display this', 'quit', 'return'],
-    'rip-view': ['version 2', 'version 1', 'network ', 'undo network ', 'silent-interface all', 'silent-interface GigabitEthernet0/0/1', 'display this', 'quit', 'return'],
+    'rip-view': ['version 2', 'version 1', 'network ', 'undo network ', 'silent-interface all', 'silent-interface GigabitEthernet0/0/1', 'silent-interface Ethernet0/0/1', 'display this', 'quit', 'return'],
     'trunk-view': ['mode lacp-static', 'mode manual load-balance', 'ip address ', 'display this', 'quit', 'return']
   };
 
   function autocomplete(d, inp) {
     const cur = inp.value;
     let list = CANDIDATES[d.cli.view] || [];
-    if (d.type === 'pc') list = ['ipconfig', 'ipconfig /renew', 'ipconfig /release', 'ip ', 'sysname ', 'ping ', 'tracert ', 'help'];
+    if (d.type === 'pc') list = ['ipconfig', 'ipconfig /renew', 'ipconfig /release', 'ip ', 'ipv6 ', 'sysname ', 'ping ', 'ping ipv6 ', 'tracert ', 'telnet ', 'help'];
 
     if (!cur.trim()) {
       const d2 = activeDev();
@@ -7322,9 +8715,9 @@
       },
       goals: [
         '在系统视图下创建 VLAN 10 和 VLAN 20（<code>vlan batch 10 20</code>）',
-        '把 GE0/0/1、GE0/0/2 都划入 VLAN 10（<code>port link-type access</code> + <code>port default vlan 10</code>）',
+        '把 E0/0/1、E0/0/2 都划入 VLAN 10（<code>port link-type access</code> + <code>port default vlan 10</code>）',
         '在 PC1 上 ping 192.168.10.2，确认同 VLAN 二层互通',
-        '把 GE0/0/2 改到 VLAN 20，在 PC1 上再 ping 一次，观察结果变化'
+        '把 E0/0/2 改到 VLAN 20，在 PC1 上再 ping 一次，观察结果变化'
       ],
       tips: [
         '交换机端口缺省都在 VLAN 1，同一个 VLAN 内可以直接二层通信，不需要配 IP。',
@@ -7346,7 +8739,7 @@
         setPort(p2, 0, { ip: '192.168.10.2', mask: 24 });
         link(p1, 0, s1, 0);
         link(p2, 0, s2, 0);
-        link(s1, 23, s2, 23); // SW1 GE0/0/24 ↔ SW2 GE0/0/24
+        link(s1, 23, s2, 23); // SW1 E0/0/24 ↔ SW2 E0/0/24
         // 互联口预配为 trunk，放行 VLAN 10
         setPort(s1, 23, { mode: 'trunk', allowedVlans: [10] });
         setPort(s2, 23, { mode: 'trunk', allowedVlans: [10] });
@@ -7357,8 +8750,8 @@
       },
       goals: [
         '两台交换机都创建 VLAN 10',
-        '把各自的接入口 GE0/0/1 配成 access 并加入 VLAN 10',
-        '确认互联口 GE0/0/24 为 <code>port link-type trunk</code> 且 <code>port trunk allow-pass vlan 10</code>',
+        '把各自的接入口 E0/0/1 配成 access 并加入 VLAN 10',
+        '确认互联口 E0/0/24 为 <code>port link-type trunk</code> 且 <code>port trunk allow-pass vlan 10</code>',
         '在 PC1 上 ping 192.168.10.2，验证跨交换机互通'
       ],
       tips: [
@@ -7409,9 +8802,9 @@
         const p2 = mk('PC', 580, 425, 'PC2');
         setPort(p1, 0, { ip: '192.168.10.10', mask: 24, gateway: '192.168.10.254' });
         setPort(p2, 0, { ip: '192.168.20.10', mask: 24, gateway: '192.168.20.254' });
-        link(p1, 0, sw, 0); // PC1 — SW1 GE0/0/1
-        link(p2, 0, sw, 1); // PC2 — SW1 GE0/0/2
-        link(sw, 2, r, 0); // SW1 GE0/0/3 — R1 GE0/0/0（唯一的「单臂」链路）
+        link(p1, 0, sw, 0); // PC1 — SW1 E0/0/1
+        link(p2, 0, sw, 1); // PC2 — SW1 E0/0/2
+        link(sw, 2, r, 0); // SW1 E0/0/3 — R1 GE0/0/0（唯一的「单臂」链路）
         setPort(sw, 0, { mode: 'access', vlan: 10 });
         setPort(sw, 1, { mode: 'access', vlan: 20 });
         if (!sw.vlans.includes(10)) sw.vlans.push(10);
@@ -7419,8 +8812,8 @@
         return { focus: r };
       },
       goals: [
-        '交换机侧：<code>vlan batch 10 20</code>，GE0/0/1 划 access vlan 10、GE0/0/2 划 access vlan 20',
-        '上联口 GE0/0/3 配 trunk：<code>port link-type trunk</code> → <code>port trunk allow-pass vlan 10 20</code>',
+        '交换机侧：<code>vlan batch 10 20</code>，E0/0/1 划 access vlan 10、E0/0/2 划 access vlan 20',
+        '上联口 E0/0/3 配 trunk：<code>port link-type trunk</code> → <code>port trunk allow-pass vlan 10 20</code>',
         '路由器上建子接口：<code>interface GigabitEthernet0/0/0.10</code> → <code>dot1q termination vid 10</code> → <code>ip address 192.168.10.254 24</code> → <code>arp broadcast enable</code>',
         '再配一个 <code>GigabitEthernet0/0/0.20</code>（vid 20，地址 192.168.20.254 24）',
         '用 <code>display ip interface brief</code> 看到两个子接口，然后 PC1 ping 192.168.20.10 通了就成功'
@@ -7485,8 +8878,8 @@
         link(p1, 0, r1, 0);
         link(p2, 0, r2, 0);
         link(r1, 1, r2, 1); // R1-R2 骨干
-        link(r1, 2, r3, 0); // R1-R3
-        link(r2, 2, r3, 1); // R2-R3
+        link(r1, 3, r3, 0); // R1 GE0/0/2 - R3 GE0/0/0（LAN 电口）
+        link(r2, 3, r3, 1); // R2 GE0/0/2 - R3 GE0/0/1
         setPort(r1, 0, { ip: '192.168.1.1', mask: 24 });
         setPort(r2, 0, { ip: '192.168.2.1', mask: 24 });
         return { focus: r1 };
@@ -7569,6 +8962,44 @@
       ]
     },
     {
+      id: 'dhcp-relay',
+      name: '实验六·补 · DHCP 中继（跨网段分配地址）',
+      level: '进阶',
+      desc: 'DHCP 服务器在另一个网段：由网关设备做中继，把请求转给服务器。PC 一台都还没地址。',
+      build() {
+        const r1 = mk('AR6121', 300, 80, 'R1');
+        const r2 = mk('AR6121', 660, 80, 'R2');
+        const sw = mk('S3700', 260, 260, 'SW1');
+        const p1 = mk('PC', 150, 420, 'PC1');
+        link(p1, 0, sw, 0);
+        link(sw, 1, r1, 0);
+        link(r1, 1, r2, 0);
+        setPort(sw, 0, { mode: 'access', vlan: 10 });
+        setPort(sw, 1, { mode: 'access', vlan: 10 });
+        if (!sw.vlans.includes(10)) sw.vlans.push(10);
+        // 路由器接入口是三层口：直接配网关地址，不需要 VLAN / Vlanif
+        setPort(r1, 0, { ip: '192.168.10.254', mask: 24, mode: 'routed' });
+        setPort(r1, 1, { ip: '10.0.0.1', mask: 24, mode: 'routed' });
+        setPort(r2, 0, { ip: '10.0.0.2', mask: 24, mode: 'routed' });
+        return { focus: r1 };
+      },
+      goals: [
+        'R1：<code>dhcp enable</code> → <code>interface GigabitEthernet0/0/0</code> → <code>ip address 192.168.10.254 24</code>（路由器接入口是三层口，直接当网关）',
+        '同一个接口下继续：<code>dhcp select relay</code> → <code>dhcp relay server-ip 10.0.0.2</code>',
+        'R2：<code>dhcp enable</code> → <code>ip pool p10</code> → <code>network 192.168.10.0 mask 255.255.255.0</code> → <code>gateway-list 192.168.10.254</code>',
+        'R2 必须有回程路由：<code>ip route-static 192.168.10.0 24 10.0.0.1</code>',
+        'PC1 上敲 <code>dhcp</code>，拿到 192.168.10.x、网关 192.168.10.254 就成功'
+      ],
+      tips: [
+        'DHCP 广播出不了路由器 —— 所以跨网段必须有人做中继，把广播变成发往服务器的单播。',
+        '交换机接 PC 的口是 access vlan 10；路由器这边不感知 VLAN，直接用三层口配网关地址即可（真机路由器以太口默认就是三层口）。',
+        '中继设备自己也要 <code>dhcp enable</code>，这是最容易被忽略的一步。',
+        '地址池要按<b>客户端所在网段</b>配（192.168.10.0/24），不是服务器自己的网段。',
+        '服务器还得有回程路由，否则请求能到、回应回不来 —— 模拟器会在回显里直接提示。',
+        '地址池漏了 <code>gateway-list</code>，PC 拿到地址也没有网关，跨网段照样不通。'
+      ]
+    },
+    {
       id: 'acl',
       name: '实验七 · ACL 访问控制',
       level: '进阶',
@@ -7647,6 +9078,108 @@
         'NAT 里的 ACL 和过滤用的 ACL 作用不同：它只是「挑选哪些流量需要转换」，没匹配到的流量不做转换。',
         'R2 模拟运营商设备，它上面不需要、也不应该有到 192.168.1.0/24 的路由 —— 这正是 NAT 要解决的问题。',
         '转换结果会记录在会话表里，<code>display nat session all</code> 能看到「内网地址:端口 → 公网地址:端口」。'
+      ]
+    },
+    {
+      id: 'nat-server',
+      name: '实验八·补 · NAT Server（内网服务器对外发布）',
+      level: '进阶',
+      desc: '公网用户访问一个公网地址，被 NAT 设备转到内网服务器 —— 和实验八的 NAT outbound 方向正好相反。',
+      build() {
+        const pub = mk('PC', 90, 90, 'PubPC');
+        const r2 = mk('AR6121', 330, 90, 'R2');
+        const r1 = mk('AR6121', 600, 90, 'R1');
+        const sw = mk('S3700', 620, 300, 'SW1');
+        const srv = mk('PC', 620, 450, 'Server');
+        link(pub, 0, r2, 0);
+        link(r2, 1, r1, 1);
+        link(r1, 0, sw, 0);
+        link(sw, 1, srv, 0);
+        setPort(pub, 0, { ip: '200.1.1.100', mask: 24, gateway: '200.1.1.1' });
+        setPort(srv, 0, { ip: '192.168.10.10', mask: 24, gateway: '192.168.10.254' });
+        setPort(r2, 0, { ip: '200.1.1.1', mask: 24, mode: 'routed' });
+        setPort(r2, 1, { ip: '100.1.1.1', mask: 24, mode: 'routed' });
+        setPort(r1, 1, { ip: '100.1.1.2', mask: 24, mode: 'routed' });
+        setPort(r1, 0, { ip: '192.168.10.254', mask: 24, mode: 'routed' });
+        setPort(sw, 0, { mode: 'access', vlan: 10 });
+        setPort(sw, 1, { mode: 'access', vlan: 10 });
+        if (!sw.vlans.includes(10)) sw.vlans.push(10);
+        return { focus: r1 };
+      },
+      goals: [
+        '先验证：PubPC 上 <code>ping 100.1.1.2</code> 通（那是 R1 的公网口地址，只能 ping 到 R1 自己）',
+        'R1：<code>interface GigabitEthernet0/0/1</code> → <code>nat server global 100.1.1.2 inside 192.168.10.10</code>',
+        '端口映射写法：<code>nat server protocol tcp global 100.1.1.2 8080 inside 192.168.10.10 80</code>',
+        'PubPC 再 <code>ping 100.1.1.2</code> —— 这次报文被打到内网服务器 192.168.10.10',
+        'R1 上 <code>display nat server</code> 看映射表，<code>display nat session all</code> 看会话（标 * 的是入向）'
+      ],
+      tips: [
+        'NAT outbound 解决「内网出去」，NAT Server 解决「外网进来」，两个方向不要混。',
+        'global 地址一般就用公网口地址；用别的地址时，外部要能路由到它。',
+        '报文到了 NAT 设备后<b>目的地址被改写</b>成 inside 地址，所以 R1 要有一条到内网的路由（这里是直连）。',
+        '内网服务器不需要配公网地址，也不需要默认路由指向公网 —— 这就是 NAT 的好处。',
+        '真机上还要注意安全策略放行；模拟器只做地址转换这一层。'
+      ]
+    },
+    {
+      id: 'mgmt',
+      name: '实验九 · 设备远程管理（Telnet + AAA）',
+      level: '进阶',
+      desc: '开 Telnet 服务、建本地用户、VTY 认证，然后从另一台设备远程登进来。',
+      build() {
+        const r1 = mk('AR6121', 250, 110, 'R1');
+        const r2 = mk('AR6121', 600, 110, 'R2');
+        link(r2, 1, r1, 1);
+        setPort(r1, 1, { ip: '10.0.0.1', mask: 24, mode: 'routed' });
+        setPort(r2, 1, { ip: '10.0.0.2', mask: 24, mode: 'routed' });
+        return { focus: r1 };
+      },
+      goals: [
+        'R1：<code>telnet server enable</code>（V200 之后默认是关闭的）',
+        'R1：<code>aaa</code> → <code>local-user admin password irreversible-cipher Huawei@123</code> → <code>local-user admin privilege level 15</code> → <code>local-user admin service-type telnet</code>',
+        'R1：<code>user-interface vty 0 4</code> → <code>authentication-mode aaa</code>',
+        'R2：<code>telnet 10.0.0.1</code>，输入用户名 admin、密码 Huawei@123',
+        '登录成功后终端会切到 R1 —— 敲 <code>display ip interface brief</code> 确认自己在谁身上'
+      ],
+      tips: [
+        '三个地方要对上：<code>authentication-mode aaa</code>、<code>local-user</code> 里配了密码、<code>service-type</code> 允许 telnet。缺一个就登不进去。',
+        '只做 <code>telnet server enable</code> 而 VTY 还是缺省的 <code>none</code>，谁都能直接进 —— 生产环境不允许这样。',
+        '<code>protocol inbound ssh</code> 可以把 Telnet 关掉，只留 SSH（真机上 SSH 还要生成本地密钥对）。',
+        '本地用户密码建议用 <code>irreversible-cipher</code>（不可逆加密），<code>simple</code> 是明文。',
+        '登录失败时模拟器会直接告诉你卡在哪一步：没开服务、协议不允许、还是用户名/密码不对。'
+      ]
+    },
+    {
+      id: 'ipv6',
+      name: '实验十 · IPv6 基础',
+      level: '进阶',
+      desc: '两台路由器 + 两台 PC，配 IPv6 地址和静态路由，让 IPv6 网段互通。',
+      build() {
+        const p1 = mk('PC', 90, 400, 'PC1');
+        const r1 = mk('AR6121', 250, 110, 'R1');
+        const r2 = mk('AR6121', 570, 110, 'R2');
+        const p2 = mk('PC', 730, 400, 'PC2');
+        link(p1, 0, r1, 0);
+        link(r1, 1, r2, 1);
+        link(r2, 0, p2, 0);
+        setPort(p1, 0, { ipv6: { addr: '2001:db8:1::10', prefix: 64, gw: '2001:db8:1::1' } });
+        setPort(p2, 0, { ipv6: { addr: '2001:db8:2::10', prefix: 64, gw: '2001:db8:2::1' } });
+        return { focus: r1 };
+      },
+      goals: [
+        'R1 和 R2 都要先在系统视图执行 <code>ipv6</code>（全局开启）',
+        'R1：GE0/0/0 <code>ipv6 address 2001:db8:1::1 64</code>；GE0/0/1 <code>ipv6 address 2001:db8:12::1 64</code>',
+        'R2：GE0/0/0 <code>ipv6 address 2001:db8:2::1 64</code>；GE0/0/1 <code>ipv6 address 2001:db8:12::2 64</code>',
+        'R1：<code>ipv6 route-static 2001:db8:2:: 64 2001:db8:12::2</code>',
+        'R2：<code>ipv6 route-static 2001:db8:1:: 64 2001:db8:12::1</code>',
+        'PC1：<code>ping ipv6 2001:db8:2::10</code>，通了就成功；<code>display ipv6 neighbors</code> 看邻居'
+      ],
+      tips: [
+        'PC 的 IPv6 地址已经预置好（网关指向路由器接口），重点在路由器和路由上。',
+        '⚠️ <b>忘了 <code>ipv6</code> 全局开关就白配</b>：接口下<code>ipv6 address</code> 不会报错，但地址不生效 —— 这是 IPv6 最常见的坑。',
+        'IPv6 没有 ARP，改用 ND（邻居发现），对应命令是 <code>display ipv6 neighbors</code>。',
+        '静态路由写的是<b>前缀长度</b>（64），不是掩码；下一跳必须写，不能只写出接口。',
+        '一台设备可以同时跑 IPv4 和 IPv6（双栈），两套地址、两套路由表互不干扰。'
       ]
     }
   ];
@@ -7754,9 +9287,11 @@
           <div><code>&lt;SW1&gt;</code><span>用户视图</span></div>
           <div class="lv2"><code>[SW1]</code><span>system-view 进入系统视图</span></div>
           <div class="lv3"><code>[SW1-vlan10]</code><span>vlan 10 进入 VLAN 视图</span></div>
-          <div class="lv3"><code>[SW1-GigabitEthernet0/0/1]</code><span>interface GE0/0/1 进入接口视图</span></div>
+          <div class="lv3"><code>[SW1-Ethernet0/0/1]</code><span>interface E0/0/1 进入接口视图（二层交换机；三层交换机是 GigabitEthernet0/0/x，插卡口是 0/1/x）</span></div>
           <div class="lv3"><code>[SW1-Vlanif10]</code><span>interface Vlanif10</span></div>
           <div class="lv3"><code>[R1-GigabitEthernet0/0/0.10]</code><span>interface GE0/0/0.10（子接口，单臂路由）</span></div>
+          <div class="lv3"><code>[R1-ui-vty0-4]</code><span>user-interface vty 0 4</span></div>
+          <div class="lv3"><code>[R1-aaa]</code><span>aaa</span></div>
           <div class="lv3"><code>[SW1-port-group]</code><span>interface range / port-group group-member（批量配置端口）</span></div>
           <div class="lv3"><code>[SW1-acl-adv-3000]</code><span>acl number 3000</span></div>
           <div class="lv3"><code>[SW1-ospf-1]</code><span>ospf 1</span></div>
@@ -7775,12 +9310,16 @@
           <div class="r"><b>VLAN</b><span><code>vlan 10</code>（进入 VLAN 视图，可配 <code>description</code> / <code>name</code>）· <code>vlan batch 10 20</code> · <code>port link-type access</code> · <code>port default vlan 10</code></span></div>
           <div class="r"><b>Trunk</b><span><code>port link-type trunk</code> · <code>port trunk allow-pass vlan 10 20</code> 或 <code>all</code></span></div>
           <div class="r"><b>三层</b><span><code>interface Vlanif10</code> · <code>ip address 192.168.10.1 24</code></span></div>
+          <div class="r"><b>二层 / 三层口</b><span>交换机物理口默认二层：要配 IP 先 <code>undo portswitch</code>；路由器以太口默认三层：要当交换口用先 <code>portswitch</code>。两种命令不通用，用错会报错并提示。</span></div>
           <div class="r"><b>单臂路由</b><span><code>interface GigabitEthernet0/0/0.10</code> → <code>dot1q termination vid 10</code> → <code>ip address 192.168.10.254 24</code> → <b><code>arp broadcast enable</code></b>（少这条 ping 不通）。上联口要 <code>port link-type trunk</code> + <code>port trunk allow-pass vlan 10 20</code>。</span></div>
           <div class="r"><b>静态路由</b><span><code>ip route-static 192.168.2.0 24 10.0.0.2</code>；下一跳也可以写成出接口 <code>ip route-static 192.168.2.0 24 GigabitEthernet0/0/1</code>。下一跳当前不可达时，路由表里那条的 Flags 只有 <code>R</code> 没有 <code>D</code>，并在表下面列出来。</span></div>
           <div class="r"><b>RIP</b><span><code>rip 1</code> → <code>version 2</code> → <code>network 192.168.1.0</code>（只写网段按主类网络通告，也可写 <code>network 10.0.0.0 0.0.0.255</code>）；<code>display rip</code> / <code>display rip routing</code> / <code>display rip neighbor</code> 查看。<code>silent-interface all</code> 可抑制报文。<b>两端 version 必须一致</b>（缺省是 version 1，只配一端 version 2 会永远没邻居）。</span></div>
           <div class="r"><b>OSPF</b><span><code>ospf 1 router-id 1.1.1.1</code> → <code>area 0</code> → <code>network 10.0.0.0 0.0.0.255</code></span></div>
-          <div class="r"><b>DHCP</b><span><code>dhcp enable</code> · <code>ip pool pool1</code> · <code>network 192.168.10.0 mask 24</code> · <code>gateway-list 192.168.10.1</code> · 接口下 <code>dhcp select global</code></span></div>
-          <div class="r"><b>查看</b><span><code>display this</code> · <code>display ip interface brief</code> · <code>display interface GE0/0/1</code> · <code>display port vlan</code> · <code>display vlan</code> · <code>display ip routing-table</code> · <code>display mac-address</code> · <code>display stp brief</code> · <code>display ospf peer brief</code> · <code>display ospf interface</code> · <code>display rip</code> · <code>display rip routing</code></span></div>
+          <div class="r"><b>DHCP</b><span><code>dhcp enable</code> · <code>ip pool pool1</code> · <code>network 192.168.10.0 mask 24</code> · <code>gateway-list 192.168.10.1</code> · 接口下 <code>dhcp select global</code><br />跨网段用中继：<code>dhcp select relay</code> + <code>dhcp relay server-ip 10.0.0.2</code>（中继设备和服务器都要 <code>dhcp enable</code>）</span></div>
+          <div class="r"><b>NAT Server</b><span>外网访问内网服务器：<code>interface GigabitEthernet0/0/1</code> → <code>nat server global 100.1.1.2 inside 192.168.10.10</code>（带端口：<code>nat server protocol tcp global 100.1.1.2 8080 inside 192.168.10.10 80</code>）。和 <code>nat outbound</code> 方向相反，<code>display nat server</code> 查看。</span></div>
+          <div class="r"><b>设备管理</b><span><code>telnet server enable</code> · <code>aaa</code> → <code>local-user admin password irreversible-cipher 密码</code> → <code>local-user admin service-type telnet</code> · <code>user-interface vty 0 4</code> → <code>authentication-mode aaa</code>；然后在别的设备上 <code>telnet 10.0.0.1</code> 登录。</span></div>
+          <div class="r"><b>IPv6</b><span>先全局 <code>ipv6</code>（不执行这步接口地址不生效），再 <code>interface X</code> → <code>ipv6 address 2001:db8:1::1 64</code>；静态路由 <code>ipv6 route-static 2001:db8:2:: 64 2001:db8:12::2</code>；<code>ping ipv6 2001:db8:2::10</code>、<code>display ipv6 neighbors</code>。</span></div>
+          <div class="r"><b>查看</b><span><code>display this</code> · <code>display ip interface brief</code> · <code>display interface GE0/0/1</code> · <code>display port vlan</code> · <code>display vlan</code> · <code>display ip routing-table</code> · <code>display mac-address</code> · <code>display stp brief</code> · <code>display ospf peer brief</code> · <code>display ospf interface</code> · <code>display rip</code> · <code>display rip routing</code> · <code>display ipv6 interface brief</code> · <code>display ipv6 routing-table</code> · <code>display ipv6 neighbors</code> · <code>display nat server</code></span></div>
           <div class="r"><b>批量配端口</b><span>端口多的时候不用一个个进：<code>interface range GigabitEthernet0/0/1 to GigabitEthernet0/0/5</code>，或者 <code>port-group group-member GE0/0/1 to GE0/0/8</code>，都会进入端口组视图 <code>[SW1-port-group]</code>，之后敲的命令会批量下发到组内每个口。</span></div>
           <div class="r"><b>ACL</b><span><code>acl number 3000</code> → <code>rule 5 deny ip source 192.168.10.0 0.0.0.255 destination 192.168.20.0 0.0.0.255</code> → <code>rule 10 permit ip</code>；再到 <code>interface Vlanif10</code> 下 <code>traffic-filter inbound acl 3000</code>。注意 ACL 末尾缺省是「拒绝所有」，别只写 deny。</span></div>
           <div class="r"><b>NAT</b><span><code>acl number 2000</code> → <code>rule 5 permit source 192.168.1.0 0.0.0.255</code>；再到出口接口 <code>nat outbound 2000</code>（Easy IP，借用接口公网地址）。用 <code>display nat session all</code> 看转换表项。</span></div>
