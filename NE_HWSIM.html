@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <!--
   NE_HWSIM —— 华为 VRP 网络实训模拟器（单文件版）
-  版本：v1.6.1
+  版本：v1.6.2
 
   Copyright (c) 2026 新易科技工作室 NewE
   作者：Liuyi  <yimr@sohu.com>
@@ -7298,7 +7298,7 @@
   /* ------------------------------ 版本信息 ------------------------------ */
   /* 版本号的唯一来源：改这一处即可。
      build.mjs 会把它读出来写进产物开头的注释，所以交付文件本身也能看出是哪个版本。 */
-  const APP_VERSION = '1.6.1';
+  const APP_VERSION = '1.6.2';
   const APP_INFO = {
     studio: '新易科技工作室 NewE',
     author: 'Liuyi',
@@ -7548,7 +7548,13 @@
         onLongPress: () => removeDevice(d),
         onContextMenu: () => removeDevice(d) // 桌面右键仍是删除
       });
-      el.querySelector('.x').onclick = (ev) => {
+      // ❗× 在 .head 里面，必须自己拦下 pointerdown：
+      // bindGestures(head) 会无条件 setPointerCapture(head)，pointerup 就被抢到头部，
+      // 浏览器随后把 click 派给 head（pointerdown/pointerup 的公共祖先），× 的 onclick 永远收不到。
+      // 右键删除走的是 contextmenu，不经过 capture，所以这个 bug 只在左键点 × 时暴露。
+      const xBtn = el.querySelector('.x');
+      xBtn.addEventListener('pointerdown', (ev) => ev.stopPropagation());
+      xBtn.onclick = (ev) => {
         ev.stopPropagation();
         removeDevice(d);
       };
@@ -7755,7 +7761,9 @@
       longFired = false;
       try { el.setPointerCapture(pid); } catch (e) { /* 某些环境不支持，忽略 */ }
       if (opt.onDown) opt.onDown(ev, ctx);
-      if (opt.onLongPress) {
+      /* 长按只给触摸端（笔也算）。鼠标按住不动 0.5 秒就弹「确定删除设备吗」是纯粹的误触 ——
+         桌面要删设备有点 ×、右键、选中后按 Delete 三条路，不缺长按这一条。 */
+      if (opt.onLongPress && lastType !== 'mouse') {
         longTimer = setTimeout(() => {
           longTimer = null;
           longFired = true;
@@ -9423,7 +9431,7 @@
           <div class="r"><b>形态</b><span>单个 HTML 文件，双击即用。没有后端、没有账号、<b>不联网、不采集任何数据</b> —— 断网也能正常跑。</span></div>
           <div class="r"><b>内置</b><span>14 个实训实验 · 4 种设备（S5700-28C-EI 三层交换机 / S3700-28TP-EI 二层交换机 / AR6121E 路由器 / PC）· 华为 VRP 命令行</span></div>
           <div class="r"><b>端口</b><span>按真机型号还原，含<b>光电复用（Combo）口</b> —— 接网线用电口、插光模块用光口，二选一</span></div>
-          <div class="r"><b>体积</b><span>约 424 KB 的单个 HTML 文件，不需要安装任何东西</span></div>
+          <div class="r"><b>体积</b><span>约 425 KB 的单个 HTML 文件，不需要安装任何东西</span></div>
           <div class="r"><b>许可</b><span><b>MIT License</b> —— 可以自由使用、修改、商用，甚至不用告诉我</span></div>
         </div>
 
