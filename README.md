@@ -3,7 +3,7 @@
 **一个 HTML 文件，双击就能练华为交换机 / 路由器命令 —— 不用装 eNSP，不用装 GNS3，不联网也能用。**
 
 [![在线试玩](https://img.shields.io/badge/%E5%9C%A8%E7%BA%BF%E8%AF%95%E7%8E%A9-GitHub%20Pages-orange)](https://liuyimr.github.io/NE_HWSIM/NE_HWSIM.html)
-![单文件](https://img.shields.io/badge/%E5%8D%95%E6%96%87%E4%BB%B6-423%20KB-brightgreen)
+![单文件](https://img.shields.io/badge/%E5%8D%95%E6%96%87%E4%BB%B6-424%20KB-brightgreen)
 ![无需安装](https://img.shields.io/badge/%E6%97%A0%E9%9C%80%E5%AE%89%E8%A3%85-%E5%8F%8C%E5%87%BB%E5%8D%B3%E7%94%A8-success)
 ![离线可用](https://img.shields.io/badge/%E7%A6%BB%E7%BA%BF%E5%8F%AF%E7%94%A8-100%25-informational)
 ![许可证](https://img.shields.io/badge/license-MIT-blue)
@@ -25,6 +25,9 @@
 
 就这三步，没有第四步。发给学生：微信、QQ、U 盘、班级群，随便怎么传都行。
 
+> 更细的图文说明 —— 端口形状与 Combo 口、电脑/手机手势、命令速查、导入导出规则、常见问题 ——
+> 见 **[使用说明.md](使用说明.md)**（纯 Markdown，GitHub 上可直接读）。
+
 > 文件必须保留 `.html` 后缀。如果微信传输后后缀变了，改回 `.html` 即可。
 
 ---
@@ -33,7 +36,7 @@
 
 给**网络课老师**和**备考华为认证的同学**做的一个练习工具。
 
-eNSP 要装 VirtualBox，GNS3 要配镜像，虚拟机镜像动辄几个 GB，还得看电脑配置。很多学生卡在第一步就放弃了，然后就没有然后。NE_HWSIM 的判断是：**先把门槛降到零** —— 一个 423 KB 的 HTML 文件，发过去、双击、开始敲命令，整个过程不需要任何解释。
+eNSP 要装 VirtualBox，GNS3 要配镜像，虚拟机镜像动辄几个 GB，还得看电脑配置。很多学生卡在第一步就放弃了，然后就没有然后。NE_HWSIM 的判断是：**先把门槛降到零** —— 一个 424 KB 的 HTML 文件，发过去、双击、开始敲命令，整个过程不需要任何解释。
 
 它**不是**真机的替代品，也跑不了复杂的园区网。它解决的是一个很具体的问题：**让学生能在自己的笔记本上、离线、零安装地，把 VLAN / Trunk / OSPF / ACL / NAT 这些命令反复敲到熟。**
 
@@ -123,7 +126,7 @@ eNSP 要装 VirtualBox，GNS3 要配镜像，虚拟机镜像动辄几个 GB，�
 | | **NE_HWSIM** | eNSP | GNS3 | Cisco Packet Tracer |
 |---|---|---|---|---|
 | 安装 | **双击 HTML，零安装** | 需装 VirtualBox + eNSP | 需装虚拟机 + 导入镜像 | 需注册 Cisco 账号 |
-| 体积 | **423 KB** | 数 GB | 数 GB | 数百 MB |
+| 体积 | **424 KB** | 数 GB | 数 GB | 数百 MB |
 | 联网 | **可完全离线** | 首次需下载镜像 | 需下载镜像 | 需登录 |
 | 命令语法 | 华为 VRP | 华为 VRP | 多厂商 | Cisco IOS |
 | 上手门槛 | **极低** | 中（装环境容易失败） | 高 | 中 |
@@ -388,7 +391,7 @@ MIT License —— 随便用，商用也行，改了也不用说。详见 [LICEN
 
 **NE_HWSIM — a Huawei VRP network lab simulator that fits in one HTML file.**
 
-A single 423 KB HTML file. Double-click it and you get a drag-and-drop network topology builder plus a
+A single 424 KB HTML file. Double-click it and you get a drag-and-drop network topology builder plus a
 faithful Huawei VRP CLI (user view → system view → interface view → VLAN view → port-group view → ACL view
 → NAT address-pool view → OSPF area view → RIP view → sub-interface view), with authentic `^` error markers and `save` interaction.
 
