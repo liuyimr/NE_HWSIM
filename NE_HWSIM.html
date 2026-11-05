@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <!--
   NE_HWSIM —— 华为 VRP 网络实训模拟器（单文件版）
-  版本：v1.6.0
+  版本：v1.6.1
 
   Copyright (c) 2026 新易科技工作室 NewE
   作者：Liuyi  <yimr@sohu.com>
@@ -211,6 +211,8 @@
   .port:hover{background:var(--cy);border-color:#79b8ff;transform:scale(1.16);z-index:3}
   /* 光口（SFP）画成圆形：真机 LC 接口是圆的，RJ45 是方的，一眼能分开 */
   .port.sfp{border-radius:50%}
+  /* 光电复用口：圆角介于方形电口与圆形光口之间 */
+  .port.combo{border-radius:30%;border-color:#7a6a3a}
   .port.up{background:#1f6f36;border-color:#2ea043}
   .port.shut{background:#6e2c2c;border-color:#8b3a3a}
   .port.pend{background:var(--or);border-color:#f0c674;transform:scale(1.2);box-shadow:0 0 8px rgba(210,153,34,.7)}
@@ -705,30 +707,31 @@
       type: 'switch',
       label: '二层交换机',
       vendor: 'Huawei',
-      desc: '24×10/100 电口 + 4×GE 上行',
+      desc: '24×10/100 电口 + 2×GE Combo + 2×GE 光口',
       l2only: true,
       // 真机 S3700-28TP-EI：24 个 10/100Base-TX 电口（Ethernet0/0/1-24）
-      // + 4 个千兆上行口（GigabitEthernet0/0/1-4，其中 2 个 SFP、2 个 Combo）
+      // + 4 个千兆上行口：前 2 个是 **Combo（光电复用）**，后 2 个是纯 SFP 光口
       ports: [
         ...Array.from({ length: 24 }, (_, i) => ({ name: `Ethernet0/0/${i + 1}`, kind: 'RJ45', speed: '100M' })),
-        ...Array.from({ length: 4 }, (_, i) => ({ name: `GigabitEthernet0/0/${i + 1}`, kind: 'SFP', speed: '1G' }))
+        ...Array.from({ length: 2 }, (_, i) => ({ name: `GigabitEthernet0/0/${i + 1}`, kind: 'COMBO', speed: '1G' })),
+        ...Array.from({ length: 2 }, (_, i) => ({ name: `GigabitEthernet0/0/${i + 3}`, kind: 'SFP', speed: '1G' }))
       ]
     },
     'AR6121': {
       key: 'AR6121',
       // 真机 NetEngine AR6121E：2×GE Combo WAN + 1×10GE SFP+ WAN + 8×GE 电口 LAN + 1×GE Combo LAN
-      // （共 11 个 GE + 1 个 10GE）。Combo 口是光电复用，这里按「插电口」建模（RJ45）。
+      // （共 11 个 GE + 1 个 10GE）。Combo 口面板上光、电两个连接器复用，内部只有一个转发通道，二选一工作。
       model: 'AR6121E',
       type: 'router',
       label: '企业路由器',
       vendor: 'Huawei',
       desc: '2×GE Combo WAN + 1×10GE + 9×GE LAN',
       ports: [
-        { name: 'GigabitEthernet0/0/0', kind: 'RJ45', role: 'WAN' },
-        { name: 'GigabitEthernet0/0/1', kind: 'RJ45', role: 'WAN' },
+        { name: 'GigabitEthernet0/0/0', kind: 'COMBO', role: 'WAN' },
+        { name: 'GigabitEthernet0/0/1', kind: 'COMBO', role: 'WAN' },
         { name: '10GE0/0/0', kind: 'SFP', role: 'WAN' },
         ...Array.from({ length: 8 }, (_, i) => ({ name: `GigabitEthernet0/0/${i + 2}`, kind: 'RJ45', role: 'LAN' })),
-        { name: 'GigabitEthernet0/0/10', kind: 'RJ45', role: 'LAN' }
+        { name: 'GigabitEthernet0/0/10', kind: 'COMBO', role: 'LAN' }
       ]
     },
     'PC': {
@@ -747,9 +750,10 @@
     return {
       id: uid('p'),
       name,
-      kind, // RJ45 | SFP
+      kind, // RJ45（电口）| SFP（光口）| COMBO（光电复用）
       mode, // access | trunk | hybrid | routed
       role: (extra && extra.role) || null, // WAN | LAN（路由器固定口的面板角色）
+      speed: (extra && extra.speed) || null, // 100M | 1G（display interface 用）
       shutdown: false,
       vlan: 1, // access / hybrid 缺省 VLAN
       allowedVlans: 'all', // trunk 允许的 VLAN：'all' 或 number[]
@@ -974,7 +978,12 @@
       if (!portA || !portB) return '端口不存在';
       if (portA.cableId) return `${devA.hostname} 的 ${portA.name} 已被占用`;
       if (portB.cableId) return `${devB.hostname} 的 ${portB.name} 已被占用`;
-      if (portA.kind === 'SFP' !== (portB.kind === 'SFP')) return '光口与电口不能互连（请使用同类型端口）';
+      // 介质校验：Combo（光电复用）口两端都能接，按对端决定用电还是用光；
+      // 只有「两端都是固定介质且不一样」时才不允许（RJ45 ↔ SFP）。
+      const mediaOf = (p) => (p.kind === 'COMBO' ? null : p.kind);
+      const ma = mediaOf(portA);
+      const mb = mediaOf(portB);
+      if (ma && mb && ma !== mb) return '光口与电口不能互连（请使用同类型端口，或换成 Combo 口）';
       return null;
     },
 
@@ -4424,8 +4433,17 @@
     }
 
     out.push(`IP Sending Frames' Format is PKTFMT_ETHNT_2, Hardware address is ${hwAddr(dev)}`);
-    out.push('Port Mode: COMMON COPPER');
-    out.push('Speed : 1000,   Loopback: NONE');
+    // 介质：电口 COPPER、光口 FIBER；Combo 口按「实际插的是哪种」显示，没连就是 AUTO
+    let portMode = 'COMMON COPPER';
+    if (p.kind === 'COMBO') {
+      const peer = p.cableId ? E.Net.peerOf(dev, p) : null;
+      const peerKind = peer && peer.port ? peer.port.kind : null;
+      portMode = peerKind === 'SFP' ? 'COMBO AUTO(FIBER)' : peerKind ? 'COMBO AUTO(COPPER)' : 'COMBO AUTO';
+    } else if (p.kind === 'SFP') {
+      portMode = 'COMMON FIBER';
+    }
+    out.push(`Port Mode: ${portMode}`);
+    out.push(`Speed : ${p.speed === '100M' ? 100 : 1000},   Loopback: NONE`);
     out.push('Duplex: FULL,   Negotiation: ENABLE');
     out.push('Mdi: AUTO');
     out.push('Last 300 seconds input rate 0 bits/sec, 0 packets/sec');
@@ -7106,8 +7124,8 @@
                 warn: `${dev.hostname} ${name}：对端是电口，判定为旧文件的电口，已换算成 Ethernet0/0/${n}`
               };
             }
-            // 对端也是光口 → 确实是上行口互联，不用提醒
-            if (peerPort && peerPort.kind === 'SFP') return { name, warn: null };
+            // 对端是光口或 Combo → 确实是上行口互联，不用提醒
+            if (peerPort && (peerPort.kind === 'SFP' || peerPort.kind === 'COMBO')) return { name, warn: null };
             return { name, warn: `${dev.hostname} ${name}：旧文件里这可能指电口 E0/0/${n}；现在 GE0/0/${n} 是上行光口，已按上行口连接` };
           }
           return { name, warn: null };
@@ -7280,7 +7298,7 @@
   /* ------------------------------ 版本信息 ------------------------------ */
   /* 版本号的唯一来源：改这一处即可。
      build.mjs 会把它读出来写进产物开头的注释，所以交付文件本身也能看出是哪个版本。 */
-  const APP_VERSION = '1.6.0';
+  const APP_VERSION = '1.6.1';
   const APP_INFO = {
     studio: '新易科技工作室 NewE',
     author: 'Liuyi',
@@ -7567,12 +7585,14 @@
     if (p.mode === 'trunk') cls.push('trunk');
     if (UI.pend && UI.pend.devId === dev.id && UI.pend.portId === p.id) cls.push('pend');
     if (p.kind === 'SFP') cls.push('sfp'); // 光口画成圆形，和电口区分开
+    if (p.kind === 'COMBO') cls.push('combo'); // 光电复用：圆角介于两者之间
     return cls.join(' ');
   }
 
   function portTitle(dev, p) {
     const rows = [];
     rows.push(p.shutdown ? '状态：已关闭（shutdown）' : p.cableId ? '状态：已连线 Up' : '状态：未连线 Down');
+    rows.push('介质：' + (p.kind === 'SFP' ? '光口（SFP）' : p.kind === 'COMBO' ? '光电复用（可接电口或光口）' : '电口（RJ45）'));
     rows.push('类型：' + (p.mode === 'routed' ? '路由口' : p.mode === 'trunk' ? 'Trunk' : p.mode === 'hybrid' ? 'Hybrid' : 'Access') + (p.role ? '（' + p.role + ' 口）' : ''));
     if (p.mode === 'access') rows.push('VLAN：' + p.vlan);
     if (p.mode === 'trunk') rows.push('放行 VLAN：' + (p.allowedVlans === 'all' ? 'all' : (p.allowedVlans || []).join(',')));
@@ -9339,6 +9359,7 @@
           <div class="r"><b>删除设备</b><span>点设备右上角 ×，或右键设备；选中后按 Delete 键</span></div>
           <div class="r"><b>加文字注释</b><span>点画布左下角的 <b>T 文字</b>，直接在画布上写注释；拖动可移动，双击可改字，右键或长按删除</span></div>
           <div class="r"><b>端口颜色</b><span>灰＝未连线，绿＝已连通，红＝已 shutdown，紫＝Trunk 口，黄＝当前选中待连线</span></div>
+          <div class="r"><b>端口形状</b><span>方形＝电口（RJ45），圆形＝光口（SFP），<b>圆角＝光电复用 Combo</b>（接电口就用电、接光口就用光，二选一，一个口只能接一条线）</span></div>
         </div>
         <h4 class="sec">画布操作 · 手机 / 平板（触摸）</h4>
         <div class="kv">

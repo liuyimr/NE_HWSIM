@@ -148,11 +148,12 @@ eNSP 要装 VirtualBox，GNS3 要配镜像，虚拟机镜像动辄几个 GB，�
 **`display` 系列**：`display vlan` · `display interface` · `display port vlan` · `display ip interface brief` · `display ip routing-table` · `display mac-address` · `display arp` · `display stp brief` · `display ospf peer brief` · `display ospf interface` · `display acl` · `display nat session all` · `display rip` · `display rip routing` · `display rip neighbor` · `display port-group all` · `display eth-trunk` · `display ip pool` · `display this`（任意视图可用）· `display current-configuration`
 
 **设备型号**：**S5700-28C-EI** 三层交换机（24×GE 电口 `GE0/0/1~24` + 4×GE 插卡光口 `GE0/1/1~4`）·
-**S3700-28TP-EI** 二层交换机（24×10/100 电口 `E0/0/1~24` + 4×GE 上行 `GE0/0/1~4`，共 28 口）·
-**AR6121E** 路由器（2×GE Combo WAN + 1×10GE `10GE0/0/0` + 9×GE LAN `GE0/0/2~10`，共 12 口）· PC
+**S3700-28TP-EI** 二层交换机（24×10/100 电口 `E0/0/1~24` + 4×GE 上行：`GE0/0/1-2` **光电复用**、`GE0/0/3-4` 纯光口）·
+**AR6121E** 路由器（`GE0/0/0`/`0/0/1` **GE Combo WAN** + `10GE0/0/0` + `GE0/0/2~9` 电口 LAN + `GE0/0/10` **GE Combo LAN**，共 12 口）· PC
 
 接口命名按真机：中间那段是**槽位**（`GE0/0/1` 板载、`GE0/1/1` 插卡）；交换机物理口默认二层、路由器以太口默认三层，
 两种口用 `portswitch` / `undo portswitch` 互相切换，命令不通用（用错会报错并给提示）。
+**光电复用（Combo）口同时支持电口与光口**：接电就用铜、接光就用纤，二选一，画布上画成圆角方块。
 
 **运行环境**：电脑上用 Chrome / Edge / Firefox / Safari 双击打开即可，不需要服务器；
 手机 / 平板上同样一个文件，用系统浏览器打开就行（iOS Safari 13+ / Android Chrome）；
@@ -209,7 +210,7 @@ A：能。把同一个 HTML 文件传到手机（微信 / QQ / 网盘都行）�
 长按端口看详情 —— 功能一个不少，只是手势不一样（见上面「手机 / 平板也能用」的对照表）。
 
 **Q：我怎么知道手上这个文件是哪个版本？**
-A：点顶栏 **「关于」**，里面写着版本号；用记事本打开文件，**开头的注释里也有**（比如 `版本：v1.6.0`）。下载单个 HTML 文件就能自带版本信息，不用去比对文件大小。
+A：点顶栏 **「关于」**，里面写着版本号；用记事本打开文件，**开头的注释里也有**（比如 `版本：v1.6.1`）。下载单个 HTML 文件就能自带版本信息，不用去比对文件大小。
 
 ---
 
@@ -226,6 +227,19 @@ A：点顶栏 **「关于」**，里面写着版本号；用记事本打开文�
 ---
 
 ## 最近更新
+
+**v1.6.1**
+
+- **光电复用口（Combo）**：同一端口既能插网线也能插光模块，**接什么用什么** —— 接到电口按铜缆通，接到光口按光纤通，
+  端口上会显示当前用的是哪一路。三台设备按真机给出：S3700-28TP-EI 两个（`GE0/0/1~2`）、AR6121E 三个
+  （`GE0/0/0`、`GE0/0/1`、`GE0/0/10`），S5700-28C-EI 没有。
+  `display interface` 里能看到 `COMBO AUTO` / `COMBO AUTO(COPPER)` / `COMBO AUTO(FIBER)`，
+  画布上 Combo 口用**圆角矩形**画，与圆形光口、方形电口一眼区分。
+- **介质互斥如实模拟**：纯光口接纯电口仍然连不上（提示换同类型端口或改用 Combo 口），Combo 则两边都收；
+  一个 Combo 口只能接一条线，光、电二选一。
+- 端口悬停提示补上「介质」一行（电口 / 光口 / 光电复用），接线前就能看清该用哪种线。
+- 旧配置文件里 S3700 电口写成 `GigabitEthernet` 的，导入时自动按新型号换算成 `Ethernet0/0/N`，
+  1~4 号再按对端是电口还是光口判断该落到哪一组口上。
 
 **v1.6.0**
 
@@ -345,7 +359,7 @@ A：点顶栏 **「关于」**，里面写着版本号；用记事本打开文�
 
 做工业自动控制与楼宇智能化的，这个是给网络教学做的小工具。
 
-> 程序里点顶栏 **「关于」** 也能看到版本号、作者与许可信息。当前版本 **v1.6.0**。
+> 程序里点顶栏 **「关于」** 也能看到版本号、作者与许可信息。当前版本 **v1.6.1**。
 
 ---
 
