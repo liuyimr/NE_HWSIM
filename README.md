@@ -3,7 +3,7 @@
 **一个 HTML 文件，双击就能练华为交换机 / 路由器命令 —— 不用装 eNSP，不用装 GNS3，不联网也能用。**
 
 [![在线试玩](https://img.shields.io/badge/%E5%9C%A8%E7%BA%BF%E8%AF%95%E7%8E%A9-GitHub%20Pages-orange)](https://liuyimr.github.io/NE_HWSIM/NE_HWSIM.html)
-![单文件](https://img.shields.io/badge/%E5%8D%95%E6%96%87%E4%BB%B6-434%20KB-brightgreen)
+![单文件](https://img.shields.io/badge/%E5%8D%95%E6%96%87%E4%BB%B6-439%20KB-brightgreen)
 ![无需安装](https://img.shields.io/badge/%E6%97%A0%E9%9C%80%E5%AE%89%E8%A3%85-%E5%8F%8C%E5%87%BB%E5%8D%B3%E7%94%A8-success)
 ![离线可用](https://img.shields.io/badge/%E7%A6%BB%E7%BA%BF%E5%8F%AF%E7%94%A8-100%25-informational)
 ![许可证](https://img.shields.io/badge/license-MIT-blue)
@@ -36,7 +36,7 @@
 
 给**网络课老师**和**备考华为认证的同学**做的一个练习工具。
 
-eNSP 要装 VirtualBox，GNS3 要配镜像，虚拟机镜像动辄几个 GB，还得看电脑配置。很多学生卡在第一步就放弃了，然后就没有然后。NE_HWSIM 的判断是：**先把门槛降到零** —— 一个 434 KB 的 HTML 文件，发过去、双击、开始敲命令，整个过程不需要任何解释。
+eNSP 要装 VirtualBox，GNS3 要配镜像，虚拟机镜像动辄几个 GB，还得看电脑配置。很多学生卡在第一步就放弃了，然后就没有然后。NE_HWSIM 的判断是：**先把门槛降到零** —— 一个 439 KB 的 HTML 文件，发过去、双击、开始敲命令，整个过程不需要任何解释。
 
 它**不是**真机的替代品，也跑不了复杂的园区网。它解决的是一个很具体的问题：**让学生能在自己的笔记本上、离线、零安装地，把 VLAN / Trunk / OSPF / ACL / NAT 这些命令反复敲到熟。**
 
@@ -126,7 +126,7 @@ eNSP 要装 VirtualBox，GNS3 要配镜像，虚拟机镜像动辄几个 GB，�
 | | **NE_HWSIM** | eNSP | GNS3 | Cisco Packet Tracer |
 |---|---|---|---|---|
 | 安装 | **双击 HTML，零安装** | 需装 VirtualBox + eNSP | 需装虚拟机 + 导入镜像 | 需注册 Cisco 账号 |
-| 体积 | **434 KB** | 数 GB | 数 GB | 数百 MB |
+| 体积 | **439 KB** | 数 GB | 数 GB | 数百 MB |
 | 联网 | **可完全离线** | 首次需下载镜像 | 需下载镜像 | 需登录 |
 | 命令语法 | 华为 VRP | 华为 VRP | 多厂商 | Cisco IOS |
 | 上手门槛 | **极低** | 中（装环境容易失败） | 高 | 中 |
@@ -216,7 +216,7 @@ A：能。把同一个 HTML 文件传到手机（微信 / QQ / 网盘都行）�
 长按端口看详情 —— 功能一个不少，只是手势不一样（见上面「手机 / 平板也能用」的对照表）。
 
 **Q：我怎么知道手上这个文件是哪个版本？**
-A：点顶栏 **「关于」**，里面写着版本号；用记事本打开文件，**开头的注释里也有**（比如 `版本：v1.6.3`）。下载单个 HTML 文件就能自带版本信息，不用去比对文件大小。
+A：点顶栏 **「关于」**，里面写着版本号；用记事本打开文件，**开头的注释里也有**（比如 `版本：v1.6.4`）。下载单个 HTML 文件就能自带版本信息，不用去比对文件大小。
 
 ---
 
@@ -233,6 +233,20 @@ A：点顶栏 **「关于」**，里面写着版本号；用记事本打开文�
 ---
 
 ## 最近更新
+
+**v1.6.4（界面整理）**
+
+- **图标换成自绘的线性 SVG**。原来设备库用的是 emoji（🔀📡💻）—— 同一个 emoji 在 Windows 是彩色平面、
+  在 Android / iOS 又是另一套画法，跟界面的冷灰风格完全不是一个语言。现在四个设备（三层交换 / 二层交换 /
+  路由器 / PC）和八个菜单项都用 16×16 线性图标，颜色跟着字色走，与 NewE 标识同一套内联 `<symbol>` 做法，
+  不引入任何外部图标库。
+- **尺度收口**：圆角从 10 种零散取值归到 4 档（4 / 8 / 12 / 胶囊），字号从 10 档（含 11.5、12.5 这种
+  半像素）归到 7 档，过渡统一成 .12s / .2s 两档，阴影统一成「卡片 / 浮层」两级。
+- **顶栏按钮分了三档**：`实训实验` 是主操作（实心蓝），导出/导入是工具（描边），
+  清空是破坏性操作（红字红边），帮助/关于弱化成无边框；两组之间加了分隔线。
+  以前七个按钮长一个样，反而让「命令行」开关抢了视觉重心。
+- **连线的两端加了小圆点**，交叉时更容易看出哪条线接到哪儿；选中时圆点跟着变蓝。
+- 手机端：顶栏标识缩小一档，底部设备条留出下边距（并适配刘海屏安全区），卡片不再贴着屏幕边缘。
 
 **v1.6.3（旧电脑兼容）**
 
@@ -392,7 +406,7 @@ A：点顶栏 **「关于」**，里面写着版本号；用记事本打开文�
 
 做工业自动控制与楼宇智能化的，这个是给网络教学做的小工具。
 
-> 程序里点顶栏 **「关于」** 也能看到版本号、作者与许可信息。当前版本 **v1.6.3**。
+> 程序里点顶栏 **「关于」** 也能看到版本号、作者与许可信息。当前版本 **v1.6.4**。
 
 ---
 
@@ -421,7 +435,7 @@ MIT License —— 随便用，商用也行，改了也不用说。详见 [LICEN
 
 **NE_HWSIM — a Huawei VRP network lab simulator that fits in one HTML file.**
 
-A single 434 KB HTML file. Double-click it and you get a drag-and-drop network topology builder plus a
+A single 439 KB HTML file. Double-click it and you get a drag-and-drop network topology builder plus a
 faithful Huawei VRP CLI (user view → system view → interface view → VLAN view → port-group view → ACL view
 → NAT address-pool view → OSPF area view → RIP view → sub-interface view), with authentic `^` error markers and `save` interaction.
 
