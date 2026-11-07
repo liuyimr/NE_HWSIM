@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <!--
   NE_HWSIM —— 华为 VRP 网络实训模拟器（单文件版）
-  版本：v1.6.2
+  版本：v1.6.3
 
   Copyright (c) 2026 新易科技工作室 NewE
   作者：Liuyi  <yimr@sohu.com>
@@ -111,8 +111,8 @@
     /* 触摸端：画布自己处理单指平移 / 双指缩放，别让浏览器抢去做页面滚动或双击放大 */
     touch-action:none;
   }
-  .stage-inner{position:absolute;inset:0;transform-origin:0 0}
-  svg.wires{position:absolute;inset:0;width:100%;height:100%;pointer-events:none;overflow:visible}
+  .stage-inner{position:absolute;top:0;right:0;bottom:0;left:0;transform-origin:0 0}
+  svg.wires{position:absolute;top:0;right:0;bottom:0;left:0;width:100%;height:100%;pointer-events:none;overflow:visible}
 
   /* ---------- 右下角缩放按钮 ---------- */
   /* 触摸设备没法用滚轮，才需要这几个按钮；鼠标设备（能悬停 + 精细指针）藏起来，桌面保持干净 */
@@ -132,7 +132,7 @@
 
   /* ---------- 画布文字标签（注释） ---------- */
   /* 容器本身不接事件，空白处照旧能拖动画布；单条标签自己把事件要回来 */
-  #notes{position:absolute;inset:0;pointer-events:none}
+  #notes{position:absolute;top:0;right:0;bottom:0;left:0;pointer-events:none}
   .note{
     position:absolute;pointer-events:auto;cursor:move;
     /* ❗必须给 width:max-content：绝对定位元素默认走 shrink-to-fit，
@@ -225,7 +225,7 @@
   .port:hover .lab{opacity:1}
 
   .empty{
-    position:absolute;inset:0;display:flex;flex-direction:column;
+    position:absolute;top:0;right:0;bottom:0;left:0;display:flex;flex-direction:column;
     align-items:center;justify-content:center;gap:10px;color:var(--tx3);pointer-events:none;
   }
   .empty b{font-size:15px;color:var(--tx2);font-weight:600}
@@ -274,7 +274,7 @@
   .inrow input::placeholder{color:#484f58}
 
   /* ---------- 弹窗 ---------- */
-  .mask{position:fixed;inset:0;background:rgba(1,4,9,.72);display:none;align-items:center;justify-content:center;z-index:99;padding:24px}
+  .mask{position:fixed;top:0;right:0;bottom:0;left:0;background:rgba(1,4,9,.72);display:none;align-items:center;justify-content:center;z-index:99;padding:24px}
   .mask.on{display:flex}
   .modal{
     background:var(--bg2);border:1px solid var(--line);border-radius:12px;
@@ -430,8 +430,9 @@
     .pal .tx span{display:none}
 
     /* 命令行：展开放大一些，输入框字号 >=16px，否则 iOS 聚焦时会自动放大整页 */
-    .term.open{flex:0 0 48dvh;height:48dvh}
-    .term.max{flex:0 0 76dvh;height:76dvh}
+    /* dvh 要 Chrome 108+，先写一行 vh 兜底，旧内核丢掉 dvh 那行也不至于塌 */
+    .term.open{flex:0 0 48vh;height:48vh;flex:0 0 48dvh;height:48dvh}
+    .term.max{flex:0 0 76vh;height:76vh;flex:0 0 76dvh;height:76dvh}
     .tabs{min-height:40px;overflow-x:auto}
     .tab{padding:10px 12px;font-size:12.5px}
     .tabs .sp .btn{padding:5px 9px}
@@ -476,7 +477,61 @@
     .side{width:154px;flex-basis:154px}
     .labgrid{grid-template-columns:1fr}
   }
+
+  /* ============================================================
+     旧内核兜底（Chromium < 84 没有 flex gap）
+     页面底部那段内联脚本检测到不支持后，给 <html> 加 .no-flexgap；
+     支持 flex gap 的浏览器完全不会读到下面这些规则。
+     ❗改上面某个容器的 gap 值时，这里的数值要跟着改。
+     ============================================================ */
+  html.no-flexgap .topbar > * + *{margin-left:14px}
+  html.no-flexgap .brand > * + *{margin-left:10px}
+  html.no-flexgap .tb-actions > * + *{margin-left:8px}
+  html.no-flexgap .palette > * + *{margin-top:6px}
+  html.no-flexgap .pal > * + *{margin-left:9px}
+  html.no-flexgap .zoombar > * + *{margin-top:6px}
+  html.no-flexgap .note-btn > * + *{margin-left:5px}
+  html.no-flexgap .card .head > .tag{margin-left:8px}
+  html.no-flexgap .card.compact .head > .tag{margin-left:6px}
+  html.no-flexgap .tab > * + *{margin-left:7px}
+  html.no-flexgap .tabs .sp > * + *{margin-left:4px}
+  html.no-flexgap .modal .mh > * + *{margin-left:10px}
+
+  /* 旧内核的提示条：不依赖任何现代语法，样式也很朴素 */
+  .compat-tip{
+    display:none;background:#3a2a12;border-bottom:1px solid #6b4a1c;color:#f0c674;
+    font-size:12.5px;line-height:1.5;padding:8px 14px;
+  }
+  .compat-tip.on{display:flex;align-items:flex-start;gap:8px}
+  .compat-tip b{color:#ffd98a}
+  .compat-tip .cx{
+    margin-left:auto;flex:0 0 auto;padding:0 4px;cursor:pointer;color:#c9a35a;
+  }
 </style>
+<script>
+/* 旧浏览器补丁：String.prototype.padStart / padEnd（Chrome 57+ 才有）。
+   这里刻意全用 ES5 写法 —— 老到需要这个补丁的浏览器，连箭头函数都不认，
+   写成现代语法等于没补上。 */
+(function () {
+  function pad(str, len, ch, atEnd) {
+    str = String(str);
+    if (ch === undefined || ch === '') ch = ' ';
+    ch = String(ch);
+    len = len >> 0;
+    if (str.length >= len) return str;
+    var fill = '';
+    var n = len - str.length;
+    while (n-- > 0) fill += ch;
+    return atEnd ? str + fill : fill + str;
+  }
+  if (!String.prototype.padStart) {
+    String.prototype.padStart = function (len, ch) { return pad(this, len, ch, false); };
+  }
+  if (!String.prototype.padEnd) {
+    String.prototype.padEnd = function (len, ch) { return pad(this, len, ch, true); };
+  }
+})();
+</script>
 </head>
 <body>
 <!-- LOGO:START （此段由 tools/make-logo2.py 生成、build.mjs 注入，勿手改）-->
@@ -1884,8 +1939,18 @@
 
   /* ------------------------------ IPv6 ------------------------------ */
 
+  /* BigInt 是 Chromium 67 才有的东西。原来这里直接写 `0n` / `16n` 字面量，
+     在老浏览器上是**语法错误** —— 整个 engine.js 不执行，页面全白。
+     现在统一改成 BigInt(...) 调用（语法上老浏览器也认），再用 HAS_BIGINT 兜底：
+     真没有 BigInt 的环境里 IPv6 功能自动降级成「不可用」，其余功能照常。 */
+  const HAS_BIGINT = typeof BigInt === 'function';
+  const BI_0 = HAS_BIGINT ? BigInt(0) : null;
+  const BI_16 = HAS_BIGINT ? BigInt(16) : null;
+  const BI_64K = HAS_BIGINT ? BigInt(0xffff) : null;
+
   /** IPv6 文本 → 128 位整数（支持 :: 压缩与 ::ffff:1.2.3.4 混合写法） */
   function ipv6ToBigInt(input) {
+    if (!HAS_BIGINT) return null;
     if (typeof input !== 'string') return null;
     let t = input.trim().toLowerCase();
     if (!t || !/^[0-9a-f:.]+$/.test(t) || !t.includes(':')) return null;
@@ -1916,13 +1981,14 @@
       return null;
     }
     const full = dbl >= 0 ? [...head, ...Array(8 - groups.length).fill('0'), ...tail] : head;
-    return full.reduce((acc, g) => (acc << 16n) | BigInt(parseInt(g, 16)), 0n);
+    return full.reduce((acc, g) => (acc << BI_16) | BigInt(parseInt(g, 16)), BI_0);
   }
 
   /** 128 位整数 → 规范化 IPv6 文本（压缩最长的一段连续 0） */
   function bigIntToIpv6(n) {
+    if (!HAS_BIGINT || n == null) return null;
     const parts = [];
-    for (let i = 7; i >= 0; i--) parts.push(((n >> BigInt(i * 16)) & 0xffffn).toString(16));
+    for (let i = 7; i >= 0; i--) parts.push(((n >> BigInt(i * 16)) & BI_64K).toString(16));
     let best = -1;
     let bestLen = 0;
     let cur = -1;
@@ -7298,7 +7364,7 @@
   /* ------------------------------ 版本信息 ------------------------------ */
   /* 版本号的唯一来源：改这一处即可。
      build.mjs 会把它读出来写进产物开头的注释，所以交付文件本身也能看出是哪个版本。 */
-  const APP_VERSION = '1.6.2';
+  const APP_VERSION = '1.6.3';
   const APP_INFO = {
     studio: '新易科技工作室 NewE',
     author: 'Liuyi',
@@ -9431,7 +9497,7 @@
           <div class="r"><b>形态</b><span>单个 HTML 文件，双击即用。没有后端、没有账号、<b>不联网、不采集任何数据</b> —— 断网也能正常跑。</span></div>
           <div class="r"><b>内置</b><span>14 个实训实验 · 4 种设备（S5700-28C-EI 三层交换机 / S3700-28TP-EI 二层交换机 / AR6121E 路由器 / PC）· 华为 VRP 命令行</span></div>
           <div class="r"><b>端口</b><span>按真机型号还原，含<b>光电复用（Combo）口</b> —— 接网线用电口、插光模块用光口，二选一</span></div>
-          <div class="r"><b>体积</b><span>约 425 KB 的单个 HTML 文件，不需要安装任何东西</span></div>
+          <div class="r"><b>体积</b><span>约 431 KB 的单个 HTML 文件，不需要安装任何东西</span></div>
           <div class="r"><b>许可</b><span><b>MIT License</b> —— 可以自由使用、修改、商用，甚至不用告诉我</span></div>
         </div>
 
@@ -9756,6 +9822,71 @@
   else boot();
 })(window);
 
+</script>
+<script>
+/* ============================================================
+   环境自检 + 旧内核提示
+
+   为什么单独写一段、而且必须用 ES5：
+   如果浏览器在 engine.js 上就报语法错误（比如没有 BigInt 字面量支持），
+   那四个脚本全都不会执行，页面上什么都看不到。这段语法最保守，
+   至少在那种情况下还能给出一句人话，而不是让人对着一片空白发愣。
+   ============================================================ */
+(function () {
+  function hasFlexGap() {
+    /* Chromium 84 之前 gap 只对 grid 生效，对 flex 不生效。
+       造一个两行 flex 容器量一下：认 gap 的话两行之间有 1px。 */
+    try {
+      var box = document.createElement('div');
+      box.style.cssText = 'display:flex;flex-direction:column;position:absolute;' +
+        'left:-9999px;top:-9999px;row-gap:1px';
+      box.appendChild(document.createElement('div'));
+      box.appendChild(document.createElement('div'));
+      document.body.appendChild(box);
+      var ok = box.scrollHeight === 1;
+      document.body.removeChild(box);
+      return ok;
+    } catch (e) { return false; }
+  }
+
+  function supportsInset() {
+    try {
+      if (window.CSS && window.CSS.supports) return window.CSS.supports('inset', '0');
+    } catch (e) { /* 落下去当不支持 */ }
+    return false;
+  }
+
+  var gapOk = hasFlexGap();
+  var insetOk = supportsInset();
+  var pointerOk = typeof window.PointerEvent !== 'undefined';
+  var bigintOk = typeof window.BigInt !== 'undefined';
+
+  if (!gapOk) document.documentElement.className += ' no-flexgap';
+
+  function showTip(lines) {
+    var app = document.querySelector('.app') || document.body;
+    var old = document.getElementById('compatTip');
+    if (old && old.parentNode) old.parentNode.removeChild(old);
+    var tip = document.createElement('div');
+    tip.className = 'compat-tip on';
+    tip.id = 'compatTip';
+    tip.innerHTML = '<span><b>浏览器内核偏旧</b>：' + lines.join('；') +
+      '。换用新版 <b>Chrome / Edge</b> 体验最好；用 360 浏览器的话，' +
+      '点地址栏右侧的<b>闪电图标</b>切到「极速模式」。</span>' +
+      '<span class="cx" title="关闭提示">×</span>';
+    app.insertBefore(tip, app.firstChild);
+    var cx = tip.querySelector('.cx');
+    if (cx) cx.onclick = function () { if (tip.parentNode) tip.parentNode.removeChild(tip); };
+    return tip;
+  }
+  window.__NE_COMPAT_TIP = showTip;   /* 留个入口：排查和测试可以直接调 */
+
+  var bad = [];
+  if (!pointerOk) bad.push('拖动设备、连线会没有反应');
+  if (!gapOk || !insetOk) bad.push('界面可能有错位');
+  if (!bigintOk) bad.push('IPv6 相关实验不可用');
+  if (bad.length) showTip(bad);
+})();
 </script>
 </body>
 </html>

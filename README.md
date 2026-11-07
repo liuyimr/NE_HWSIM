@@ -3,7 +3,7 @@
 **一个 HTML 文件，双击就能练华为交换机 / 路由器命令 —— 不用装 eNSP，不用装 GNS3，不联网也能用。**
 
 [![在线试玩](https://img.shields.io/badge/%E5%9C%A8%E7%BA%BF%E8%AF%95%E7%8E%A9-GitHub%20Pages-orange)](https://liuyimr.github.io/NE_HWSIM/NE_HWSIM.html)
-![单文件](https://img.shields.io/badge/%E5%8D%95%E6%96%87%E4%BB%B6-425%20KB-brightgreen)
+![单文件](https://img.shields.io/badge/%E5%8D%95%E6%96%87%E4%BB%B6-431%20KB-brightgreen)
 ![无需安装](https://img.shields.io/badge/%E6%97%A0%E9%9C%80%E5%AE%89%E8%A3%85-%E5%8F%8C%E5%87%BB%E5%8D%B3%E7%94%A8-success)
 ![离线可用](https://img.shields.io/badge/%E7%A6%BB%E7%BA%BF%E5%8F%AF%E7%94%A8-100%25-informational)
 ![许可证](https://img.shields.io/badge/license-MIT-blue)
@@ -36,7 +36,7 @@
 
 给**网络课老师**和**备考华为认证的同学**做的一个练习工具。
 
-eNSP 要装 VirtualBox，GNS3 要配镜像，虚拟机镜像动辄几个 GB，还得看电脑配置。很多学生卡在第一步就放弃了，然后就没有然后。NE_HWSIM 的判断是：**先把门槛降到零** —— 一个 425 KB 的 HTML 文件，发过去、双击、开始敲命令，整个过程不需要任何解释。
+eNSP 要装 VirtualBox，GNS3 要配镜像，虚拟机镜像动辄几个 GB，还得看电脑配置。很多学生卡在第一步就放弃了，然后就没有然后。NE_HWSIM 的判断是：**先把门槛降到零** —— 一个 431 KB 的 HTML 文件，发过去、双击、开始敲命令，整个过程不需要任何解释。
 
 它**不是**真机的替代品，也跑不了复杂的园区网。它解决的是一个很具体的问题：**让学生能在自己的笔记本上、离线、零安装地，把 VLAN / Trunk / OSPF / ACL / NAT 这些命令反复敲到熟。**
 
@@ -126,7 +126,7 @@ eNSP 要装 VirtualBox，GNS3 要配镜像，虚拟机镜像动辄几个 GB，�
 | | **NE_HWSIM** | eNSP | GNS3 | Cisco Packet Tracer |
 |---|---|---|---|---|
 | 安装 | **双击 HTML，零安装** | 需装 VirtualBox + eNSP | 需装虚拟机 + 导入镜像 | 需注册 Cisco 账号 |
-| 体积 | **425 KB** | 数 GB | 数 GB | 数百 MB |
+| 体积 | **431 KB** | 数 GB | 数 GB | 数百 MB |
 | 联网 | **可完全离线** | 首次需下载镜像 | 需下载镜像 | 需登录 |
 | 命令语法 | 华为 VRP | 华为 VRP | 多厂商 | Cisco IOS |
 | 上手门槛 | **极低** | 中（装环境容易失败） | 高 | 中 |
@@ -158,9 +158,12 @@ eNSP 要装 VirtualBox，GNS3 要配镜像，虚拟机镜像动辄几个 GB，�
 两种口用 `portswitch` / `undo portswitch` 互相切换，命令不通用（用错会报错并给提示）。
 **光电复用（Combo）口同时支持电口与光口**：接电就用铜、接光就用纤，二选一，画布上画成圆角方块。
 
-**运行环境**：电脑上用 Chrome / Edge / Firefox / Safari 双击打开即可，不需要服务器；
-手机 / 平板上同样一个文件，用系统浏览器打开就行（iOS Safari 13+ / Android Chrome）；
+**运行环境**：电脑上用 **Chrome / Edge 87+**（Win7 最高可装 109）、Firefox 84+、Safari 14.1+ 双击打开即可，
+不需要服务器；手机 / 平板上同样一个文件，用系统浏览器打开就行（iOS Safari 14+ / Android Chrome 87+）；
 窄屏（≤760px）自动切竖版布局，横屏手机自动压缩顶栏把高度让给画布。
+
+> **360 / QQ / 搜狗这类双核浏览器请用「极速模式」**（地址栏右侧的闪电图标）。兼容模式是 IE 内核，跑不了。
+> 内核不够时页面顶部会出一条黄色提示条，说明缺什么 —— 不会让你对着一片空白猜。
 
 ---
 
@@ -213,7 +216,7 @@ A：能。把同一个 HTML 文件传到手机（微信 / QQ / 网盘都行）�
 长按端口看详情 —— 功能一个不少，只是手势不一样（见上面「手机 / 平板也能用」的对照表）。
 
 **Q：我怎么知道手上这个文件是哪个版本？**
-A：点顶栏 **「关于」**，里面写着版本号；用记事本打开文件，**开头的注释里也有**（比如 `版本：v1.6.2`）。下载单个 HTML 文件就能自带版本信息，不用去比对文件大小。
+A：点顶栏 **「关于」**，里面写着版本号；用记事本打开文件，**开头的注释里也有**（比如 `版本：v1.6.3`）。下载单个 HTML 文件就能自带版本信息，不用去比对文件大小。
 
 ---
 
@@ -230,6 +233,20 @@ A：点顶栏 **「关于」**，里面写着版本号；用记事本打开文�
 ---
 
 ## 最近更新
+
+**v1.6.3（旧电脑兼容）**
+
+- **老浏览器不再整页空白**。原来 IPv6 模块里写了 BigInt 字面量（`0n` / `16n`），
+  在 Chromium 67 以下的浏览器里这是**语法错误**，整个脚本不执行、页面全白 —— 现在改成 `BigInt(...)` 调用，
+  没有 BigInt 的环境里 IPv6 自动降级为「不可用」，其它功能照常。
+- **布局兜底**：`inset:0` 拆成 `top/right/bottom/left`（Chromium 87 才有 `inset`）、
+  终端面板的 `dvh` 补了 `vh`、flex 的 `gap` 在旧内核下用 margin 顶上（Chromium 84 才有 flex gap）。
+  这样 360 安全浏览器 v12/v13（内核 78/86）这类环境不会再把按钮挤成一团、画布也不会塌。
+- **补了 `padStart` / `padEnd`**（Chromium 57 才有），表格类回显在旧内核上不再报错。
+- **新增旧内核提示条**：内核不够时页面顶部出一条黄条，写明缺什么能力、怎么换浏览器，
+  不再让人以为程序坏了。它用最保守的语法写，即使其它脚本全崩也能显示出来。
+- README 与使用说明写清了最低版本：**Chrome / Edge 87+**（Win7 最高 109），
+  双核浏览器请用**极速模式**。
 
 **v1.6.2**
 
@@ -371,7 +388,7 @@ A：点顶栏 **「关于」**，里面写着版本号；用记事本打开文�
 
 做工业自动控制与楼宇智能化的，这个是给网络教学做的小工具。
 
-> 程序里点顶栏 **「关于」** 也能看到版本号、作者与许可信息。当前版本 **v1.6.2**。
+> 程序里点顶栏 **「关于」** 也能看到版本号、作者与许可信息。当前版本 **v1.6.3**。
 
 ---
 
@@ -400,7 +417,7 @@ MIT License —— 随便用，商用也行，改了也不用说。详见 [LICEN
 
 **NE_HWSIM — a Huawei VRP network lab simulator that fits in one HTML file.**
 
-A single 425 KB HTML file. Double-click it and you get a drag-and-drop network topology builder plus a
+A single 431 KB HTML file. Double-click it and you get a drag-and-drop network topology builder plus a
 faithful Huawei VRP CLI (user view → system view → interface view → VLAN view → port-group view → ACL view
 → NAT address-pool view → OSPF area view → RIP view → sub-interface view), with authentic `^` error markers and `save` interaction.
 
