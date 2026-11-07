@@ -2249,12 +2249,19 @@
     return { ok: false, hops, reason: 'TTL 超时' };
   }
 
-  /** traceroute 对外入口：PC 失败时换成主机视角的原因 */
+  /** traceroute 对外入口：支持域名（先解析），PC 失败时换成主机视角的原因 */
   function traceroute(srcDevice, dstIp) {
-    const r = traceWalk(srcDevice, dstIp);
-    if (!r.ok && isHost(srcDevice) && String(r.reason || '').includes(srcDevice.hostname)) {
-      r.reason = pcHint(srcDevice, dstIp) || r.reason;
+    let target = dstIp;
+    if (!isValidIp(target)) {
+      const rn = resolveName(srcDevice, target);
+      if (rn.error) return { ok: false, hops: [], reason: rn.error, dstIp: target };
+      target = rn.ip;
     }
+    const r = traceWalk(srcDevice, target);
+    if (!r.ok && isHost(srcDevice) && String(r.reason || '').includes(srcDevice.hostname)) {
+      r.reason = pcHint(srcDevice, target) || r.reason;
+    }
+    r.dstIp = target;
     return r;
   }
 
@@ -5420,21 +5427,26 @@
   /* --------------------------- ping / tracert --------------------------- */
 
   function cmdPing(dev, args) {
-    // ping [-c count] <ip>
+    // ping [-c count] <ip | 域名>
     let count = 5;
-    let ip = null;
-    for (let i = 0; i < args.length; i++) {
+    let target = null;
+    for (let i = 1; i < args.length; i++) {
       if (args[i] === '-c') {
         count = parseInt(args[++i], 10) || 5;
-      } else if (E.isValidIp(args[i])) {
-        ip = args[i];
+        continue;
       }
+      /* 不再要求必须是 IP：域名交给引擎处理（会先做 DNS 解析，解析不了再给明确原因） */
+      if (!target) target = args[i];
     }
-    if (!ip) return errIncomplete('ping');
+    if (!target) return errIncomplete('ping');
+
+    const res = E.ping(dev, target);
+    const ip = res.dstIp || target;
+    const shown = ip === target ? target : `${target} (${ip})`;
+    const dnsFail = /DNS|域名/.test(res.reason || '');
 
     if (isHost(dev)) {
-      const res = E.ping(dev, ip);
-      const out = [`Pinging ${ip} with 32 bytes of data:`];
+      const out = [`Pinging ${shown} with 32 bytes of data:`];
       if (res.ok) {
         for (let i = 0; i < 4; i++) out.push(`Reply from ${ip}: bytes=32 time=${2 + i}ms TTL=${20 + res.path.length * 3}`);
         out.push('');
@@ -5442,16 +5454,18 @@
         out.push('    Packets: Sent = 4, Received = 4, Lost = 0 (0% loss),');
         return { lines: out, traffic: res };
       }
-      for (let i = 0; i < 4; i++) out.push('Request timed out.');
-      out.push('');
-      out.push(`Ping statistics for ${ip}:`);
-      out.push('    Packets: Sent = 4, Received = 0, Lost = 4 (100% loss),');
+      // 域名解析失败时不要打 4 行 "Request timed out" —— 包根本没发出去，那样写会误导
+      if (!dnsFail) {
+        for (let i = 0; i < 4; i++) out.push('Request timed out.');
+        out.push('');
+        out.push(`Ping statistics for ${target}:`);
+        out.push('    Packets: Sent = 4, Received = 0, Lost = 4 (100% loss),');
+      }
       out.push(`失败原因：${res.reason}`);
       return { lines: out, traffic: res };
     }
 
-    const res = E.ping(dev, ip);
-    const out = [`  PING ${ip}: ${count === 5 ? 5 : count} data bytes, press CTRL_C to break`];
+    const out = [`  PING ${shown}: ${count} data bytes, press CTRL_C to break`];
     if (res.ok) {
       for (let i = 0; i < count; i++) {
         out.push(`    Reply from ${ip}: bytes=56 Sequence=${i + 1} ttl=${64 - res.path.length} time=${2 + i * 2} ms`);
@@ -5464,20 +5478,25 @@
       out.push(`    round-trip min/avg/max = 2/3/6 ms`);
       return { lines: out, traffic: res };
     }
-    out.push(`    Request time out`);
-    out.push('');
-    out.push(`  --- ${ip} ping statistics ---`);
-    out.push(`    5 packet(s) transmitted`);
-    out.push(`    0 packet(s) received`);
-    out.push(`    100.00% packet loss`);
+    if (!dnsFail) {
+      out.push(`    Request time out`);
+      out.push('');
+      out.push(`  --- ${target} ping statistics ---`);
+      out.push(`    ${count} packet(s) transmitted`);
+      out.push(`    0 packet(s) received`);
+      out.push(`    100.00% packet loss`);
+    }
     out.push(`失败原因：${res.reason}`);
     return { lines: out, traffic: res };
   }
 
   function cmdTracert(dev, args) {
-    const ip = args.find((a) => E.isValidIp(a));
-    if (!ip) return errIncomplete('tracert');
-    const res = E.traceroute(dev, ip);
+    // 和 ping 一样：不再要求必须是 IP，域名交给引擎解析
+    let target = null;
+    for (let i = 1; i < args.length; i++) if (!target && args[i] !== '-a') target = args[i];
+    if (!target) return errIncomplete('tracert');
+    const res = E.traceroute(dev, target);
+    const ip = res.dstIp || target;
     const isPc = isHost(dev);
     const out = [];
     if (isPc) out.push(`Tracing route to ${ip} over a maximum of 30 hops:`);
@@ -8193,17 +8212,20 @@
     const n = colsOf(dev);
     return (cardW(dev) - 2 * BORDER - 2 * m.padX - (n - 1) * m.gap) / n;
   }
+  /* ❗这三处必须和 CSS 的 .card.compact 用同一个判定（isCompactCard）。
+     之前只改了卡片的 class 和宽度，忘了这里 —— 结果服务器 / 防火墙的端口中心
+     比实际位置低了 16px，连线看着像从"设备外侧下方"出发。 */
   function headH(dev) {
     const m = metrics();
-    return dev.type === 'pc' ? m.headHPc : m.headH;
+    return isCompactCard(dev) ? m.headHPc : m.headH;
   }
   function portsPadTop(dev) {
     const m = metrics();
-    return dev.type === 'pc' ? m.portsPadTopPc : m.portsPadTop;
+    return isCompactCard(dev) ? m.portsPadTopPc : m.portsPadTop;
   }
   function cardBottomPad(dev) {
     const m = metrics();
-    return dev.type === 'pc' ? m.cardBottomPadPc : m.cardBottomPad;
+    return isCompactCard(dev) ? m.cardBottomPadPc : m.cardBottomPad;
   }
 
   function portCenter(dev, idx) {
@@ -9122,7 +9144,17 @@
     const screen = $('screen');
     if (!d.logs.length) {
       d.logs.push({ t: `--- 已进入 ${d.hostname} 的命令行（${d.model}）---`, c: 'dim' });
-      d.logs.push({ t: '提示：输入 ? 查看可用命令；双击其他设备可切换会话。', c: 'dim' });
+      if (d.type === 'server') {
+        d.logs.push({ t: '提示：这是模拟服务器的命令行。http / dns / ftp server enable 开启对外服务，dns add 加解析记录，display server 看状态。', c: 'dim' });
+        d.logs.push({ t: '      （真机上这些服务由操作系统管理，这里用命令代替图形面板，方便边敲边看。）', c: 'dim' });
+      } else if (d.type === 'firewall') {
+        d.logs.push({ t: '提示：接口默认不属于任何安全区域 —— 先 firewall zone trust 再 add interface，否则报文会被丢弃。', c: 'dim' });
+        d.logs.push({ t: '      区域间缺省策略是 deny，要在 security-policy 里写 permit 规则才放行。输入 ? 查看命令。', c: 'dim' });
+      } else if (d.type === 'pc') {
+        d.logs.push({ t: '提示：ip 配地址、dns 配 DNS 服务器、ping 目标、http get 网址；输入 ? 查看全部命令。', c: 'dim' });
+      } else {
+        d.logs.push({ t: '提示：输入 ? 查看可用命令；双击其他设备可切换会话。', c: 'dim' });
+      }
     }
     screen.innerHTML = d.logs
       .map((l) => `<div class="ln ${l.c || ''}">${esc(l.t)}</div>`)
@@ -10719,6 +10751,7 @@
   UI.termIsOpen = termIsOpen;
   UI.importConfigText = importConfigText;
   UI.cardW = cardW;
+  UI.portCenter = portCenter;
   UI.cardHeight = cardHeight;
   UI.fitView = fitView;
   UI.ensureVisible = ensureVisible;
