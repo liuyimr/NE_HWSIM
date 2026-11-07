@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <!--
   NE_HWSIM —— 华为 VRP 网络实训模拟器（单文件版）
-  版本：v1.6.4
+  版本：v1.6.5
 
   Copyright (c) 2026 新易科技工作室 NewE
   作者：Liuyi  <yimr@sohu.com>
@@ -92,7 +92,13 @@
   .side{
     width:190px;flex:0 0 190px;background:var(--bg2);
     border-right:1px solid var(--line);display:flex;flex-direction:column;
+    /* 命令行展开时侧栏只剩 ~420px，展开「更多操作」会放不下 —— 让它自己滚，别溢到画布上 */
+    overflow-y:auto;overflow-x:hidden;
   }
+  .side::-webkit-scrollbar{width:6px}
+  .side::-webkit-scrollbar-thumb{background:#30363d;border-radius:3px}
+  .side::-webkit-scrollbar-thumb:hover{background:#3d444d}
+  .side::-webkit-scrollbar-track{background:transparent}
   .side h3{
     font-size:11px;font-weight:600;color:var(--tx3);letter-spacing:.9px;
     padding:13px 14px 8px;text-transform:uppercase;
@@ -117,12 +123,29 @@
   .pal:hover .ic{color:var(--cy);border-color:#28518f}
   .pal .tx b{display:block;font-size:12px;font-weight:600;line-height:1.35}
   .pal .tx span{font-size:11px;color:var(--tx3)}
-  .side .hint{
-    margin:auto 10px 12px;padding:9px 10px;border-radius:8px;
-    background:#0d1117;border:1px solid var(--line);font-size:11px;
-    line-height:1.75;color:var(--tx2);
+  /* 左栏「怎么用」：三步 + 折叠的细节。以前是 8 行小字堆在一起，首屏最吵的一块 */
+  .howto{
+    margin:auto 10px 12px;padding:10px 11px 9px;border-radius:8px;flex:0 0 auto;
+    background:#0d1117;border:1px solid var(--line);
   }
-  .side .hint b{color:var(--tx)}
+  .howto h4{font-size:11px;font-weight:600;color:var(--tx3);letter-spacing:.6px;margin-bottom:9px}
+  .howto ol{list-style:none;display:flex;flex-direction:column;gap:8px}
+  .howto li{display:flex;align-items:flex-start;gap:8px;font-size:11px;line-height:1.5;color:var(--tx2)}
+  .howto li i{
+    flex:0 0 15px;height:15px;border-radius:4px;background:var(--bg3);border:1px solid var(--line);
+    color:var(--tx3);font-size:10px;font-style:normal;line-height:13px;text-align:center;margin-top:1px;
+  }
+  .howto li b{color:var(--tx);font-weight:600}
+  .howto details{margin-top:9px;border-top:1px solid var(--line);padding-top:7px}
+  .howto summary{
+    cursor:pointer;font-size:11px;color:var(--tx3);list-style:none;transition:color .12s;
+  }
+  .howto summary::-webkit-details-marker{display:none}
+  .howto summary::before{content:'▸ ';display:inline-block}
+  .howto details[open] summary::before{content:'▾ '}
+  .howto summary:hover{color:var(--tx2)}
+  .howto details p{font-size:11px;line-height:1.7;color:var(--tx3);margin-top:7px}
+  .howto details p b{color:var(--tx2);font-weight:600}
 
   /* ---------- 画布 ---------- */
   .stage{flex:1;position:relative;overflow:hidden;background:
@@ -200,9 +223,10 @@
   .wire-x:hover path{stroke:#ff8078}
 
   .card{
-    position:absolute;background:var(--bg2);border:1px solid var(--line);
-    border-radius:8px;user-select:none;box-shadow:var(--sh-1);
-    transition:border-color .12s, box-shadow .12s;touch-action:none;
+    position:absolute;user-select:none;border:1px solid var(--line);border-radius:8px;
+    /* 头部比机身亮一档：「机箱面板」和「端口区」分开，24 口密集时不至于糊成一整块 */
+    background:linear-gradient(180deg,#1d232c 0,#161b22 var(--head-h));
+    box-shadow:var(--sh-1);transition:border-color .12s, box-shadow .12s;touch-action:none;
   }
   .card:hover{border-color:#4b5563;box-shadow:var(--sh-1h)}
   .card.sel{border-color:var(--cy);box-shadow:0 0 0 2px rgba(47,129,247,.28),var(--sh-1h)}
@@ -219,8 +243,14 @@
     margin-left:auto;color:var(--tx3);font-size:15px;line-height:1;padding:2px 4px;border-radius:4px;
   }
   .card .head .x:hover{color:var(--rd);background:#2d1618}
-  .ports{display:grid;gap:var(--gap);padding:var(--ports-pt) var(--pad-x) var(--ports-pb)}
+  .ports{
+    display:grid;gap:var(--gap);padding:var(--ports-pt) var(--pad-x) var(--ports-pb);
+    /* 端口区做成内嵌面板：底色压暗 + 顶部一道高光，端口方块就被"托"出来了 */
+    background:rgba(0,0,0,.2);border-radius:0 0 8px 8px;
+    box-shadow:inset 0 1px 0 rgba(255,255,255,.045);
+  }
   /* PC 只有一个网口，卡片既矮又窄（宽度由 JS 按设备类型给），头部元素跟着收紧 */
+  .card.compact{background:linear-gradient(180deg,#1d232c 0,#161b22 var(--head-h-pc))}
   .card.compact .head{height:var(--head-h-pc);padding:0 10px;gap:6px;align-items:center}
   .card.compact .head .md{display:none}
   .card.compact .head .nm{font-size:12px}
@@ -449,7 +479,7 @@
       border-right:none;border-top:1px solid var(--line);overflow-x:auto;overflow-y:hidden;
     }
     .side h3{display:none}
-    .side .hint{display:none} /* 太长，窄屏不占地方；帮助弹窗里有完整说明 */
+    .howto{display:none} /* 窄屏设备库变成底部横条，这块没地方放；帮助弹窗里有完整说明 */
     .palette{flex-direction:row;gap:8px;padding:7px 10px}
     .pal{
       flex-direction:column;gap:2px;padding:7px 10px;min-width:72px;
@@ -659,15 +689,19 @@
     <aside class="side">
       <h3>设备库</h3>
       <div class="palette" id="palette"></div>
-      <div class="hint">
-        <b>怎么用：</b><br />
-        1. 点左侧设备加入拓扑<br />
-        2. <b>按住卡片拖动</b>摆放位置<br />
-        3. 点一个灰口，再点另一个灰口 → 连线<br />
-        4. 双击设备打开命令行<br />
-        5. 右键设备可删除<br />
-        <b>连错了：</b>点连线选中后按 Delete，或点线上的 ×，或右键连线；也可以直接拖动线的端点改接到别的口。<br />
-        <b>手机上：</b>手指拖卡片=移动；拖空白=平移；两指捏合=缩放；双击=打开命令行；长按=删除；右下角有缩放按钮。
+      <div class="howto">
+        <h4>怎么用</h4>
+        <ol>
+          <li><i>1</i><span>点设备加入拓扑</span></li>
+          <li><i>2</i><span><b>按住卡片拖动</b>摆位置</span></li>
+          <li><i>3</i><span>点两个灰口 → 连线</span></li>
+        </ol>
+        <details>
+          <summary>更多操作</summary>
+          <p><b>双击</b>设备打开命令行；<b>右上角 ×</b> 或右键删除设备。</p>
+          <p><b>连错了：</b>点连线选中后按 Delete，或点线上的 ×，或右键连线，也可以直接拖动线的端点改接到别的口。</p>
+          <p><b>手机上：</b>拖卡片＝移动；拖空白＝平移；两指捏合＝缩放；双击＝打开命令行；长按＝删除；右下角有缩放按钮。</p>
+        </details>
       </div>
     </aside>
 
@@ -7452,7 +7486,7 @@
   /* ------------------------------ 版本信息 ------------------------------ */
   /* 版本号的唯一来源：改这一处即可。
      build.mjs 会把它读出来写进产物开头的注释，所以交付文件本身也能看出是哪个版本。 */
-  const APP_VERSION = '1.6.4';
+  const APP_VERSION = '1.6.5';
   const APP_INFO = {
     studio: '新易科技工作室 NewE',
     author: 'Liuyi',
@@ -8335,10 +8369,35 @@
    * 展开 / 收起下方命令行面板。
    * 收起时不清掉标签页，所以再点一次「命令行」能回到原来的会话。
    */
+  /** 面板开合 / 视口变化后，拓扑可能被挤出可视区。
+      最典型的场景：收起面板时加载实验 → fitView 按大画布算好；展开面板后画布矮了 336px，
+      底部那排设备就跑到面板后面去了，看起来像「设备不见了」。
+      只在「确实被裁到」时重新适配 —— 用户自己缩放、平移过的视图不会被无端重置。 */
+  function refitIfClipped() {
+    const devs = E.Net.devices;
+    if (!devs.length) return;
+    const rect = $('stage').getBoundingClientRect();
+    if (rect.width < 10 || rect.height < 10) return;
+    const s = UI.scale;
+    let clipped = 0;
+    for (const d of devs) {
+      const left = d.x * s + UI.panX;
+      const top = d.y * s + UI.panY;
+      if (left + cardW(d) * s < -6 || left > rect.width + 6 || top + cardHeight(d) * s > rect.height + 6 || top < -6) {
+        clipped++;
+      }
+    }
+    /* 阈值取「过半」：用户放大看某一台设备时，其余几台本来就在屏外，
+       那种情况不该被强行拉回全景；而展开面板把底部一整排挤出去时，过半数都会超标。 */
+    if (clipped >= Math.ceil(devs.length / 2)) fitView();
+  }
+
   function setTermOpen(on) {
     $('term').classList.toggle('open', !!on);
     if (!on) $('term').classList.remove('max');
     syncTermBtn();
+    // 面板高度变化有 .18s 过渡，等它落定再判断拓扑有没有被挤出去
+    setTimeout(refitIfClipped, 240);
     if (on) setTimeout(() => $('cmd').focus(), 60);
   }
 
@@ -8429,6 +8488,7 @@
     };
     tabsEl.querySelector('#btnMax').onclick = () => {
       $('term').classList.toggle('max');
+      setTimeout(refitIfClipped, 240);
     };
     tabsEl.querySelector('#btnFold').onclick = () => setTermOpen(false);
 
@@ -8931,6 +8991,8 @@
     persist();
     render();
     renderConsole();
+    // 拓扑清空后命令行还占着半屏、里面是已经不存在设备的会话 —— 自动收起来
+    setTermOpen(false);
   }
 
   const LABS = [
@@ -9639,7 +9701,7 @@
           <div class="r"><b>形态</b><span>单个 HTML 文件，双击即用。没有后端、没有账号、<b>不联网、不采集任何数据</b> —— 断网也能正常跑。</span></div>
           <div class="r"><b>内置</b><span>14 个实训实验 · 4 种设备（S5700-28C-EI 三层交换机 / S3700-28TP-EI 二层交换机 / AR6121E 路由器 / PC）· 华为 VRP 命令行</span></div>
           <div class="r"><b>端口</b><span>按真机型号还原，含<b>光电复用（Combo）口</b> —— 接网线用电口、插光模块用光口，二选一</span></div>
-          <div class="r"><b>体积</b><span>约 439 KB 的单个 HTML 文件，不需要安装任何东西</span></div>
+          <div class="r"><b>体积</b><span>约 443 KB 的单个 HTML 文件，不需要安装任何东西</span></div>
           <div class="r"><b>许可</b><span><b>MIT License</b> —— 可以自由使用、修改、商用，甚至不用告诉我</span></div>
         </div>
 
@@ -9944,13 +10006,13 @@
   UI.importConfigText = importConfigText;
   UI.cardW = cardW;
   UI.cardHeight = cardHeight;
+  UI.fitView = fitView;
   UI.ensureVisible = ensureVisible;
   UI.bringIntoView = bringIntoView;
   UI.showAbout = showAbout;
   UI.version = APP_VERSION;
   UI.zoomBy = zoomBy;
   UI.zoomAt = zoomAt;
-  UI.fitView = fitView;
   UI.narrow = narrow;
   UI.metrics = metrics;
   /** 视口尺寸变了（旋屏、切设备模拟）后重算几何并重绘 —— 卡片尺寸来自 CSS 变量，要重新读 */
