@@ -16,7 +16,7 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
-<title>NE_HWSIM · 华为 VRP 网络实训模拟器</title>
+<title>新易网络沙盘 · 华为 VRP 命令实训（单文件离线版）</title>
 <style>
   :root{
     --bg:#0d1117; --bg2:#161b22; --bg3:#1c2128; --line:#30363d;
@@ -647,6 +647,15 @@
   <symbol id="ic-clear" viewBox="0 0 16 16">
     <path d="M2.8 4.4h10.4M6.2 4.4V2.8h3.6v1.6M4.3 4.4l.6 8.7h6.2l.6-8.7" />
   </symbol>
+  <symbol id="ic-fw" viewBox="0 0 16 16">
+    <path d="M8 1.9 13 3.6v4.1c0 2.9-2 5.2-5 6.3-3-1.1-5-3.4-5-6.3V3.6L8 1.9Z" />
+    <path d="m5.9 7.8 1.5 1.5 2.9-3" />
+  </symbol>
+  <symbol id="ic-server" viewBox="0 0 16 16">
+    <rect x="2" y="2.4" width="12" height="4.2" rx="1.1" />
+    <rect x="2" y="9.4" width="12" height="4.2" rx="1.1" />
+    <path d="M4.6 4.5h.01M4.6 11.5h.01M7 4.5h2M7 11.5h2" />
+  </symbol>
   <symbol id="ic-more" viewBox="0 0 16 16">
     <circle cx="3.4" cy="8" r="1.1" fill="currentColor" stroke="none" />
     <circle cx="8" cy="8" r="1.1" fill="currentColor" stroke="none" />
@@ -657,8 +666,8 @@
   <div class="topbar">
     <div class="brand">
       <svg class="brand-logo" viewBox="0 0 820 232" role="img" aria-label="NewE"><use href="#neweLogo" /></svg>
-      <span class="brand-name">NE_HWSIM</span>
-      <small>华为 VRP 交换机 / 路由器实训模拟器</small>
+      <span class="brand-name">新易网络沙盘</span>
+      <small>华为 VRP 命令实训</small>
     </div>
     <div class="tb-actions">
       <button class="btn primary" id="btnLab">实训实验</button>
@@ -773,6 +782,9 @@
   }
 
   const clone = (o) => JSON.parse(JSON.stringify(o));
+
+  /** 主机类设备（PC / 服务器）：没有路由表，跨网段只靠默认网关，ping 失败也要给主机视角的提示 */
+  const isHost = (d) => !!d && (d.type === 'pc' || d.type === 'server');
 
   /** "255.255.255.0" -> 24 ; "24" -> 24 ; 支持 /24 形式 */
   function maskToPrefix(mask) {
@@ -919,6 +931,32 @@
       vendor: 'PC',
       desc: '1×以太网口',
       ports: [{ name: 'Ethernet0/0/0', kind: 'RJ45' }]
+    },
+    'Server': {
+      key: 'Server',
+      model: 'Server',
+      type: 'server',
+      label: '服务器',
+      vendor: 'Server',
+      desc: '1×以太网口 · HTTP / DNS / FTP',
+      ports: [{ name: 'Ethernet0/0/0', kind: 'RJ45' }]
+    },
+    'USG6000V': {
+      key: 'USG6000V',
+      // 真机 USG6000V 是虚拟防火墙，4 个千兆电口 GigabitEthernet1/0/0 ~ 1/0/3（第二段是槽位，固定 1）。
+      // ❗出厂时这些接口**不属于任何安全区域**，必须手动 firewall zone xxx + add interface 才会转发 ——
+      //   这一点和路由器不同，也是最容易漏的一步。
+      model: 'USG6000V',
+      type: 'firewall',
+      label: '防火墙',
+      vendor: 'Huawei',
+      desc: '4×GE 电口 · 安全区域 / 安全策略',
+      ports: [
+        { name: 'GigabitEthernet1/0/0', kind: 'RJ45', role: 'WAN' },
+        { name: 'GigabitEthernet1/0/1', kind: 'RJ45', role: 'LAN' },
+        { name: 'GigabitEthernet1/0/2', kind: 'RJ45', role: 'LAN' },
+        { name: 'GigabitEthernet1/0/3', kind: 'RJ45', role: 'DMZ' }
+      ]
     }
   };
 
@@ -953,7 +991,7 @@
   function createDevice(key, x, y) {
     const t = TEMPLATES[key];
     if (!t) throw new Error('未知设备型号: ' + key);
-    const isRouted = t.type === 'router' || t.type === 'pc';
+    const isRouted = t.type === 'router' || t.type === 'pc' || t.type === 'server' || t.type === 'firewall';
     const dev = {
       id: uid('d'),
       key: t.key,
@@ -961,7 +999,11 @@
       type: t.type,
       vendor: t.vendor,
       l2only: !!t.l2only,
-      hostname: t.type === 'pc' ? 'PC' : t.type === 'router' ? 'Router' : 'Huawei',
+      hostname:
+        t.type === 'pc' ? 'PC' :
+        t.type === 'router' ? 'Router' :
+        t.type === 'server' ? 'Server' :
+        t.type === 'firewall' ? 'USG' : 'Huawei',
       x: x == null ? 120 : x,
       y: y == null ? 120 : y,
       ports: t.ports.map((p) => makePort(p.name, p.kind, isRouted ? 'routed' : 'access', p)),
@@ -991,6 +1033,14 @@
       savedConfig: null,
       lastSaved: 0,
       logs: [],
+      /* 服务器：对外提供哪些应用层服务 + 本机 DNS 记录（只有 Server 用，其它设备留空即可） */
+      services: { http: false, dns: false, ftp: false },
+      dnsRecords: [], // { name, ip }
+      /* 防火墙：安全区域成员（存接口名，不是 portId —— 区域里记的就是接口名，和 running-config 一致）/
+         安全策略 / 会话表。只有 firewall 用，其它设备留空。 */
+      zones: { local: [], trust: [], untrust: [], dmz: [] },
+      securityPolicies: [], // { name, srcZone, dstZone, action, srcAddr, dstAddr, service, desc }
+      fwSessions: [], // { srcIp, dstIp, srcZone, dstZone, policy, service, at }
       // VLAN 附加信息：{ [vlanId]: { desc, name } }。VLAN 号本身仍存在 vlans 数组里，这里只放可选属性，
       // 避免改动既有引擎逻辑。
       vlanMeta: {},
@@ -1030,6 +1080,13 @@
     for (const k of ['vlanifs', 'subifs', 'routes', 'acl', 'aclBindings', 'staticMac', 'logs', 'portGroups', 'natAddrGroups', 'natSessions']) {
       if (!Array.isArray(dev[k])) dev[k] = [];
     }
+    /* 服务器 / 防火墙的新字段：老存档和手写导入里没有，补齐后再往下走 */
+    if (!dev.services || typeof dev.services !== 'object') dev.services = { http: false, dns: false, ftp: false };
+    if (!Array.isArray(dev.dnsRecords)) dev.dnsRecords = [];
+    if (!dev.zones || typeof dev.zones !== 'object') dev.zones = { local: [], trust: [], untrust: [], dmz: [] };
+    for (const z of ['local', 'trust', 'untrust', 'dmz']) if (!Array.isArray(dev.zones[z])) dev.zones[z] = [];
+    if (!Array.isArray(dev.securityPolicies)) dev.securityPolicies = [];
+    if (!Array.isArray(dev.fwSessions)) dev.fwSessions = [];
     // 子接口字段补齐（老存档里没有）
     for (const s of dev.subifs) {
       if (s.enabled == null) s.enabled = true;
@@ -1066,6 +1123,7 @@
     }
     c.pending = null;
     for (const p of dev.ports || []) {
+      if (p.dns === undefined) p.dns = null; // 主机（PC / 服务器）配的 DNS 服务器地址
       if (!p.portSec) p.portSec = { enabled: false, maxMac: 1 };
       if (p.nat === undefined) p.nat = null;
       if (!p.dhcpRelay) p.dhcpRelay = { enabled: false, servers: [] };
@@ -1196,7 +1254,7 @@
     portUp(device, port) {
       if (!port) return false;
       if (port.shutdown) return false;
-      if (device.type === 'pc') return !!port.cableId;
+      if (isHost(device)) return !!port.cableId;
       return !!port.cableId;
     }
   };
@@ -1274,7 +1332,7 @@
         if (visited.has(peer.device.id)) continue;
 
         // 对端端口必须也能承载该域（对端是路由口/PC 时表示二层段在此终结，允许进入）
-        const peerIsL3End = peer.port.mode === 'routed' || peer.device.type === 'pc';
+        const peerIsL3End = peer.port.mode === 'routed' || isHost(peer.device);
         if (domain.type === VLAN_DOMAIN && !peerIsL3End) {
           if (!portPassesVlan(peer.port, domain.vlan)) continue;
         }
@@ -1346,7 +1404,7 @@
       return true;
     }
     // PC 主机口
-    if (device.type === 'pc') {
+    if (isHost(device)) {
       for (const p of device.ports) {
         if (p.ip !== ip || !p.cableId) continue;
         if (domain.type === P2P_DOMAIN && viaPortId != null && p.id !== viaPortId) continue;
@@ -1471,7 +1529,7 @@
       return { type: 'route', iface: r.iface, nextHop: r.nextHop, route: best, recursed: !!r.recursed };
     }
     // 3) PC 的缺省网关兜底
-    if (device.type === 'pc') {
+    if (isHost(device)) {
       const p = device.ports.find((x) => x.ip && x.gateway && x.cableId);
       if (p) {
         const iface = ifaces.find((i) => i.portId === p.id) || null;
@@ -1566,7 +1624,7 @@
     for (const i of l3Interfaces(device)) {
       if (i.ip === dstIp) return { ok: true, path, reason: 'local' };
     }
-    if (device.type === 'pc') {
+    if (isHost(device)) {
       for (const p of device.ports) if (p.ip === dstIp) return { ok: true, path, reason: 'local' };
     }
 
@@ -1596,6 +1654,12 @@
     // ACL 出方向过滤：报文从出接口发出时检查该接口绑定的 ACL
     const aclOutDeny = checkAclOutbound(device, srcIp, dstIp, egress);
     if (aclOutDeny) return { ok: false, path, reason: aclOutDeny, blocked: true };
+
+    // ---- 防火墙：区域间安全策略（在 NAT 之前判，策略里写的通常是内网原始地址）----
+    if (device.type === 'firewall') {
+      const fwDeny = checkFirewall(device, srcIp, dstIp, options.ingressPortId, egress.name, options.service);
+      if (fwDeny) return { ok: false, path, reason: fwDeny.reason, blocked: true };
+    }
 
     // ---- NAT：私网源地址去往公网地址，必须在出口做地址转换 ----
     // 真实网络里公网侧没有到 192.168.x/10.x 的回程路由，报文会被丢弃。
@@ -1776,6 +1840,104 @@
     );
   }
 
+  /* ------------------------------ 防火墙（USG6000V） ------------------------------ */
+
+  const ZONE_NAMES = ['local', 'trust', 'untrust', 'dmz'];
+
+  /** GigabitEthernet1/0/10 → GE1/0/10（回显里用短名，和 display 输出一致） */
+  function shortIface(name) {
+    return String(name || '')
+      .replace(/^GigabitEthernet/i, 'GE')
+      .replace(/^XGigabitEthernet/i, 'XGE')
+      .replace(/^Ethernet/i, 'E');
+  }
+
+  /** 接口名 → 所在安全区域；不属于任何区域返回 null（真机上这种接口不收发报文） */
+  function zoneOf(device, ifaceName) {
+    if (!device.zones || !ifaceName) return null;
+    for (const z of ZONE_NAMES) {
+      if ((device.zones[z] || []).indexOf(ifaceName) >= 0) return z;
+    }
+    return null;
+  }
+
+  /** 策略里的地址条件：{ ip, prefix } 或 'any'（null/undefined 也当 any） */
+  function addrMatch(rule, ip) {
+    if (!rule || rule === 'any' || !rule.ip) return true;
+    if (!isValidIp(ip)) return false;
+    if (rule.prefix == null) return ip === rule.ip;
+    const m = prefixToMask(rule.prefix);
+    return ((ipToInt(ip) & m) >>> 0) === ((ipToInt(rule.ip) & m) >>> 0);
+  }
+
+  /** 策略里的服务条件：any / icmp / http / https / dns / ftp */
+  function serviceMatch(policyService, service) {
+    const want = String(policyService || 'any').toLowerCase();
+    if (want === 'any') return true;
+    return want === String(service || 'icmp').toLowerCase();
+  }
+
+  function recordFwSession(device, srcIp, dstIp, srcZone, dstZone, policy, service) {
+    const list = device.fwSessions || (device.fwSessions = []);
+    const key = `${srcIp}|${dstIp}|${srcZone}|${dstZone}|${service}`;
+    if (list.some((s) => `${s.srcIp}|${s.dstIp}|${s.srcZone}|${s.dstZone}|${s.service}` === key)) return;
+    list.push({ srcIp, dstIp, srcZone, dstZone, policy, service, at: Date.now() });
+    if (list.length > 64) list.shift();
+  }
+
+  /**
+   * 防火墙区域间策略检查。放行返回 null，拒绝返回 { reason }。
+   *
+   * 三条和真机一致、也是学生最容易踩的行为：
+   *   ① 接口没加入安全区域 → 报文直接丢弃（不是「放行」）—— 最常见的漏配；
+   *   ② 区域间**缺省策略是 deny**，只放行写了 permit 的流量（和交换机的 ACL 相反）；
+   *   ③ 策略自上而下匹配，命中第一条就停。
+   * 例外：local 区（防火墙自身接口）默认放行，否则连 ping 管理地址都进不来。
+   */
+  function checkFirewall(device, srcIp, dstIp, ingressPortId, egressName, service) {
+    const inPort = ingressPortId ? Net.getPort(device, ingressPortId) : null;
+    const inName = inPort ? inPort.name : null;
+    const srcZone = inName ? zoneOf(device, inName) : 'local';
+    const dstZone = egressName ? zoneOf(device, egressName) : 'local';
+
+    if (inName && !srcZone) {
+      return {
+        reason:
+          `${device.hostname} 的入接口 ${shortIface(inName)} 不属于任何安全区域，报文被丢弃` +
+          '（先 firewall zone trust / untrust，再 add interface）'
+      };
+    }
+    if (egressName && !dstZone) {
+      return {
+        reason:
+          `${device.hostname} 的出接口 ${shortIface(egressName)} 不属于任何安全区域，报文被丢弃` +
+          '（先 firewall zone trust / untrust，再 add interface）'
+      };
+    }
+    if (srcZone === 'local' || dstZone === 'local') return null;
+
+    const svc = service || 'icmp';
+    for (const p of device.securityPolicies || []) {
+      if (p.srcZone && p.srcZone !== 'any' && p.srcZone !== srcZone) continue;
+      if (p.dstZone && p.dstZone !== 'any' && p.dstZone !== dstZone) continue;
+      if (!serviceMatch(p.service, svc)) continue;
+      if (!addrMatch(p.srcAddr, srcIp)) continue;
+      if (!addrMatch(p.dstAddr, dstIp)) continue;
+      if (p.action === 'permit') {
+        recordFwSession(device, srcIp, dstIp, srcZone, dstZone, p.name, svc);
+        return null;
+      }
+      return {
+        reason: `${device.hostname} 的安全策略 ${p.name} 拒绝：${srcZone}(${srcIp}) → ${dstZone}(${dstIp}) ${svc}`
+      };
+    }
+    return {
+      reason:
+        `${device.hostname} 上没有匹配的安全策略，按缺省策略 deny 丢弃：` +
+        `${srcZone}(${srcIp}) → ${dstZone}(${dstIp}) ${svc}（在 security-policy 里加一条 action permit 的规则）`
+    };
+  }
+
   function matchAclRule(rule, srcIp, dstIp) {
     if (rule.src) {
       const pfx = rule.srcPrefix == null ? wildcardToPrefix(rule.srcWildcard || '0.0.0.0') : rule.srcPrefix;
@@ -1802,7 +1964,7 @@
    */
   function applyNatOnEgress(device, egress, srcIp, dstIp) {
     if (!srcIp || !dstIp) return {};
-    if (device.type === 'pc') return {}; // PC 只管把包交给网关，NAT 是网关的事
+    if (isHost(device)) return {}; // PC 只管把包交给网关，NAT 是网关的事
     if (!isPrivateIp(srcIp) || isPrivateIp(dstIp)) return {}; // 只有「私网 → 公网」才需要转换
 
     const port = egress && egress.kind === 'port' ? Net.getPort(device, egress.portId) : null;
@@ -1872,7 +2034,7 @@
 
   /** 设备自身的源 IP（用于 ping 源地址） */
   function primaryIp(device) {
-    if (device.type === 'pc') {
+    if (isHost(device)) {
       const p = device.ports.find((x) => x.ip);
       return p ? { ip: p.ip, mask: p.mask, port: p } : null;
     }
@@ -1975,10 +2137,33 @@
   }
 
   /** 执行 ping，返回 { ok, path, reason, srcIp, dstDevice } */
+  /** 主机做 DNS 解析：查自己配的 DNS 服务器上的记录（服务器必须是 Service 类型且开了 DNS） */
+  function resolveName(host, name) {
+    const nm = String(name || '').trim();
+    if (!host || !nm) return { error: '域名不能为空' };
+    const p0 = host.ports && host.ports[0];
+    const dnsIp = p0 && p0.dns;
+    if (!dnsIp) return { error: `没有配置 DNS 服务器，域名 ${nm} 无法解析（在主机上敲：dns <DNS服务器IP>）` };
+    const srv = Net.devices.find((d) => d.type === 'server' && d.ports.some((p) => p.ip === dnsIp));
+    if (!srv) return { error: `DNS 服务器 ${dnsIp} 不在拓扑里，或者那个地址不是服务器` };
+    if (!srv.services || !srv.services.dns) {
+      return { error: `服务器 ${srv.hostname} 的 DNS 服务没有开启（先在服务器上敲 dns server enable）` };
+    }
+    const rec = (srv.dnsRecords || []).find((r) => String(r.name).toLowerCase() === nm.toLowerCase());
+    if (!rec) return { error: `DNS 服务器 ${srv.hostname} 上没有 ${nm} 的记录（服务器上敲 dns add ${nm} <IP>）` };
+    return { ip: rec.ip, server: srv };
+  }
+
   function ping(srcDevice, dstIp, srcIpOverride) {
     const src = srcIpOverride ? { ip: srcIpOverride } : primaryIp(srcDevice);
     if (!src || !src.ip) {
       return { ok: false, reason: '源设备未配置 IP 地址', path: [srcDevice.id] };
+    }
+    // 允许直接 ping 域名：先走 DNS 解析，解析不了就把原因说清楚
+    if (!isValidIp(dstIp)) {
+      const rn = resolveName(srcDevice, dstIp);
+      if (rn.error) return { ok: false, reason: rn.error, path: [srcDevice.id] };
+      dstIp = rn.ip;
     }
     if (!isValidIp(dstIp)) {
       return { ok: false, reason: '目的地址不合法', path: [srcDevice.id] };
@@ -1998,13 +2183,20 @@
       }
     }
 
-    const res = forward(srcDevice, dstIp, { srcIp: src.ip });
+    const res = forward(srcDevice, dstIp, { srcIp: src.ip, service: 'icmp' });
     // PC 侧失败 → 换成主机视角的解释。
     // 只在「失败发生在 PC 自己身上」时替换，别盖掉路由器给出的原因（那才是真线索）。
-    if (!res.ok && srcDevice.type === 'pc' && String(res.reason || '').startsWith(srcDevice.hostname)) {
+    if (!res.ok && isHost(srcDevice) && String(res.reason || '').startsWith(srcDevice.hostname)) {
       res.reason = pcHint(srcDevice, dstIp) || res.reason;
     }
     return { ...res, srcIp: src.ip, dstDevice: dstDevice || null, dstIp };
+  }
+
+  /** 通用可达性探测：给应用层命令（http get 等）用，service 决定防火墙策略匹配哪条服务 */
+  function reach(srcDevice, dstIp, service) {
+    const src = primaryIp(srcDevice);
+    if (!src || !src.ip) return { ok: false, reason: '源设备未配置 IP 地址' };
+    return forward(srcDevice, dstIp, { srcIp: src.ip, service: service || 'icmp' });
   }
 
   /** traceroute：逐跳收集（内部实现，PC 侧的失败原因在外面统一翻译） */
@@ -2014,6 +2206,7 @@
     if (!src || !src.ip) return { ok: false, hops, reason: '源设备未配置 IP 地址' };
 
     let cur = srcDevice;
+    let ingressPortId = null; // 报文当前是从哪个口进到 cur 的（防火墙判区域要用）
     let guard = 0;
     const seen = new Set([srcDevice.id]);
     while (guard++ < 16) {
@@ -2021,6 +2214,11 @@
       if (lookup.type === 'none') return { ok: false, hops, reason: `在 ${cur.hostname} 上没有到达 ${dstIp} 的路由` };
       const egress = findEgressIface(cur, dstIp, lookup);
       if (!egress) return { ok: false, hops, reason: `在 ${cur.hostname} 上找不到出接口` };
+      // 防火墙的区域间策略同样会拦掉 traceroute 的探测包，否则会出现「tracert 通了、ping 不通」的怪象
+      if (cur.type === 'firewall') {
+        const fwDeny = checkFirewall(cur, src.ip, dstIp, ingressPortId, egress.name, 'icmp');
+        if (fwDeny) return { ok: false, hops, reason: fwDeny.reason };
+      }
 
       // 本机即目的
       for (const i of l3Interfaces(cur)) {
@@ -2046,6 +2244,7 @@
       if (seen.has(hit.device.id)) return { ok: false, hops, reason: '路由环路' };
       seen.add(hit.device.id);
       cur = hit.device;
+      ingressPortId = hit.ingressPortId || null;
     }
     return { ok: false, hops, reason: 'TTL 超时' };
   }
@@ -2053,7 +2252,7 @@
   /** traceroute 对外入口：PC 失败时换成主机视角的原因 */
   function traceroute(srcDevice, dstIp) {
     const r = traceWalk(srcDevice, dstIp);
-    if (!r.ok && srcDevice.type === 'pc' && String(r.reason || '').includes(srcDevice.hostname)) {
+    if (!r.ok && isHost(srcDevice) && String(r.reason || '').includes(srcDevice.hostname)) {
       r.reason = pcHint(srcDevice, dstIp) || r.reason;
     }
     return r;
@@ -2158,7 +2357,7 @@
   function l3Interfaces6(device) {
     const list = [];
     // PC 是主机，配了就有地址，不要求 ipv6 全局开关
-    if (device.type === 'pc') {
+    if (isHost(device)) {
       for (const p of device.ports) {
         if (!p.ipv6 || !p.ipv6.addr) continue;
         list.push({ kind: 'pc', name: p.name, portId: p.id, addr: p.ipv6.addr, prefix: p.ipv6.prefix, up: !!p.cableId });
@@ -2232,7 +2431,7 @@
       if (!parent || parent.shutdown || !parent.cableId) continue;
       return true;
     }
-    if (device.type === 'pc') {
+    if (isHost(device)) {
       for (const p of device.ports) {
         if (p.ipv6 && p.ipv6.addr && hit(p.ipv6.addr) && p.cableId) {
           if (domain.type === P2P_DOMAIN && viaPortId != null && p.id !== viaPortId) continue;
@@ -2263,7 +2462,7 @@
         null;
       return { type: 'route', iface, nextHop: best.nextHop, route: best };
     }
-    if (device.type === 'pc') {
+    if (isHost(device)) {
       const p = device.ports.find((x) => x.ipv6 && x.ipv6.gw && x.cableId);
       if (p) {
         return {
@@ -2376,7 +2575,7 @@
       return {
         ok: false,
         reason:
-          srcDevice.type === 'pc'
+          isHost(srcDevice)
             ? `${srcDevice.hostname} 还没有配置 IPv6 地址（ipv6 <地址> <前缀长度> <网关>）`
             : `${srcDevice.hostname} 没有可用的 IPv6 接口地址（先 ipv6 全局开启，再在接口下 ipv6 address）`,
         path: [srcDevice.id],
@@ -2384,7 +2583,7 @@
       };
     }
     const res = forward6(srcDevice, dst, {});
-    if (!res.ok && srcDevice.type === 'pc' && String(res.reason || '').includes(srcDevice.hostname)) {
+    if (!res.ok && isHost(srcDevice) && String(res.reason || '').includes(srcDevice.hostname)) {
       const p = srcDevice.ports.find((x) => x.ipv6 && x.ipv6.addr);
       if (p && sameSubnet6(p.ipv6.addr, p.ipv6.prefix, dst)) {
         res.reason = `${srcDevice.hostname} 和 ${dst} 在同一 IPv6 网段，属于直连访问 —— 查中间链路的 VLAN / 端口状态`;
@@ -2627,7 +2826,7 @@
       let sawLink = false;
       for (const peer of Net.devices) {
         if (peer.id === device.id) continue;
-        if (peer.type === 'pc') continue; // PC 不会跑动态路由，别当成邻居候选
+        if (isHost(peer)) continue; // PC 不会跑动态路由，别当成邻居候选
         for (const pIf of l3Interfaces(peer)) {
           if (!l2Adjacent(device, own, peer, pIf.ip)) continue;
           sawLink = true;
@@ -2979,7 +3178,7 @@
         if (d.type === 'switch' && !portPassesVlan(p, vlan)) continue;
         const np = Net.peerOf(d, p);
         if (!np || !np.device || visited.has(np.device.id)) continue;
-        if (np.device.type === 'pc') continue;
+        if (isHost(np.device)) continue;
         visited.add(np.device.id);
         q.push(np.device);
       }
@@ -3112,9 +3311,15 @@
     return parts.join(' ');
   }
 
+  /** 策略里的地址条件 → 配置文本（192.168.1.0/24 → "192.168.1.0 mask 255.255.255.0"） */
+  function addrCfg(a) {
+    if (!a || a === 'any' || !a.ip) return 'any';
+    return a.prefix == null || a.prefix === 32 ? a.ip : `${a.ip} mask ${prefixToMask(a.prefix)}`;
+  }
+
   function runningConfig(dev) {
     const out = ['#', `sysname ${dev.hostname}`, '#'];
-    if (dev.type === 'pc') {
+    if (isHost(dev)) {
       const p = dev.ports[0];
       if (p.ip) {
         out.push(`ip address ${p.ip} ${prefixToMask(p.mask)}`);
@@ -3124,7 +3329,41 @@
         out.push(`ipv6 address ${p.ipv6.addr} ${p.ipv6.prefix}`);
         if (p.ipv6.gw) out.push(`ipv6 gateway ${p.ipv6.gw}`);
       }
+      if (p.dns) out.push(`dns ${p.dns}`);
+      if (dev.type === 'server') {
+        const svc = dev.services || {};
+        if (svc.http) out.push('http server enable');
+        if (svc.dns) out.push('dns server enable');
+        if (svc.ftp) out.push('ftp server enable');
+        for (const r of dev.dnsRecords || []) out.push(`dns add ${r.name} ${r.ip}`);
+      }
       return out;
+    }
+
+    /* 防火墙：安全区域与安全策略。顺序按真机习惯（区域在前，策略在后），导入时也按这个顺序重放 */
+    if (dev.type === 'firewall') {
+      for (const z of ['trust', 'untrust', 'dmz']) {
+        const arr = (dev.zones && dev.zones[z]) || [];
+        if (!arr.length) continue;
+        out.push(`firewall zone ${z}`);
+        for (const n of arr) out.push(` add interface ${n}`);
+        out.push('#');
+      }
+      const pols = dev.securityPolicies || [];
+      if (pols.length) {
+        out.push('security-policy');
+        for (const r of pols) {
+          out.push(` rule name ${r.name}`);
+          if (r.srcZone && r.srcZone !== 'any') out.push(`  source-zone ${r.srcZone}`);
+          if (r.dstZone && r.dstZone !== 'any') out.push(`  destination-zone ${r.dstZone}`);
+          if (r.srcAddr && r.srcAddr !== 'any') out.push(`  source-address ${addrCfg(r.srcAddr)}`);
+          if (r.dstAddr && r.dstAddr !== 'any') out.push(`  destination-address ${addrCfg(r.dstAddr)}`);
+          if (r.service && r.service !== 'any') out.push(`  service ${r.service}`);
+          out.push(`  action ${r.action}`);
+          if (r.desc) out.push(`  description ${r.desc}`);
+        }
+        out.push('#');
+      }
     }
 
     // 真实 VRP 里没有附加属性的 VLAN 会合并成 vlan batch，有描述/名称的单独成段
@@ -3323,6 +3562,8 @@
     primaryIp,
     ping,
     traceroute,
+    resolveName,
+    reach,
     portConfigLines,
     vlanifConfigLines,
     subifConfigLines,
@@ -3363,6 +3604,9 @@
   'use strict';
 
   const E = global.NE;
+
+  /** 主机类设备（PC / 服务器）：命令模型一样，只是服务器多了对外服务 */
+  const isHost = (d) => !!d && (d.type === 'pc' || d.type === 'server');
 
   /* ------------------------------ 小工具 ------------------------------ */
 
@@ -3486,7 +3730,9 @@
     'areaId',
     'ripPid',
     'subifKey',
-    'uiType'
+    'uiType',
+    'zoneName',
+    'ruleName'
   ];
 
   /** 接口视图 / 端口组视图下当前被配置的端口列表 */
@@ -3604,6 +3850,12 @@
         return `[${name}-rip-${dev.cli.ripPid || ''}]`;
       case 'trunk-view':
         return `[${name}-Eth-Trunk${dev.cli.trunkId || ''}]`;
+      case 'zone-view':
+        return `[${name}-zone-${dev.cli.zoneName || ''}]`;
+      case 'policy-view':
+        return `[${name}-policy-security]`;
+      case 'policy-rule-view':
+        return `[${name}-policy-security-rule-${dev.cli.ruleName || ''}]`;
       default:
         return `[${name}]`;
     }
@@ -4009,7 +4261,7 @@
     const seen = new Set();
 
     for (const p of dev.ports) {
-      if (dev.type === 'pc') break;
+      if (isHost(dev)) break;
       const up = p.cableId && !p.shutdown;
       const ip = p.ip || 'unassigned';
       const mask = p.ip ? E.prefixToMask(p.mask) : '--';
@@ -4176,7 +4428,7 @@
       const peerDev = peer.device;
       const vlan = E.portVlan(p);
       if (!devVlans.has(vlan)) continue;
-      if (peerDev.type === 'pc') {
+      if (isHost(peerDev)) {
         rows.push({ mac: E.macOf(peerDev), vlan, port: p.name, type: 'dynamic' });
       } else if (peerDev.type === 'router' && peer.port && peer.port.ip) {
         rows.push({ mac: E.macOf(peerDev), vlan, port: p.name, type: 'dynamic' });
@@ -4772,6 +5024,325 @@
     return out;
   }
 
+  /* ======================= 服务器（Server） ======================= */
+
+  /** 服务器面板命令：三个服务开关 + DNS 记录维护 */
+  function serverCommands(dev, cmd, args) {
+    const svc = dev.services || (dev.services = { http: false, dns: false, ftp: false });
+    const sub = String(args[1] || '').toLowerCase();
+    const on = String(args[2] || '').toLowerCase();
+    const toggle = (key, name) => {
+      if (on !== 'enable' && on !== 'disable') return errIncomplete(`${cmd} ${name}`);
+      svc[key] = on === 'enable';
+      return { lines: [] };
+    };
+    if (cmd === 'http' && sub === 'server') return toggle('http', 'server');
+    if (cmd === 'dns' && sub === 'server') return toggle('dns', 'server');
+    if (cmd === 'ftp' && sub === 'server') return toggle('ftp', 'server');
+    if (cmd === 'dns') {
+      if (sub === 'add') {
+        if (!args[2] || !E.isValidIp(args[3])) return errWrong('dns add');
+        dev.dnsRecords = (dev.dnsRecords || []).filter((r) => r.name !== args[2]);
+        dev.dnsRecords.push({ name: args[2], ip: args[3] });
+        return { lines: [] };
+      }
+      if (sub === 'delete' || sub === 'del') {
+        if (!args[2]) return errIncomplete('dns delete');
+        dev.dnsRecords = (dev.dnsRecords || []).filter((r) => r.name !== args[2]);
+        return { lines: [] };
+      }
+    }
+    if (cmd === 'display' && sub === 'server') return { lines: serverStatusLines(dev) };
+    return null;
+  }
+
+  function serverStatusLines(dev) {
+    const svc = dev.services || {};
+    const p = dev.ports[0] || {};
+    const ok = (v) => (v ? 'enabled' : 'disabled');
+    const lines = [
+      `Hostname     : ${dev.hostname}`,
+      `IP address   : ${p.ip ? p.ip + '/' + p.mask : '未配置'}`,
+      `Gateway      : ${p.gateway || '未配置'}`,
+      `HTTP server  : ${ok(svc.http)}`,
+      `DNS server   : ${ok(svc.dns)}`,
+      `FTP server   : ${ok(svc.ftp)}`
+    ];
+    if ((dev.dnsRecords || []).length) {
+      lines.push('DNS records  :');
+      for (const r of dev.dnsRecords) lines.push(`  ${padEnd(r.name, 22)} -> ${r.ip}`);
+    } else {
+      lines.push('DNS records  : 无');
+    }
+    return lines;
+  }
+
+  /* ======================= 主机访问服务（DNS / HTTP） ======================= */
+
+  function hostClientCommands(dev, cmd, args) {
+    // dns <服务器地址>：给主机配 DNS 服务器（PC 和服务器都能配）
+    if (cmd === 'dns' && E.isValidIp(args[1])) {
+      dev.ports[0].dns = args[1];
+      return { lines: [`DNS 服务器：${args[1]}`] };
+    }
+    if (cmd === 'dns' && String(args[1] || '').toLowerCase() === 'query') {
+      if (!args[2]) return errIncomplete('dns query');
+      const r = E.resolveName(dev, args[2]);
+      if (r.error) return { lines: ['// ' + r.error] };
+      return { lines: [`${args[2]} 解析为 ${r.ip}（来自 ${r.server.hostname}）`] };
+    }
+    if (cmd === 'http' && String(args[1] || '').toLowerCase() === 'get') {
+      if (!args[2]) return errIncomplete('http get');
+      return { lines: httpGet(dev, args[2]) };
+    }
+    return null;
+  }
+
+  /** 访问一台服务器的网页：先解析域名，再按 http 服务走一遍转发（防火墙策略按 http 匹配） */
+  function httpGet(dev, target) {
+    let ip = target;
+    let name = null;
+    if (!E.isValidIp(ip)) {
+      const rn = E.resolveName(dev, target);
+      if (rn.error) return ['// ' + rn.error];
+      ip = rn.ip;
+      name = target;
+    }
+    const res = E.reach(dev, ip, 'http');
+    if (!res.ok) return [`// 无法访问 ${name || ip}：${res.reason}`];
+    const owner = E.Net.devices.find((d) => d.ports.some((p) => p.ip === ip));
+    if (!owner || owner.type !== 'server' || !owner.services || !owner.services.http) {
+      return [`// ${ip} 上没有开启 HTTP 服务（在服务器上敲：http server enable）`];
+    }
+    return [
+      `Connecting to ${name || ip} ...`,
+      '',
+      `<html><head><title>${name || ip}</title></head>`,
+      '<body><h1>It works!</h1>',
+      `<p>${owner.hostname} 的主页（模拟页面）。</p></body></html>`
+    ];
+  }
+
+  /* ======================= 防火墙（USG6000V） ======================= */
+
+  const FW_ZONES = ['trust', 'untrust', 'dmz', 'local'];
+
+  /** 掩码 / 前缀长度 → 前缀长度 */
+  function maskArgToPrefix(tok) {
+    if (tok == null) return null;
+    const t = String(tok).trim();
+    if (/^\d+$/.test(t)) {
+      const v = parseInt(t, 10);
+      return v >= 0 && v <= 32 ? v : null;
+    }
+    return E.maskToPrefix(t);
+  }
+
+  /** source-address / destination-address 的参数 → 地址条件（'any' 或 { ip, prefix }） */
+  function parsePolicyAddr(args, i) {
+    const first = String(args[i] || '');
+    if (!first) return { err: true };
+    if (first.toLowerCase() === 'any') return { val: 'any' };
+    if (!E.isValidIp(first)) return { err: true };
+    const next = String(args[i + 1] || '').toLowerCase();
+    if (next === 'mask' || next === 'wildcard') {
+      const p = maskArgToPrefix(args[i + 2]);
+      if (p == null) return { err: true };
+      return { val: { ip: first, prefix: p } };
+    }
+    const p = maskArgToPrefix(args[i + 1]);
+    if (p != null) return { val: { ip: first, prefix: p } };
+    return { val: { ip: first, prefix: 32 } };
+  }
+
+  /** 接口名（含缩写）→ 设备上的真实接口名 */
+  function canonIface(dev, token) {
+    const r = resolveIface(dev, token);
+    if (!r || r.kind !== 'eth' || !r.port) return null;
+    return { name: r.port.name, port: r.port };
+  }
+
+  function fwSystemCommands(dev, cmd, args) {
+    if (cmd === 'firewall' && String(args[1] || '').toLowerCase() === 'zone') {
+      const z = String(args[2] || '').toLowerCase();
+      if (FW_ZONES.indexOf(z) < 0) return errWrong(args[2] || 'firewall zone');
+      enterView(dev, 'zone-view', { zoneName: z });
+      return { lines: [] };
+    }
+    if (cmd === 'security-policy') {
+      enterView(dev, 'policy-view', {});
+      return { lines: [] };
+    }
+    return null;
+  }
+
+  function fwZoneCommands(dev, cmd, args) {
+    const z = dev.cli.zoneName;
+    const list = dev.zones[z] || (dev.zones[z] = []);
+    const sub2 = String(args[1] || '').toLowerCase();
+    if (cmd === 'add' && sub2 === 'interface') {
+      const hit = canonIface(dev, args[2]);
+      if (!hit) return errWrong(args[2] || 'add interface');
+      if (list.indexOf(hit.name) >= 0) return { lines: [] };
+      // 一个接口只能属于一个区域：加到新区域前先从旧区域移除
+      for (const other of FW_ZONES) {
+        if (other === z) continue;
+        const ol = dev.zones[other] || [];
+        const i = ol.indexOf(hit.name);
+        if (i >= 0) ol.splice(i, 1);
+      }
+      list.push(hit.name);
+      return { lines: ['Info: The interface has been added to the zone.'] };
+    }
+    if (cmd === 'delete' && sub2 === 'interface') {
+      const hit = canonIface(dev, args[2]);
+      if (!hit) return errWrong(args[2] || 'delete interface');
+      const i = list.indexOf(hit.name);
+      if (i >= 0) list.splice(i, 1);
+      return { lines: ['Info: The interface has been deleted from the zone.'] };
+    }
+    if (cmd === 'display') {
+      const sub = String(args[1] || '').toLowerCase();
+      if (sub === 'this') return { lines: fwZoneLines(dev, z) };
+      if (sub === 'zone') return { lines: fwZoneTable(dev) };
+    }
+    return null;
+  }
+
+  function fwZoneLines(dev, z) {
+    const lines = [`firewall zone ${z}`];
+    for (const n of dev.zones[z] || []) lines.push(` add interface ${n}`);
+    return lines;
+  }
+
+  function fwZoneTable(dev) {
+    const lines = [];
+    for (const z of FW_ZONES) {
+      const arr = (dev.zones && dev.zones[z]) || [];
+      lines.push(`${padEnd(z, 10)}: ${arr.length ? arr.join(', ') : '--'}`);
+    }
+    return lines;
+  }
+
+  function fwPolicyCommands(dev, cmd, args) {
+    const sub = String(args[1] || '').toLowerCase();
+    if (cmd === 'rule' && sub === 'name') {
+      const name = args[2];
+      if (!name) return errIncomplete('rule name');
+      let r = (dev.securityPolicies || []).find((p) => p.name === name);
+      if (!r) {
+        r = { name, srcZone: 'any', dstZone: 'any', action: 'deny', service: 'any', srcAddr: 'any', dstAddr: 'any', desc: '' };
+        dev.securityPolicies.push(r);
+      }
+      enterView(dev, 'policy-rule-view', { ruleName: name });
+      return { lines: [] };
+    }
+    if (cmd === 'display') {
+      if (sub === 'this') return { lines: fwPolicyLines(dev) };
+      if (sub === 'security-policy') return { lines: fwPolicyTable(dev) };
+    }
+    return null;
+  }
+
+  function fwRuleCommands(dev, cmd, args) {
+    const r = (dev.securityPolicies || []).find((p) => p.name === dev.cli.ruleName);
+    if (!r) return null;
+    const a1 = String(args[1] || '').toLowerCase();
+    const zoneOk = (z) => z === 'any' || FW_ZONES.indexOf(z) >= 0;
+    if (cmd === 'source-zone') {
+      if (!zoneOk(a1)) return errWrong(args[1] || 'source-zone');
+      r.srcZone = a1;
+      return { lines: [] };
+    }
+    if (cmd === 'destination-zone') {
+      if (!zoneOk(a1)) return errWrong(args[1] || 'destination-zone');
+      r.dstZone = a1;
+      return { lines: [] };
+    }
+    if (cmd === 'action') {
+      if (a1 !== 'permit' && a1 !== 'deny') return errWrong(args[1] || 'action');
+      r.action = a1;
+      return { lines: [] };
+    }
+    if (cmd === 'service') {
+      const allow = ['any', 'icmp', 'http', 'https', 'dns', 'ftp'];
+      const sv = a1 || 'any';
+      if (allow.indexOf(sv) < 0) return errWrong(args[1] || 'service');
+      r.service = sv;
+      return { lines: [] };
+    }
+    if (cmd === 'source-address') {
+      const v = parsePolicyAddr(args, 1);
+      if (v.err) return errWrong(args[1] || 'source-address');
+      r.srcAddr = v.val;
+      return { lines: [] };
+    }
+    if (cmd === 'destination-address') {
+      const v = parsePolicyAddr(args, 1);
+      if (v.err) return errWrong(args[1] || 'destination-address');
+      r.dstAddr = v.val;
+      return { lines: [] };
+    }
+    if (cmd === 'description') {
+      r.desc = args.slice(1).join(' ');
+      return { lines: [] };
+    }
+    if (cmd === 'display' && String(args[1] || '').toLowerCase() === 'this') {
+      return { lines: fwPolicyLines(dev) };
+    }
+    return null;
+  }
+
+  function addrText(a) {
+    if (!a || a === 'any' || !a.ip) return 'any';
+    return a.prefix == null || a.prefix === 32 ? a.ip : `${a.ip}/${a.prefix}`;
+  }
+
+  function fwPolicyLines(dev) {
+    const lines = [];
+    for (const r of dev.securityPolicies || []) {
+      lines.push(` rule name ${r.name}`);
+      if (r.srcZone && r.srcZone !== 'any') lines.push(`  source-zone ${r.srcZone}`);
+      if (r.dstZone && r.dstZone !== 'any') lines.push(`  destination-zone ${r.dstZone}`);
+      if (r.srcAddr && r.srcAddr !== 'any') lines.push(`  source-address ${addrText(r.srcAddr)}`);
+      if (r.dstAddr && r.dstAddr !== 'any') lines.push(`  destination-address ${addrText(r.dstAddr)}`);
+      if (r.service && r.service !== 'any') lines.push(`  service ${r.service}`);
+      lines.push(`  action ${r.action}`);
+      if (r.desc) lines.push(`  description ${r.desc}`);
+    }
+    return lines.length ? lines : ['// 还没有配置安全策略'];
+  }
+
+  function fwPolicyTable(dev) {
+    const list = dev.securityPolicies || [];
+    if (!list.length) return ['// 当前没有安全策略（缺省策略为 deny，所有区域间流量都会被丢弃）'];
+    const lines = [
+      ` Total rules: ${list.length}`,
+      ' -------------------------------------------------------------------------',
+      ` ${padEnd('Rule name', 18)}${padEnd('Source', 14)}${padEnd('Destination', 14)}${padEnd('Service', 9)}Action`
+    ];
+    for (const r of list) {
+      lines.push(
+        ` ${padEnd(r.name, 18)}${padEnd((r.srcZone || 'any') + '(' + addrText(r.srcAddr) + ')', 14)}` +
+        `${padEnd((r.dstZone || 'any') + '(' + addrText(r.dstAddr) + ')', 14)}${padEnd(r.service || 'any', 9)}${r.action}`
+      );
+    }
+    lines.push(' -------------------------------------------------------------------------');
+    return lines;
+  }
+
+  function fwSessionTable(dev) {
+    const list = dev.fwSessions || [];
+    if (!list.length) return ['  Current Total Sessions : 0'];
+    const lines = [`  Current Total Sessions : ${list.length}`];
+    for (const s of list) {
+      lines.push(
+        `  ${padEnd(s.service, 6)}VPN: public --> public  ${s.srcZone}(${s.srcIp}) --> ${s.dstZone}(${s.dstIp})  policy: ${s.policy}`
+      );
+    }
+    return lines;
+  }
+
   function dispatchDisplay(dev, args) {
     const a = args.map((x) => x.toLowerCase());
     const rest = args.slice(1);
@@ -4780,6 +5351,13 @@
     switch (a[1]) {
       case 'version':
         return cmdDisplayVersion(dev);
+      case 'security-policy':
+        return fwPolicyTable(dev);
+      case 'firewall':
+        // display firewall session table / display firewall zone
+        if (a[2] === 'session') return fwSessionTable(dev);
+        if (a[2] === 'zone') return fwZoneTable(dev);
+        return errUnrecognized(a[1]);
       case 'current-configuration':
         return cmdDisplayCurrentConfig(dev);
       case 'this':
@@ -4854,7 +5432,7 @@
     }
     if (!ip) return errIncomplete('ping');
 
-    if (dev.type === 'pc') {
+    if (isHost(dev)) {
       const res = E.ping(dev, ip);
       const out = [`Pinging ${ip} with 32 bytes of data:`];
       if (res.ok) {
@@ -4900,7 +5478,7 @@
     const ip = args.find((a) => E.isValidIp(a));
     if (!ip) return errIncomplete('tracert');
     const res = E.traceroute(dev, ip);
-    const isPc = dev.type === 'pc';
+    const isPc = isHost(dev);
     const out = [];
     if (isPc) out.push(`Tracing route to ${ip} over a maximum of 30 hops:`);
     else out.push(`traceroute to ${ip}, 8 hops max, press CTRL_C to break`);
@@ -4985,7 +5563,7 @@
     void brief;
     const rows = [padEnd('Interface', 34) + padEnd('PHY', 6) + 'IPv6 Address'];
     for (const p of dev.ports) {
-      if (dev.type === 'pc') break;
+      if (isHost(dev)) break;
       const up = p.cableId && !p.shutdown;
       const v6 = p.ipv6 && p.ipv6.addr ? `${p.ipv6.addr}/${p.ipv6.prefix}` : 'unassigned';
       rows.push(padEnd(p.name, 34) + padEnd(up ? 'up' : 'down', 6) + v6);
@@ -5231,7 +5809,12 @@
     // ---- display / show ----
     // PC 没有 VRP 命令行，不支持 display
     if (cmd === 'display' || cmd === 'dis') {
-      if (dev.type === 'pc') return errUnrecognized(cmd);
+      if (isHost(dev)) {
+        if (dev.type === 'server' && String(args[1] || '').toLowerCase() === 'server') {
+          return { lines: serverStatusLines(dev) };
+        }
+        return errUnrecognized(cmd);
+      }
       return { lines: dispatchDisplay(dev, args) };
     }
 
@@ -5335,7 +5918,7 @@
       return { lines: [`Trying ${ip} ...`, `Connected to ${ip} ...`, '', 'Login authentication', '', 'Username:'] };
     }
 
-    if (dev.type === 'pc' && view === 'user-view') {
+    if (isHost(dev) && view === 'user-view') {
       if (cmd === 'ipconfig') return cmdIpconfig(dev, args);
       if (cmd === 'ip') {
         // ip 192.168.10.2 255.255.255.0 192.168.10.1
@@ -5383,6 +5966,12 @@
         return { lines };
       }
 
+      if (dev.type === 'server') {
+        const sr = serverCommands(dev, cmd, args);
+        if (sr) return sr;
+      }
+      const cliR = hostClientCommands(dev, cmd, args);
+      if (cliR) return cliR;
       if (cmd === 'dhcp') return { lines: doDhcp(dev) };
       // PC 上没有 system-view，改名字就直接在用户视图里做（真机是在图形界面改的）
       if (cmd === 'sysname') {
@@ -5393,8 +5982,29 @@
       return errUnrecognized(cmd);
     }
 
+    /* ================= 防火墙专属视图 ================= */
+    if (view === 'zone-view') {
+      const r = fwZoneCommands(dev, cmd, args);
+      if (r) return r;
+      return errUnrecognized(cmd);
+    }
+    if (view === 'policy-view') {
+      const r = fwPolicyCommands(dev, cmd, args);
+      if (r) return r;
+      return errUnrecognized(cmd);
+    }
+    if (view === 'policy-rule-view') {
+      const r = fwRuleCommands(dev, cmd, args);
+      if (r) return r;
+      return errUnrecognized(cmd);
+    }
+
     /* ================= 系统视图 ================= */
     if (view === 'system-view') {
+      if (dev.type === 'firewall') {
+        const fwR = fwSystemCommands(dev, cmd, args);
+        if (fwR) return fwR;
+      }
       if (cmd === 'sysname') {
         if (!args[1]) return errIncomplete('sysname');
         dev.hostname = args[1];
@@ -5914,7 +6524,7 @@
         return { lines: ['Info: The port has been switched to a Layer 3 port.'] };
       }
       if (cmd === 'portswitch') {
-        if (dev.type === 'pc') return errUnrecognized(cmd);
+        if (isHost(dev)) return errUnrecognized(cmd);
         ports.forEach((p) => { p.mode = 'access'; });
         return { lines: ['Info: The port has been switched to a Layer 2 port.'] };
       }
@@ -6793,7 +7403,7 @@
         'display this                 查看 RIP 配置'
       ]
     };
-    if (dev.type === 'pc') {
+    if (isHost(dev)) {
       return [
         '',
         '  ---- PC 可用命令 ----',
@@ -7468,7 +8078,7 @@
 </script>
 <script>
 /* =========================================================================
- * NE_HWSIM —— 华为 VRP 网络实训模拟器
+ * 新易网络沙盘（NE_HWSIM）—— 华为 VRP 命令实训
  * 模块：界面与交互（画布 / 拖拽 / 连线 / 终端 / 持久化 / 实训实验）
  *
  * Copyright (c) 2026 新易科技工作室 NewE
@@ -7488,6 +8098,8 @@
      build.mjs 会把它读出来写进产物开头的注释，所以交付文件本身也能看出是哪个版本。 */
   const APP_VERSION = '1.6.5';
   const APP_INFO = {
+    name: '新易网络沙盘',
+    tagline: '华为 VRP 命令实训 · 单文件离线版',
     studio: '新易科技工作室 NewE',
     author: 'Liuyi',
     email: 'yimr@sohu.com',
@@ -7501,7 +8113,9 @@
      移动端的媒体查询只改那几个变量，JS 这边跟着变，两边不会各写一套导致连线端点错位。
      （过去 JS 和 CSS 各写一份，改一处就会让连线偏离端口中心。） */
   const COLS = 14;
-  const PC_COLS = 4; // PC 只有一个网口，列数少一点，单口才不至于挤成一个小方块
+  const PC_COLS = 4; // PC / 服务器只有一个网口、防火墙只有 4 个口：列数少一点，端口才不至于挤成小方块
+  /** 用「窄卡片」的设备：PC / 服务器 / 防火墙（端口少，宽卡片会显得空） */
+  const isCompactCard = (d) => !!d && (d.type === 'pc' || d.type === 'server' || d.type === 'firewall');
   const BORDER = 1; // .card 的 border 宽度。box-sizing 是 border-box，算端口坐标时必须减掉
 
   const M_FALLBACK = {
@@ -7569,10 +8183,10 @@
   /* PC 只有一个网口：卡片既矮又窄，端口网格的列数也跟着少 */
   function cardW(dev) {
     const m = metrics();
-    return dev.type === 'pc' ? m.pcW : m.cardW;
+    return isCompactCard(dev) ? m.pcW : m.cardW;
   }
   function colsOf(dev) {
-    return dev.type === 'pc' ? PC_COLS : COLS;
+    return isCompactCard(dev) ? PC_COLS : COLS;
   }
   function colW(dev) {
     const m = metrics();
@@ -7629,6 +8243,8 @@
       { key: 'S5700', ic: 'ic-sw3', name: '三层交换机', sub: 'S5700-28C-EI' },
       { key: 'S3700', ic: 'ic-sw2', name: '二层交换机', sub: 'S3700-28TP-EI' },
       { key: 'AR6121', ic: 'ic-router', name: '路由器', sub: 'AR6121E' },
+      { key: 'USG6000V', ic: 'ic-fw', name: '防火墙', sub: 'USG6000V' },
+      { key: 'Server', ic: 'ic-server', name: '服务器', sub: 'HTTP / DNS / FTP' },
       { key: 'PC', ic: 'ic-pc', name: 'PC 终端', sub: 'Windows 主机' }
     ];
     $('palette').innerHTML = items
@@ -7661,7 +8277,11 @@
 
   let nameSeq = {};
   function autoName(dev) {
-    const base = dev.type === 'pc' ? 'PC' : dev.type === 'router' ? 'R' : 'SW';
+    const base =
+      dev.type === 'pc' ? 'PC' :
+      dev.type === 'server' ? 'SRV' :
+      dev.type === 'firewall' ? 'FW' :
+      dev.type === 'router' ? 'R' : 'SW';
     nameSeq[base] = (nameSeq[base] || 0) + 1;
     dev.hostname = base + nameSeq[base];
   }
@@ -7681,13 +8301,18 @@
 
     for (const d of E.Net.devices) {
       const el = document.createElement('div');
-      el.className = 'card' + (UI.selDev === d.id ? ' sel' : '') + (d.type === 'pc' ? ' compact' : '');
+      el.className = 'card' + (UI.selDev === d.id ? ' sel' : '') + (isCompactCard(d) ? ' compact' : '');
       el.style.left = d.x + 'px';
       el.style.top = d.y + 'px';
       el.style.width = cardW(d) + 'px';
       el.dataset.id = d.id;
 
-      const tagTxt = d.type === 'pc' ? 'PC' : d.type === 'router' ? 'Router' : d.key === 'S3700' ? 'L2 Switch' : 'L3 Switch';
+      const tagTxt =
+        d.type === 'pc' ? 'PC' :
+        d.type === 'server' ? 'Server' :
+        d.type === 'firewall' ? 'Firewall' :
+        d.type === 'router' ? 'Router' :
+        d.key === 'S3700' ? 'L2 Switch' : 'L3 Switch';
       el.innerHTML = `
         <div class="head">
           <div style="min-width:0">
@@ -8626,8 +9251,8 @@
   }
 
   const CANDIDATES = {
-    'user-view': ['system-view', 'display version', 'display current-configuration', 'display ip interface brief', 'display interface ', 'display port vlan', 'display vlan', 'display ip routing-table', 'display mac-address', 'display arp', 'display stp brief', 'display eth-trunk', 'display ospf peer brief', 'display ospf interface', 'display ospf routing', 'display rip', 'display rip routing', 'display rip neighbor', 'display ip pool', 'display acl all', 'display nat session all', 'display port-group all', 'display ipv6 interface brief', 'display ipv6 routing-table', 'display ipv6 neighbors', 'display nat server', 'display nat outbound', 'ping ', 'ping ipv6 ', 'tracert ', 'telnet ', 'save', 'help'],
-    'system-view': ['sysname ', 'vlan ', 'vlan batch ', 'interface ', 'interface range GigabitEthernet0/0/1 to GigabitEthernet0/0/5', 'interface Ethernet0/0/1', 'interface GigabitEthernet0/1/1', 'interface 10GE0/0/0', 'interface range Ethernet0/0/1 to Ethernet0/0/8', 'port-group group-member GigabitEthernet0/0/1 to GigabitEthernet0/0/8', 'port-group group-member Ethernet0/0/1 to Ethernet0/0/8', 'port-group 1', 'ip route-static ', 'ip pool ', 'dhcp enable', 'nat address-group 1', 'ospf 1 router-id ', 'rip 1', 'undo rip', 'acl number 2000', 'acl number 3000', 'stp mode rstp', 'stp priority ', 'ipv6', 'ipv6 route-static ', 'telnet server enable', 'stelnet server enable', 'aaa', 'user-interface vty 0 4', 'display current-configuration', 'display this', 'save', 'quit', 'return'],
+    'user-view': ['system-view', 'display version', 'display current-configuration', 'display ip interface brief', 'display interface ', 'display port vlan', 'display vlan', 'display ip routing-table', 'display mac-address', 'display arp', 'display stp brief', 'display eth-trunk', 'display ospf peer brief', 'display ospf interface', 'display ospf routing', 'display rip', 'display rip routing', 'display rip neighbor', 'display ip pool', 'display acl all', 'display nat session all', 'display port-group all', 'display ipv6 interface brief', 'display ipv6 routing-table', 'display ipv6 neighbors', 'display nat server', 'display nat outbound', 'display security-policy rule all', 'display firewall session table', 'display zone', 'ping ', 'ping ipv6 ', 'tracert ', 'telnet ', 'save', 'help'],
+    'system-view': ['sysname ', 'vlan ', 'vlan batch ', 'interface ', 'interface range GigabitEthernet0/0/1 to GigabitEthernet0/0/5', 'interface Ethernet0/0/1', 'interface GigabitEthernet0/1/1', 'interface 10GE0/0/0', 'interface range Ethernet0/0/1 to Ethernet0/0/8', 'port-group group-member GigabitEthernet0/0/1 to GigabitEthernet0/0/8', 'port-group group-member Ethernet0/0/1 to Ethernet0/0/8', 'port-group 1', 'ip route-static ', 'ip pool ', 'dhcp enable', 'nat address-group 1', 'ospf 1 router-id ', 'rip 1', 'undo rip', 'acl number 2000', 'acl number 3000', 'stp mode rstp', 'stp priority ', 'ipv6', 'ipv6 route-static ', 'telnet server enable', 'stelnet server enable', 'firewall zone trust', 'firewall zone untrust', 'firewall zone dmz', 'security-policy', 'aaa', 'user-interface vty 0 4', 'display current-configuration', 'display this', 'save', 'quit', 'return'],
     'vlan-view': ['description ', 'name ', 'display this', 'display vlan', 'quit', 'return'],
     'interface-view': ['description ', 'shutdown', 'undo shutdown', 'port link-type access', 'port link-type trunk', 'port default vlan ', 'port trunk allow-pass vlan ', 'portswitch', 'undo portswitch', 'ip address ', 'eth-trunk 1', 'stp edged-port enable', 'port-security enable', 'port-security max-mac-num 2', 'traffic-filter inbound acl 3000', 'nat outbound 2000', 'nat server global ', 'dhcp select relay', 'dhcp relay server-ip ', 'ipv6 address ', 'ipv6 enable', 'display this', 'display interface ', 'quit', 'return'],
     'portgroup-view': ['group-member GigabitEthernet0/0/1 to GigabitEthernet0/0/8', 'group-member Ethernet0/0/1 to Ethernet0/0/8', 'description ', 'shutdown', 'undo shutdown', 'port link-type access', 'port link-type trunk', 'port default vlan ', 'port trunk allow-pass vlan ', 'stp edged-port enable', 'port-security enable', 'display this', 'quit', 'return'],
@@ -8641,13 +9266,29 @@
     'ospf-view': ['router-id ', 'area 0', 'display this', 'quit', 'return'],
     'ospf-area-view': ['network ', 'display this', 'quit', 'return'],
     'rip-view': ['version 2', 'version 1', 'network ', 'undo network ', 'silent-interface all', 'silent-interface GigabitEthernet0/0/1', 'silent-interface Ethernet0/0/1', 'display this', 'quit', 'return'],
-    'trunk-view': ['mode lacp-static', 'mode manual load-balance', 'ip address ', 'display this', 'quit', 'return']
+    'trunk-view': ['mode lacp-static', 'mode manual load-balance', 'ip address ', 'display this', 'quit', 'return'],
+    'zone-view': ['add interface GigabitEthernet1/0/1', 'add interface GigabitEthernet1/0/0', 'delete interface GigabitEthernet1/0/1', 'display this', 'display zone', 'quit', 'return'],
+    'policy-view': ['rule name allow-icmp', 'rule name allow-web', 'display this', 'display security-policy rule all', 'quit', 'return'],
+    'policy-rule-view': [
+      'source-zone trust', 'source-zone untrust', 'source-zone any',
+      'destination-zone trust', 'destination-zone untrust', 'destination-zone any',
+      'source-address any', 'source-address 192.168.1.0 mask 255.255.255.0',
+      'destination-address any', 'destination-address 192.168.1.0 mask 255.255.255.0',
+      'service any', 'service icmp', 'service http', 'service dns', 'service ftp',
+      'action permit', 'action deny', 'description ', 'display this', 'quit', 'return'
+    ]
   };
 
   function autocomplete(d, inp) {
     const cur = inp.value;
     let list = CANDIDATES[d.cli.view] || [];
-    if (d.type === 'pc') list = ['ipconfig', 'ipconfig /renew', 'ipconfig /release', 'ip ', 'ipv6 ', 'sysname ', 'ping ', 'ping ipv6 ', 'tracert ', 'telnet ', 'help'];
+    if (d.type === 'pc') {
+      list = ['ipconfig', 'ipconfig /renew', 'ipconfig /release', 'ip ', 'ipv6 ', 'sysname ', 'dns ', 'dns query ', 'http get ', 'ping ', 'ping ipv6 ', 'tracert ', 'telnet ', 'help'];
+    } else if (d.type === 'server') {
+      list = ['ip ', 'ipv6 ', 'sysname ', 'dns ', 'dns server enable', 'dns server disable', 'dns add ', 'dns delete ',
+        'http server enable', 'http server disable', 'ftp server enable', 'ftp server disable',
+        'display server', 'ping ', 'tracert ', 'telnet ', 'help'];
+    }
 
     if (!cur.trim()) {
       const d2 = activeDev();
@@ -9479,6 +10120,74 @@
         '静态路由写的是<b>前缀长度</b>（64），不是掩码；下一跳必须写，不能只写出接口。',
         '一台设备可以同时跑 IPv4 和 IPv6（双栈），两套地址、两套路由表互不干扰。'
       ]
+    },
+    {
+      id: 'srv-dns',
+      name: '实验十一 · 服务器发布（DNS + NAT Server）',
+      level: '进阶',
+      desc: '内网服务器开 DNS 与 HTTP：内网 PC 用域名访问，外网通过 NAT Server 从公网访问同一个网站。',
+      build() {
+        const sw = mk('S3700', 60, 120, 'SW1');
+        const r1 = mk('AR6121', 420, 120, 'R1');
+        const srv = mk('Server', 40, 400, 'SRV1');
+        const p1 = mk('PC', 240, 400, 'PC1');
+        const p2 = mk('PC', 580, 400, 'PC2');
+        setPort(srv, 0, { ip: '192.168.1.100', mask: 24, gateway: '192.168.1.254' });
+        setPort(p1, 0, { ip: '192.168.1.10', mask: 24, gateway: '192.168.1.254' });
+        setPort(p2, 0, { ip: '200.1.1.10', mask: 24, gateway: '200.1.1.1' });
+        setPort(r1, 3, { ip: '192.168.1.254', mask: 24 }); // GE0/0/2 连内网交换机
+        setPort(r1, 0, { ip: '200.1.1.1', mask: 24 }); // GE0/0/0 连公网 PC2
+        link(srv, 0, sw, 0);
+        link(p1, 0, sw, 1);
+        link(sw, 24, r1, 3); // 交换机上行口 GE0/0/1（第 25 个口）
+        link(r1, 0, p2, 0);
+        return { focus: srv };
+      },
+      goals: [
+        '服务器 SRV1：<code>http server enable</code>，<code>dns server enable</code>',
+        '服务器加一条解析记录：<code>dns add www.lab.cn 192.168.1.100</code>',
+        'PC1：<code>dns 192.168.1.100</code>，然后 <code>ping www.lab.cn</code> —— 应该能通',
+        'R1：<code>nat server protocol tcp global 200.1.1.1 80 inside 192.168.1.100 80</code>',
+        'PC2：<code>http get 200.1.1.1</code> —— 从公网访问内网网站，应该能看到页面'
+      ],
+      tips: [
+        '服务器就是「带服务的 PC」：<code>ip</code> / <code>ping</code> 这些命令和 PC 完全一样，只是多了三个服务开关。',
+        'DNS 解析在本模拟器里是「直接问 DNS 服务器设备」，不经过报文转发 —— 重点在<b>配了哪台 DNS、记录怎么写</b>。',
+        'NAT Server 是<b>入向</b>映射：外网访问 200.1.1.1 的 80 端口，被转到内网服务器的 80。这和 <code>nat outbound</code>（出向）方向相反。',
+        '外网 PC2 的网关必须指向 R1 的公网口，否则回程出不去 —— 这是「配了 NAT Server 还是访问不了」最常见的原因。'
+      ]
+    },
+    {
+      id: 'fw-policy',
+      name: '实验十二 · 防火墙安全策略',
+      level: '进阶',
+      desc: '一台 USG6000V 夹在两台 PC 之间：先配接口和区域，观察「默认全部拒绝」，再加策略放行。',
+      build() {
+        // 两台 PC 放在防火墙下方：端口都在卡片底边，竖着的连线不会横穿卡片
+        const p1 = mk('PC', 110, 330, 'PC1');
+        const fw = mk('USG6000V', 360, 110, 'FW1');
+        const p2 = mk('PC', 620, 330, 'PC2');
+        setPort(p1, 0, { ip: '192.168.1.10', mask: 24, gateway: '192.168.1.254' });
+        setPort(p2, 0, { ip: '10.1.1.10', mask: 24, gateway: '10.1.1.254' });
+        link(p1, 0, fw, 1); // GE1/0/1 —— 规划放进 trust
+        link(p2, 0, fw, 0); // GE1/0/0 —— 规划放进 untrust
+        return { focus: fw };
+      },
+      goals: [
+        '防火墙接口配地址：<code>interface GigabitEthernet1/0/1</code> → <code>ip address 192.168.1.254 24</code>；<code>GigabitEthernet1/0/0</code> → <code>ip address 10.1.1.254 24</code>',
+        '把接口加入区域：<code>firewall zone trust</code> → <code>add interface GigabitEthernet1/0/1</code>；<code>firewall zone untrust</code> → <code>add interface GigabitEthernet1/0/0</code>',
+        '先别加策略，PC1 上 <code>ping 10.1.1.10</code> —— <b>不通</b>，看提示确认是被缺省策略 deny 掉的',
+        '进 <code>security-policy</code> → <code>rule name allow-icmp</code> → <code>source-zone trust</code> / <code>destination-zone untrust</code> / <code>service icmp</code> / <code>action permit</code>',
+        'PC1 再 ping 一次 —— 通了；在防火墙上 <code>display firewall session table</code> 看会话',
+        '把 action 改成 <code>deny</code> 再试，观察会话和 ping 的变化'
+      ],
+      tips: [
+        '防火墙和路由器最大的区别：<b>区域间默认策略是 deny</b>。交换机 / 路由器的 ACL 是「不写就放行」，防火墙反过来 —— 不写策略就什么都不通。',
+        '接口<b>必须先加入安全区域</b>，否则报文直接丢弃。这一步漏了，后面配什么都没用。',
+        'local 区是防火墙自己（管理地址），访问它不受安全策略限制 —— 所以 ping 防火墙接口能通，不代表业务放行。',
+        '策略自上而下匹配，命中第一条就停；顺序写错会出现「明明 permit 了还是不通」。',
+        '防火墙接口是三层口，和路由器一样直接配 IP，不用 <code>portswitch</code>。'
+      ]
     }
   ];
 
@@ -9594,6 +10303,9 @@
           <div class="lv3"><code>[SW1-acl-adv-3000]</code><span>acl number 3000</span></div>
           <div class="lv3"><code>[SW1-ospf-1]</code><span>ospf 1</span></div>
           <div class="lv3"><code>[SW1-rip-1]</code><span>rip 1</span></div>
+          <div class="lv3"><code>[FW1-zone-trust]</code><span>firewall zone trust（安全区域，接口用 add interface 加进来）</span></div>
+          <div class="lv3"><code>[FW1-policy-security]</code><span>security-policy（安全策略）</span></div>
+          <div class="lv4"><code>[FW1-policy-security-rule-allow-icmp]</code><span>rule name allow-icmp（再深一层）</span></div>
           <div class="lv4"><code>[SW1-ospf-1-area-0.0.0.0]</code><span>area 0（再深一层）</span></div>
         </div>
         <div class="kv">
@@ -9609,6 +10321,8 @@
           <div class="r"><b>Trunk</b><span><code>port link-type trunk</code> · <code>port trunk allow-pass vlan 10 20</code> 或 <code>all</code></span></div>
           <div class="r"><b>三层</b><span><code>interface Vlanif10</code> · <code>ip address 192.168.10.1 24</code></span></div>
           <div class="r"><b>二层 / 三层口</b><span>交换机物理口默认二层：要配 IP 先 <code>undo portswitch</code>；路由器以太口默认三层：要当交换口用先 <code>portswitch</code>。两种命令不通用，用错会报错并提示。</span></div>
+          <div class="r"><b>防火墙</b><span><code>firewall zone trust</code> → <code>add interface GigabitEthernet1/0/1</code>；<code>security-policy</code> → <code>rule name allow-icmp</code> → <code>source-zone trust</code> / <code>destination-zone untrust</code> / <code>service icmp</code> / <code>action permit</code>。接口没加区域 = 报文直接丢弃；区域间<b>缺省是 deny</b>，不写策略什么都不通。<code>display security-policy rule all</code> / <code>display firewall session table</code> 查看。</span></div>
+          <div class="r"><b>服务器</b><span><code>http server enable</code> · <code>dns server enable</code> · <code>ftp server enable</code>；<code>dns add www.lab.cn 192.168.1.100</code>；<code>display server</code> 看状态。主机侧：<code>dns 192.168.1.100</code> 配 DNS，<code>http get www.lab.cn</code> 访问网页，<code>ping 域名</code> 也可以。</span></div>
           <div class="r"><b>单臂路由</b><span><code>interface GigabitEthernet0/0/0.10</code> → <code>dot1q termination vid 10</code> → <code>ip address 192.168.10.254 24</code> → <b><code>arp broadcast enable</code></b>（少这条 ping 不通）。上联口要 <code>port link-type trunk</code> + <code>port trunk allow-pass vlan 10 20</code>。</span></div>
           <div class="r"><b>静态路由</b><span><code>ip route-static 192.168.2.0 24 10.0.0.2</code>；下一跳也可以写成出接口 <code>ip route-static 192.168.2.0 24 GigabitEthernet0/0/1</code>。下一跳当前不可达时，路由表里那条的 Flags 只有 <code>R</code> 没有 <code>D</code>，并在表下面列出来。</span></div>
           <div class="r"><b>RIP</b><span><code>rip 1</code> → <code>version 2</code> → <code>network 192.168.1.0</code>（只写网段按主类网络通告，也可写 <code>network 10.0.0.0 0.0.0.255</code>）；<code>display rip</code> / <code>display rip routing</code> / <code>display rip neighbor</code> 查看。<code>silent-interface all</code> 可抑制报文。<b>两端 version 必须一致</b>（缺省是 version 1，只配一端 version 2 会永远没邻居）。</span></div>
@@ -9685,7 +10399,7 @@
       <div class="mb">
         <div class="about">
           <svg class="about-logo" viewBox="0 0 820 232" role="img" aria-label="NewE"><use href="#neweLogo" /></svg>
-          <div class="about-name">NE_HWSIM<span>华为 VRP 网络实训模拟器</span></div>
+          <div class="about-name">${APP_INFO.name}<span>${APP_INFO.tagline}</span></div>
           <div class="about-ver">版本 v${APP_VERSION}</div>
         </div>
 
@@ -9699,7 +10413,7 @@
         <h4 class="sec">这个程序</h4>
         <div class="kv">
           <div class="r"><b>形态</b><span>单个 HTML 文件，双击即用。没有后端、没有账号、<b>不联网、不采集任何数据</b> —— 断网也能正常跑。</span></div>
-          <div class="r"><b>内置</b><span>14 个实训实验 · 4 种设备（S5700-28C-EI 三层交换机 / S3700-28TP-EI 二层交换机 / AR6121E 路由器 / PC）· 华为 VRP 命令行</span></div>
+          <div class="r"><b>内置</b><span>16 个实训实验 · 6 种设备（S5700-28C-EI 三层交换机 / S3700-28TP-EI 二层交换机 / AR6121E 路由器 / USG6000V 防火墙 / Server / PC）· 华为 VRP 命令行</span></div>
           <div class="r"><b>端口</b><span>按真机型号还原，含<b>光电复用（Combo）口</b> —— 接网线用电口、插光模块用光口，二选一</span></div>
           <div class="r"><b>体积</b><span>约 443 KB 的单个 HTML 文件，不需要安装任何东西</span></div>
           <div class="r"><b>许可</b><span><b>MIT License</b> —— 可以自由使用、修改、商用，甚至不用告诉我</span></div>
