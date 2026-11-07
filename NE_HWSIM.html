@@ -7531,6 +7531,7 @@
         const d = E.Net.addDevice(b.dataset.k, Math.round(w.x - half / 2 + dx), Math.round(w.y - 60 + dy));
         autoName(d);
         render();
+        bringIntoView(d); // 万一落点被算到视口外（画布尺寸异常），把它拉回来
         toast(`已添加 ${d.hostname}，拖动卡片摆放位置`, 'good');
       };
     });
@@ -7547,6 +7548,14 @@
   function render() {
     const cards = $('cards');
     cards.innerHTML = '';
+
+    /* 存档或导入的 txt 里坐标可能缺失 / 不是数字（老文件、手改过的导出文件）。
+       不修的话 `left:NaNpx` 会被浏览器整条忽略 —— 表现就是「设备加了但画布上找不到」，
+       而且它上面的连线也会跟着算不出坐标、一起消失。这里按序号给个不重叠的兜底位置。 */
+    E.Net.devices.forEach((d, i) => {
+      if (!Number.isFinite(d.x)) d.x = 40 + (i % 4) * 60;
+      if (!Number.isFinite(d.y)) d.y = 40 + Math.floor(i / 4) * 60;
+    });
 
     for (const d of E.Net.devices) {
       const el = document.createElement('div');
@@ -7693,6 +7702,9 @@
       if (ia < 0 || ib < 0) continue;
       const pa = portCenter(a, ia);
       const pb = portCenter(b, ib);
+      /* 坐标不是有限数就别画了：`x1="NaN"` 会让浏览器丢掉整条线，
+         表现成「线不见了」却不报任何错，很难查。 */
+      if (![pa.x, pa.y, pb.x, pb.y].every(Number.isFinite)) continue;
 
       // 正在拖拽改接的这一条：不画原线，改画一条跟随鼠标的示意线
       if (UI.replug && UI.replug.id === c.id) {
@@ -8560,6 +8572,42 @@
     applyTransform();
   }
 
+  /** 一台设备都看不见就自动适应画布。
+      典型场景：存档是在宽屏上存的，换到窄屏 / 小窗打开，pan 还是上次的值 → 画布一片空白，
+      看起来就像「设备丢了 / 加不进去」。只在初始化时调一次，不干扰用户主动平移。 */
+  function ensureVisible() {
+    const devs = E.Net.devices;
+    if (!devs.length) return;
+    const rect = $('stage').getBoundingClientRect();
+    if (rect.width < 10 || rect.height < 10) return;
+    const s = UI.scale;
+    const hit = devs.some((d) => {
+      const x = d.x * s + UI.panX;
+      const y = d.y * s + UI.panY;
+      const w = cardW(d) * s;
+      const h = cardHeight(d) * s;
+      return x + w > 0 && y + h > 0 && x < rect.width && y < rect.height;
+    });
+    if (!hit) fitView();
+  }
+
+  /** 把某台设备拉回视口中央（保持当前缩放）。
+      用在「点设备库加了一台，但落点算到视口外」的时候 —— 否则用户看到的是「点了没反应」。 */
+  function bringIntoView(d) {
+    const rect = $('stage').getBoundingClientRect();
+    if (rect.width < 10 || rect.height < 10) return;
+    const s = UI.scale;
+    const x = d.x * s + UI.panX;
+    const y = d.y * s + UI.panY;
+    const w = cardW(d) * s;
+    const h = cardHeight(d) * s;
+    const seen = x + w > 20 && y + h > 20 && x < rect.width - 20 && y < rect.height - 20;
+    if (seen) return;
+    UI.panX = rect.width / 2 - (d.x + cardW(d) / 2) * s;
+    UI.panY = rect.height / 2 - (d.y + cardHeight(d) / 2) * s;
+    applyTransform();
+  }
+
   /** 当前是不是窄屏 / 手机 —— 和 index.html 的媒体查询用同一套条件，避免两处不一致。
       条件：宽度 <=760px，或者是「矮视口 + 触摸」（横屏手机 844×390 这种）。 */
   const NARROW_MQ = '(max-width: 760px), (max-width: 1024px) and (max-height: 520px)';
@@ -8738,9 +8786,13 @@
         : [];
       nameSeq = data.seq || {};
       if (data.pan) {
-        UI.panX = data.pan.x || 0;
-        UI.panY = data.pan.y || 0;
-        UI.scale = data.pan.s || 1;
+        // 存档里的缩放 / 平移也可能是脏数据（手改过、旧版本写过）。非有限数会让整张画布消失。
+        const px = Number(data.pan.x);
+        const py = Number(data.pan.y);
+        const ps = Number(data.pan.s);
+        UI.panX = Number.isFinite(px) ? px : 0;
+        UI.panY = Number.isFinite(py) ? py : 0;
+        UI.scale = Number.isFinite(ps) && ps >= 0.2 && ps <= 2.6 ? ps : 1;
       }
       return true;
     } catch (e) {
@@ -9497,7 +9549,7 @@
           <div class="r"><b>形态</b><span>单个 HTML 文件，双击即用。没有后端、没有账号、<b>不联网、不采集任何数据</b> —— 断网也能正常跑。</span></div>
           <div class="r"><b>内置</b><span>14 个实训实验 · 4 种设备（S5700-28C-EI 三层交换机 / S3700-28TP-EI 二层交换机 / AR6121E 路由器 / PC）· 华为 VRP 命令行</span></div>
           <div class="r"><b>端口</b><span>按真机型号还原，含<b>光电复用（Combo）口</b> —— 接网线用电口、插光模块用光口，二选一</span></div>
-          <div class="r"><b>体积</b><span>约 431 KB 的单个 HTML 文件，不需要安装任何东西</span></div>
+          <div class="r"><b>体积</b><span>约 434 KB 的单个 HTML 文件，不需要安装任何东西</span></div>
           <div class="r"><b>许可</b><span><b>MIT License</b> —— 可以自由使用、修改、商用，甚至不用告诉我</span></div>
         </div>
 
@@ -9776,6 +9828,8 @@
     renderConsole();
 
     if (restored && E.Net.devices.length) {
+      // 换了屏幕尺寸后，上次的 pan 可能把整张拓扑甩到视口外 —— 先确认还看得见
+      ensureVisible();
       // 恢复上次的拓扑：自动打开第一台网络设备的命令行，学生可直接开始输入
       const first = E.Net.devices.find((d) => d.type !== 'pc') || E.Net.devices[0];
       openConsole(first);
@@ -9800,6 +9854,8 @@
   UI.importConfigText = importConfigText;
   UI.cardW = cardW;
   UI.cardHeight = cardHeight;
+  UI.ensureVisible = ensureVisible;
+  UI.bringIntoView = bringIntoView;
   UI.showAbout = showAbout;
   UI.version = APP_VERSION;
   UI.zoomBy = zoomBy;
