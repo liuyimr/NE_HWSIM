@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <!--
   NE_HWSIM —— 华为 VRP 网络实训模拟器（单文件版）
-  版本：v1.6.5
+  版本：v1.7.0
 
   Copyright (c) 2026 新易科技工作室 NewE
   作者：Liuyi  <yimr@sohu.com>
@@ -480,13 +480,14 @@
     }
     .side h3{display:none}
     .howto{display:none} /* 窄屏设备库变成底部横条，这块没地方放；帮助弹窗里有完整说明 */
-    .palette{flex-direction:row;gap:8px;padding:7px 10px}
+    /* 6 种设备挤成一条横滚的话，后面的「服务器 / PC」永远看不见 —— 改成 3 列网格，一屏全在 */
+    .palette{flex:1 1 auto;display:grid;grid-template-columns:repeat(3,1fr);gap:6px;padding:7px 10px}
     .pal{
-      flex-direction:column;gap:2px;padding:7px 10px;min-width:72px;
-      justify-content:center;align-items:center;text-align:center;
+      flex-direction:row;gap:6px;padding:6px 8px;min-width:0;
+      justify-content:flex-start;align-items:center;text-align:left;
     }
-    .pal .ic{width:26px;height:26px;font-size:14px}
-    .pal .tx b{font-size:12px;white-space:nowrap}
+    .pal .ic{width:24px;height:24px;font-size:14px;flex:0 0 24px}
+    .pal .tx b{font-size:11px;white-space:nowrap}
     /* 型号那行在小屏上一换行，整个设备条就高一截，得不偿失 —— 直接省掉 */
     .pal .tx span{display:none}
 
@@ -528,9 +529,9 @@
   @media(max-width:900px) and (max-height:480px){
     .topbar{height:40px;flex-basis:40px}
     /* 底部设备条留一点下边距，卡片不至于贴着屏幕边；iPhone 刘海屏再让出安全区 */
-    .palette{padding:6px 8px 8px}
-    .palette{padding:6px 8px calc(8px + env(safe-area-inset-bottom))}
-    .pal{padding:5px 9px;min-width:70px}
+    /* 横屏高度只有 480px，两行设备条太占地方 —— 这里退回单行横滚 */
+    .palette{display:flex;flex-direction:row;gap:6px;padding:6px 8px calc(8px + env(safe-area-inset-bottom))}
+    .pal{flex-direction:column;gap:2px;padding:5px 8px;min-width:0;justify-content:center;text-align:center}
     .pal .tx span{display:none}
     .zoombar button{width:34px;height:34px}
   }
@@ -8115,7 +8116,7 @@
   /* ------------------------------ 版本信息 ------------------------------ */
   /* 版本号的唯一来源：改这一处即可。
      build.mjs 会把它读出来写进产物开头的注释，所以交付文件本身也能看出是哪个版本。 */
-  const APP_VERSION = '1.6.5';
+  const APP_VERSION = '1.7.0';
   const APP_INFO = {
     name: '新易网络沙盘',
     tagline: '华为 VRP 命令实训 · 单文件离线版',
@@ -10447,7 +10448,7 @@
           <div class="r"><b>形态</b><span>单个 HTML 文件，双击即用。没有后端、没有账号、<b>不联网、不采集任何数据</b> —— 断网也能正常跑。</span></div>
           <div class="r"><b>内置</b><span>16 个实训实验 · 6 种设备（S5700-28C-EI 三层交换机 / S3700-28TP-EI 二层交换机 / AR6121E 路由器 / USG6000V 防火墙 / Server / PC）· 华为 VRP 命令行</span></div>
           <div class="r"><b>端口</b><span>按真机型号还原，含<b>光电复用（Combo）口</b> —— 接网线用电口、插光模块用光口，二选一</span></div>
-          <div class="r"><b>体积</b><span>约 443 KB 的单个 HTML 文件，不需要安装任何东西</span></div>
+          <div class="r"><b>体积</b><span>约 489 KB 的单个 HTML 文件，不需要安装任何东西</span></div>
           <div class="r"><b>许可</b><span><b>MIT License</b> —— 可以自由使用、修改、商用，甚至不用告诉我</span></div>
         </div>
 

@@ -3,13 +3,13 @@
 **一个 HTML 文件，双击就能练华为交换机 / 路由器命令 —— 不用装 eNSP，不用装 GNS3，不联网也能用。**
 
 [![在线试玩](https://img.shields.io/badge/%E5%9C%A8%E7%BA%BF%E8%AF%95%E7%8E%A9-GitHub%20Pages-orange)](https://liuyimr.github.io/NE_HWSIM/NE_HWSIM.html)
-![单文件](https://img.shields.io/badge/%E5%8D%95%E6%96%87%E4%BB%B6-443%20KB-brightgreen)
+![单文件](https://img.shields.io/badge/%E5%8D%95%E6%96%87%E4%BB%B6-489%20KB-brightgreen)
 ![无需安装](https://img.shields.io/badge/%E6%97%A0%E9%9C%80%E5%AE%89%E8%A3%85-%E5%8F%8C%E5%87%BB%E5%8D%B3%E7%94%A8-success)
 ![离线可用](https://img.shields.io/badge/%E7%A6%BB%E7%BA%BF%E5%8F%AF%E7%94%A8-100%25-informational)
 ![许可证](https://img.shields.io/badge/license-MIT-blue)
 ![Stars](https://img.shields.io/github/stars/liuyimr/NE_HWSIM?color=yellow)
 
-![NE_HWSIM 界面：左侧设备库，中间拖拽搭出的交换机组网拓扑，下方是真实的华为 VRP 命令行](screenshot.png)
+![新易网络沙盘界面：左侧设备库，中间拖拽搭出的交换机组网拓扑，下方是真实的华为 VRP 命令行](screenshot.png)
 
 > 上图就是打开后的样子：拖两台交换机、连两根线，点「实训实验」加载题目，然后在下面敲 `system-view`、`port link-type trunk` —— 和真机一个规矩。
 
@@ -36,7 +36,7 @@
 
 给**网络课老师**和**备考华为认证的同学**做的一个练习工具。
 
-eNSP 要装 VirtualBox，GNS3 要配镜像，虚拟机镜像动辄几个 GB，还得看电脑配置。很多学生卡在第一步就放弃了，然后就没有然后。NE_HWSIM 的判断是：**先把门槛降到零** —— 一个 443 KB 的 HTML 文件，发过去、双击、开始敲命令，整个过程不需要任何解释。
+eNSP 要装 VirtualBox，GNS3 要配镜像，虚拟机镜像动辄几个 GB，还得看电脑配置。很多学生卡在第一步就放弃了，然后就没有然后。新易网络沙盘的判断是：**先把门槛降到零** —— 一个 489 KB 的 HTML 文件，发过去、双击、开始敲命令，整个过程不需要任何解释。
 
 它**不是**真机的替代品，也跑不了复杂的园区网。它解决的是一个很具体的问题：**让学生能在自己的笔记本上、离线、零安装地，把 VLAN / Trunk / OSPF / ACL / NAT 这些命令反复敲到熟。**
 
@@ -70,7 +70,7 @@ eNSP 要装 VirtualBox，GNS3 要配镜像，虚拟机镜像动辄几个 GB，�
 同一份 HTML 文件，手机上打开就会自动切成竖版：设备库从左侧栏搬到底部一条横条，
 画布占满整个宽度，顶栏只留「实训实验 / 命令行 / 更多 ⋯」。
 
-<img src="screenshot-mobile.png" width="300" alt="NE_HWSIM 手机版：顶部三个按钮，中间是拓扑画布，底部是设备库横条">
+<img src="screenshot-mobile.png" width="300" alt="新易网络沙盘手机版：顶部三个按钮，中间是拓扑画布，底部是设备库横条">
 
 **功能一个不少，只是手势不一样：**
 
@@ -123,16 +123,16 @@ eNSP 要装 VirtualBox，GNS3 要配镜像，虚拟机镜像动辄几个 GB，�
 
 ## 和 eNSP / GNS3 / Packet Tracer 比
 
-| | **NE_HWSIM** | eNSP | GNS3 | Cisco Packet Tracer |
+| | **新易网络沙盘** | eNSP | GNS3 | Cisco Packet Tracer |
 |---|---|---|---|---|
 | 安装 | **双击 HTML，零安装** | 需装 VirtualBox + eNSP | 需装虚拟机 + 导入镜像 | 需注册 Cisco 账号 |
-| 体积 | **443 KB** | 数 GB | 数 GB | 数百 MB |
+| 体积 | **489 KB** | 数 GB | 数 GB | 数百 MB |
 | 联网 | **可完全离线** | 首次需下载镜像 | 需下载镜像 | 需登录 |
 | 命令语法 | 华为 VRP | 华为 VRP | 多厂商 | Cisco IOS |
 | 上手门槛 | **极低** | 中（装环境容易失败） | 高 | 中 |
 | 复杂园区网 | 做不了 | 支持 | 支持 | 支持 |
 
-一句话：**eNSP 适合做完整实验，NE_HWSIM 适合"今天就要练这几条命令"**。两者不冲突，可以配合用。
+一句话：**eNSP 适合做完整实验，新易网络沙盘适合"今天就要练这几条命令"**。两者不冲突，可以配合用。
 
 ---
 
@@ -216,7 +216,7 @@ A：能。把同一个 HTML 文件传到手机（微信 / QQ / 网盘都行）�
 长按端口看详情 —— 功能一个不少，只是手势不一样（见上面「手机 / 平板也能用」的对照表）。
 
 **Q：我怎么知道手上这个文件是哪个版本？**
-A：点顶栏 **「关于」**，里面写着版本号；用记事本打开文件，**开头的注释里也有**（比如 `版本：v1.6.5`）。下载单个 HTML 文件就能自带版本信息，不用去比对文件大小。
+A：点顶栏 **「关于」**，里面写着版本号；用记事本打开文件，**开头的注释里也有**（比如 `版本：v1.7.0`）。下载单个 HTML 文件就能自带版本信息，不用去比对文件大小。
 
 ---
 
@@ -233,6 +233,34 @@ A：点顶栏 **「关于」**，里面写着版本号；用记事本打开文�
 ---
 
 ## 最近更新
+
+**v1.7.0（服务器 / 防火墙 / 中文名）**
+
+- **改名「新易网络沙盘」**。`NE_HWSIM` 是英文代号，对国内用户是念不出、记不住的一串字母。
+  中文名定为「新易网络沙盘」，副标题「华为 VRP 命令实训」。**仓库名和链接不变**（改仓库名会断掉已有外链）。
+- **新增 Server 服务器**：1 个网口，可开 HTTP / DNS / FTP 服务，`dns add www.lab.cn 192.168.1.100` 加解析记录，
+  `display server` 看状态。主机侧 `dns <服务器IP>` 配好 DNS 后，`ping 域名` / `tracert 域名` / `http get 域名`
+  都能用，回显里同时显示域名和解析出的地址；解析不了会直接说清是哪一环（没配 DNS / 服务没开 / 没有这条记录）。
+- **新增 USG6000V 防火墙**：4×GE 口（`GE1/0/0~3`），按真机的三套规则实现 —— **接口不在安全区域报文直接丢**、
+  **区域间缺省 deny**、**策略自上而下首次命中**。视图链 `firewall zone trust` → `add interface`、
+  `security-policy` → `rule name` → `source-zone` / `destination-zone` / `service` / `action`。
+  `display security-policy rule all`、`display firewall session table`（放行后真的会记会话）。
+- **两个新实验**：
+  - 实验十一「服务器发布（DNS + NAT Server）」——内网服务器开 DNS 与 HTTP，内网用域名访问，
+    外网通过 `nat server` 访问同一个网站。一条链把 DNS、NAT、路由串起来。
+  - 实验十二「防火墙安全策略」——先配接口和区域，**故意不加策略让学生先看到「不通」**，再加 permit 观察变化。
+- **导出配置覆盖新设备**：防火墙的安全区域与安全策略、服务器的服务开关与 DNS 记录都会写进 running-config，
+  已验证导出再导入能完整恢复。
+- 设备库从 4 项扩到 6 项；服务器 / 防火墙用窄卡片（端口少），自动命名 `SRV` / `FW`。
+
+**关于服务器那组命令的真实性**：`http / dns / ftp server enable` **不是华为 VRP 的原生命令** ——
+真机上这些服务由操作系统管理，eNSP 的 Server 是图形面板、根本没有命令行。这里保留命令形式，是为了让
+「发布服务」也能用敲命令完成；进入服务器终端时会打两行说明，使用说明的「支持范围」里也写明了这条边界。
+
+**本版修复**：
+- 服务器 / 防火墙的**连线端点原来落在卡片下方外侧** —— 几何函数漏了新设备的紧凑判定，端口中心偏了 16px。
+- **`ping 域名` / `tracert 域名` 在命令行里被判成「命令不完整」** —— 引擎支持域名，但命令行层把域名丢掉了。
+  现在回显显示解析结果，解析失败不再刷 4 行「请求超时」（包根本没发出去）。
 
 **v1.6.5**
 
@@ -417,7 +445,7 @@ A：点顶栏 **「关于」**，里面写着版本号；用记事本打开文�
 
 做工业自动控制与楼宇智能化的，这个是给网络教学做的小工具。
 
-> 程序里点顶栏 **「关于」** 也能看到版本号、作者与许可信息。当前版本 **v1.6.5**。
+> 程序里点顶栏 **「关于」** 也能看到版本号、作者与许可信息。当前版本 **v1.7.0**。
 
 ---
 
@@ -444,9 +472,9 @@ MIT License —— 随便用，商用也行，改了也不用说。详见 [LICEN
 
 ## English
 
-**NE_HWSIM — a Huawei VRP network lab simulator that fits in one HTML file.**
+**新易网络沙盘 — a Huawei VRP network lab simulator that fits in one HTML file.**
 
-A single 443 KB HTML file. Double-click it and you get a drag-and-drop network topology builder plus a
+A single 489 KB HTML file. Double-click it and you get a drag-and-drop network topology builder plus a
 faithful Huawei VRP CLI (user view → system view → interface view → VLAN view → port-group view → ACL view
 → NAT address-pool view → OSPF area view → RIP view → sub-interface view), with authentic `^` error markers and `save` interaction.
 
