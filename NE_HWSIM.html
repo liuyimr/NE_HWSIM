@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <!--
   NE_HWSIM —— 华为 VRP 网络实训模拟器（单文件版）
-  版本：v1.9.0
+  版本：v1.9.1
 
   Copyright (c) 2026 新易科技工作室 NewE
   作者：Liuyi  <yimr@sohu.com>
@@ -444,6 +444,25 @@
   .moremenu button.danger:hover{background:#2d1618}
   .moremenu button:active,.moremenu button:hover{background:#22272e}
   .moremenu hr{border:none;border-top:1px solid var(--line);margin:5px 2px}
+
+  /* ---------- 加服务器时选系统（Windows / Linux） ---------- */
+  /* 用 fixed 定在按钮旁边：设备库在窄屏是可滚动的底部条，absolute 会被裁掉 */
+  .os-menu{
+    position:fixed;left:0;top:0;z-index:130;width:236px;padding:7px;
+    background:var(--bg2);border:1px solid var(--line);border-radius:12px;
+    box-shadow:var(--sh-2);display:flex;flex-direction:column;gap:2px;
+  }
+  .os-menu .h{
+    font-size:11px;color:var(--tx3);padding:4px 8px 6px;letter-spacing:.3px;
+  }
+  .os-menu button{
+    display:flex;flex-direction:column;gap:1px;width:100%;text-align:left;
+    padding:8px 9px;border-radius:8px;border:1px solid transparent;transition:.12s;
+  }
+  .os-menu button b{font-size:12px;font-weight:600;color:var(--tx)}
+  .os-menu button span{font-size:11px;color:var(--tx3);line-height:1.45}
+  .os-menu button:hover{background:#22272e;border-color:var(--line)}
+  .os-menu button:hover b{color:var(--cy)}
 
   /* ==================== 窄屏 / 手机（<=760px，或矮视口的横屏手机） ==================== */
   /* 横屏手机宽 844、高只有 390：宽度过了 760，但仍然是手机，也得走竖版布局 */
@@ -990,9 +1009,15 @@
   }
 
   /** 创建一台设备 */
-  function createDevice(key, x, y) {
+  /**
+   * 新建一台设备。
+   * opts.os：只对服务器有意义 —— 'windows'（默认）或 'linux'。
+   * 从设备库添加时由用户选，实验脚本里也能一行指定。
+   */
+  function createDevice(key, x, y, opts) {
     const t = TEMPLATES[key];
     if (!t) throw new Error('未知设备型号: ' + key);
+    const wantOs = opts && opts.os === 'linux' && t.type === 'server' ? 'linux' : null;
     const isRouted = t.type === 'router' || t.type === 'pc' || t.type === 'server' || t.type === 'firewall';
     const dev = {
       id: uid('d'),
@@ -1038,7 +1063,7 @@
       /* 服务器：对外提供哪些应用层服务 + 本机 DNS 记录（只有 Server 用，其它设备留空即可） */
       services: { http: false, dns: false, ftp: false },
       dnsRecords: [], // { name, ip }
-      os: t.os || 'windows', // 服务器操作系统：windows | linux（决定可用命令与配置文件格式）
+      os: wantOs || t.os || 'windows', // 服务器操作系统：windows | linux（决定可用命令与配置文件格式）
       dnsZone: 'lab.cn', // Linux 下 zone 文件名用（/var/named/lab.cn.zone）
       /* 服务器的虚拟文件系统（只在 Linux 模式下用）：
          cwd 当前目录；files 存用户改过的文件内容（覆盖内置渲染结果）；dirty 记录「改了但还没重启服务」 */
@@ -1213,8 +1238,8 @@
       return { device: otherDev, port: this.getPort(otherDev, otherPortId), cable };
     },
 
-    addDevice(key, x, y) {
-      const d = createDevice(key, x, y);
+    addDevice(key, x, y, opts) {
+      const d = createDevice(key, x, y, opts);
       this.devices.push(d);
       return d;
     },
@@ -3621,6 +3646,11 @@
   function runningConfig(dev) {
     const out = ['#', `sysname ${dev.hostname}`, '#'];
     if (isHost(dev)) {
+      // Linux 服务器要写一行 os，否则导出的配置读回来就变回 Windows（这条是模拟器命令）
+      if (dev.type === 'server' && dev.os === 'linux') {
+        out.push('# 系统：Linux（CentOS 7 风格）—— os linux 是模拟器专用命令，真机需重装系统');
+        out.push('os linux');
+      }
       const p = dev.ports[0];
       if (p.ip) {
         out.push(`ip address ${p.ip} ${prefixToMask(p.mask)}`);
@@ -9151,22 +9181,26 @@
    *   @topology v1
    *   @device 0 S5700 120 80 SW1
    *   @device 1 PC 60 460 PC1
+   *   @os 2 linux
    *   @cable 0 GigabitEthernet0/0/1 1 Ethernet0/0/0
    *   @note 200 30 "办公区 192.168.10.0/24"
    *   @end
    *
    * 设备用序号引用（@cable 里写 0/1），这样设备名里有空格也不影响解析。
+   * `@os` 可选，只给 Linux 服务器写（不写就是 Windows），老文件照样能读。
    * 没有这段也没关系 —— 那就退化成「只导入配置」，按设备表头重建。
    * ---------------------------------------------------------------------- */
   const RE_TOPO_START = /^@topology\b/i;
   const RE_TOPO_END = /^@end\b/i;
   const RE_DEVICE = /^@device\s+(\d+)\s+(\S+)\s+(-?\d+)\s+(-?\d+)\s+(.+)$/;
+  const RE_OS = /^@os\s+(\d+)\s+(\S+)$/;
   const RE_CABLE = /^@cable\s+(\d+)\s+(\S+)\s+(\d+)\s+(\S+)$/;
   const RE_NOTE = /^@note\s+(-?\d+)\s+(-?\d+)\s+(.+)$/;
 
   /** 从整份文本里抽出拓扑段（没有就返回 null） */
   function parseTopology(lines) {
     const topo = { devices: [], cables: [], notes: [] };
+    const osByIdx = {};
     let inTopo = false;
     for (const raw of lines) {
       const t = String(raw).trim();
@@ -9185,6 +9219,12 @@
         topo.devices.push({ idx: +m[1], key: m[2], x: +m[3], y: +m[4], hostname: m[5].trim() });
         continue;
       }
+      m = t.match(RE_OS);
+      if (m) {
+        // 手改过的文件里 @os 可能写在 @device 前面，先记下来，循环结束再套
+        osByIdx[+m[1]] = m[2].toLowerCase();
+        continue;
+      }
       m = t.match(RE_CABLE);
       if (m) {
         topo.cables.push({ a: +m[1], aPort: m[2], b: +m[3], bPort: m[4] });
@@ -9200,6 +9240,9 @@
         }
         topo.notes.push({ x: +m[1], y: +m[2], text: String(text == null ? '' : text) });
       }
+    }
+    for (const d of topo.devices) {
+      if (osByIdx[d.idx]) d.os = osByIdx[d.idx];
     }
     return topo.devices.length || topo.cables.length || topo.notes.length ? topo : null;
   }
@@ -9453,6 +9496,8 @@
     out.push('@topology v1');
     devs.forEach((d, i) => {
       out.push(`@device ${i} ${d.key} ${Math.round(d.x)} ${Math.round(d.y)} ${d.hostname}`);
+      // 只给 Linux 服务器写，其它设备不占行（老版本读到不认识的 @os 会当注释忽略）
+      if (d.type === 'server' && d.os === 'linux') out.push(`@os ${i} linux`);
     });
     for (const c of cables) {
       const a = idxOf.get(c.aDeviceId);
@@ -9551,7 +9596,7 @@
             byIdx[td.idx] = null;
             continue;
           }
-          dev = E.Net.addDevice(key, td.x, td.y);
+          dev = E.Net.addDevice(key, td.x, td.y, { os: td.os });
           dev.hostname = td.hostname;
           created += 1;
           createdByTopo.add(dev.hostname);
@@ -9760,7 +9805,7 @@
   /* ------------------------------ 版本信息 ------------------------------ */
   /* 版本号的唯一来源：改这一处即可。
      build.mjs 会把它读出来写进产物开头的注释，所以交付文件本身也能看出是哪个版本。 */
-  const APP_VERSION = '1.9.0';
+  const APP_VERSION = '1.9.1';
   const APP_INFO = {
     name: '新易网络沙盘',
     tagline: '华为 VRP 命令实训 · 单文件离线版',
@@ -9911,7 +9956,7 @@
       { key: 'S3700', ic: 'ic-sw2', name: '二层交换机', sub: 'S3700-28TP-EI' },
       { key: 'AR6121', ic: 'ic-router', name: '路由器', sub: 'AR6121E' },
       { key: 'USG6000V', ic: 'ic-fw', name: '防火墙', sub: 'USG6000V' },
-      { key: 'Server', ic: 'ic-server', name: '服务器', sub: 'HTTP / DNS / FTP' },
+      { key: 'Server', ic: 'ic-server', name: '服务器', sub: 'Windows / Linux' },
       { key: 'PC', ic: 'ic-pc', name: 'PC 终端', sub: 'Windows 主机' }
     ];
     $('palette').innerHTML = items
@@ -9924,22 +9969,95 @@
       .join('');
     $('palette').querySelectorAll('.pal').forEach((b) => {
       b.onclick = () => {
-        const m = metrics();
-        // 放到「当前可见画布」的中心，而不是整个窗口中心 —— 手机上有底部设备条和命令行面板，窗口中心会偏
-        const rect = $('stage').getBoundingClientRect();
-        const w = screenToWorld(rect.left + rect.width / 2, rect.top + rect.height / 2);
-        const half = b.dataset.k === 'PC' ? m.pcW : m.cardW;
-        // 加一点随机偏移，连续加多台不会完全重叠
-        const n = E.Net.devices.length;
-        const dx = (n % 3) * 34 - 34;
-        const dy = (n % 4) * 30 - 30;
-        const d = E.Net.addDevice(b.dataset.k, Math.round(w.x - half / 2 + dx), Math.round(w.y - 60 + dy));
-        autoName(d);
-        render();
-        bringIntoView(d); // 万一落点被算到视口外（画布尺寸异常），把它拉回来
-        toast(`已添加 ${d.hostname}，拖动卡片摆放位置`, 'good');
+        // 服务器有两种系统，命令和配置文件完全不同 —— 加之前先让用户选一次，
+        // 而不是默认塞一台 Windows 让人到终端里慢慢找 os linux。
+        if (b.dataset.k === 'Server') return pickServerOs(b);
+        addFromPalette(b.dataset.k);
       };
     });
+  }
+
+  /** 把新设备放到「当前可见画布」的中心（设备库点击与服务器选择菜单共用） */
+  function addFromPalette(key, opts) {
+    const m = metrics();
+    const rect = $('stage').getBoundingClientRect();
+    const w = screenToWorld(rect.left + rect.width / 2, rect.top + rect.height / 2);
+    const half = key === 'PC' ? m.pcW : m.cardW;
+    // 加一点随机偏移，连续加多台不会完全重叠
+    const n = E.Net.devices.length;
+    const dx = (n % 3) * 34 - 34;
+    const dy = (n % 4) * 30 - 30;
+    const d = E.Net.addDevice(key, Math.round(w.x - half / 2 + dx), Math.round(w.y - 60 + dy), opts);
+    autoName(d);
+    render();
+    bringIntoView(d); // 万一落点被算到视口外（画布尺寸异常），把它拉回来
+    const osTxt = d.type === 'server' ? (d.os === 'linux' ? '（Linux）' : '（Windows）') : '';
+    toast(`已添加 ${d.hostname}${osTxt}，拖动卡片摆放位置`, 'good');
+    return d;
+  }
+
+  /* ---- 加服务器时的系统选择 ---- */
+  let osMenuEl = null;
+
+  function closeServerOsMenu() {
+    if (osMenuEl && osMenuEl.parentNode) osMenuEl.parentNode.removeChild(osMenuEl);
+    osMenuEl = null;
+    document.removeEventListener('pointerdown', onOsMenuOutside, true);
+    document.removeEventListener('keydown', onOsMenuKey, true);
+  }
+  function onOsMenuOutside(ev) {
+    if (!osMenuEl) return;
+    if (osMenuEl.contains(ev.target)) return;
+    // 点的就是「服务器」那个按钮时不要在这里关 —— 交给它的 click 处理，第二次点击等于收起。
+    // （pointerdown 比 click 早，在这里关掉就永远收不起来了）
+    if (ev.target.closest && ev.target.closest('.pal[data-k="Server"]')) return;
+    closeServerOsMenu();
+  }
+  function onOsMenuKey(ev) {
+    if (ev.key === 'Escape') closeServerOsMenu();
+  }
+
+  function pickServerOs(anchor) {
+    if (osMenuEl) { closeServerOsMenu(); return; } // 再点一次同一个按钮 = 收起
+    const menu = document.createElement('div');
+    menu.className = 'os-menu';
+    menu.innerHTML =
+      '<div class="h">这台服务器装什么系统？</div>' +
+      '<button data-os="windows"><b>Windows Server</b><span>ipconfig · net start · dnscmd</span></button>' +
+      '<button data-os="linux"><b>Linux（CentOS 7）</b><span>文件系统 · vi · systemctl</span></button>';
+    document.body.appendChild(menu);
+    osMenuEl = menu;
+
+    // 贴着按钮摆：默认在右侧；右边放不下（窄屏设备条在底部）就翻到上方居中
+    const r = anchor.getBoundingClientRect();
+    const mw = menu.offsetWidth;
+    const mh = menu.offsetHeight;
+    let left;
+    let top;
+    if (window.innerWidth >= 760 && r.right + mw + 14 <= window.innerWidth) {
+      left = r.right + 10;
+      top = r.top + r.height / 2 - mh / 2;
+    } else {
+      left = r.left + r.width / 2 - mw / 2;
+      top = r.top - mh - 8;
+      if (top < 8) top = Math.min(r.bottom + 8, window.innerHeight - mh - 8);
+    }
+    left = Math.max(8, Math.min(left, window.innerWidth - mw - 8));
+    top = Math.max(8, Math.min(top, window.innerHeight - mh - 8));
+    menu.style.left = Math.round(left) + 'px';
+    menu.style.top = Math.round(top) + 'px';
+
+    menu.querySelectorAll('button').forEach((btn) => {
+      btn.onclick = (ev) => {
+        ev.stopPropagation();
+        const os = btn.dataset.os;
+        closeServerOsMenu();
+        addFromPalette('Server', { os });
+      };
+    });
+    // 点别处 / 按 Esc 收起；这两个监听器在 closeServerOsMenu 里摘掉，不会越积越多
+    document.addEventListener('pointerdown', onOsMenuOutside, true);
+    document.addEventListener('keydown', onOsMenuKey, true);
   }
 
   let nameSeq = {};
@@ -12439,8 +12557,8 @@
           <div class="r"><b>三层</b><span><code>interface Vlanif10</code> · <code>ip address 192.168.10.1 24</code></span></div>
           <div class="r"><b>二层 / 三层口</b><span>交换机物理口默认二层：要配 IP 先 <code>undo portswitch</code>；路由器以太口默认三层：要当交换口用先 <code>portswitch</code>。两种命令不通用，用错会报错并提示。</span></div>
           <div class="r"><b>防火墙</b><span><code>firewall zone trust</code> → <code>add interface GigabitEthernet1/0/1</code>；<code>security-policy</code> → <code>rule name allow-icmp</code> → <code>source-zone trust</code> / <code>destination-zone untrust</code> / <code>service icmp</code> / <code>action permit</code>。接口没加区域 = 报文直接丢弃；区域间<b>缺省是 deny</b>，不写策略什么都不通。<code>display security-policy rule all</code> / <code>display firewall session table</code> 查看。</span></div>
-          <div class="r"><b>服务器</b><span><code>http server enable</code> · <code>dns server enable</code> · <code>ftp server enable</code>；<code>dns add www.lab.cn 192.168.1.100</code>；<code>display server</code> 看状态。主机侧：<code>dns 192.168.1.100</code> 配 DNS，<code>http get www.lab.cn</code> 访问网页，<code>ping 域名</code> 也可以。Windows 服务器用 <code>net start w3svc</code> / <code>dnscmd /recordadd</code>。</span></div>
-          <div class="r"><b>Linux 服务器</b><span>有完整的目录树与配置文件：<code>ls</code> · <code>cd</code> · <code>pwd</code> · <code>cat</code> · <code>head</code> · <code>tail</code> · <code>grep</code> 都能用；<code>vi 文件</code> 进入行模式编辑（<code>:p</code> 看全文 · <code>:3c 内容</code> 改第3行 · <code>:a 内容</code> 追加 · <code>:%s/旧/新/</code> 替换 · <code>:wq</code> 存盘）。<b>改完要 <code>systemctl restart named/httpd</code> 才生效</b>。运维命令：<code>ps aux</code> · <code>top</code> · <code>df -h</code> · <code>free -h</code> · <code>netstat -tunlp</code> · <code>uname -a</code> · <code>chmod</code> · <code>rpm -qa</code> · <code>history</code>。</span></div>
+          <div class="r"><b>服务器</b><span><b>在设备库点「服务器」会先问装哪个系统</b>：Windows 用 <code>http server enable</code> · <code>dns server enable</code> · <code>ftp server enable</code>；<code>dns add www.lab.cn 192.168.1.100</code>；<code>display server</code> 看状态。主机侧：<code>dns 192.168.1.100</code> 配 DNS，<code>http get www.lab.cn</code> 访问网页，<code>ping 域名</code> 也可以。Windows 服务器用 <code>net start w3svc</code> / <code>dnscmd /recordadd</code>。</span></div>
+          <div class="r"><b>Linux 服务器</b><span><b>设备库里点「服务器」→ 选 Linux（CentOS 7）</b>，加出来的就是 Linux 服务器（卡片角标写着 Linux）；已经在用的 Windows 服务器也可以在终端里 <code>os linux</code> 切换。有完整的目录树与配置文件：<code>ls</code> · <code>cd</code> · <code>pwd</code> · <code>cat</code> · <code>head</code> · <code>tail</code> · <code>grep</code> 都能用；<code>vi 文件</code> 进入行模式编辑（<code>:p</code> 看全文 · <code>:3c 内容</code> 改第3行 · <code>:a 内容</code> 追加 · <code>:%s/旧/新/</code> 替换 · <code>:wq</code> 存盘）。<b>改完要 <code>systemctl restart named/httpd</code> 才生效</b>。运维命令：<code>ps aux</code> · <code>top</code> · <code>df -h</code> · <code>free -h</code> · <code>netstat -tunlp</code> · <code>uname -a</code> · <code>chmod</code> · <code>rpm -qa</code> · <code>history</code>。</span></div>
           <div class="r"><b>VRRP 网关冗余</b><span>在接口视图：<code>vrrp vrid 1 virtual-ip 192.168.1.254</code> · <code>vrrp vrid 1 priority 120</code> · <code>vrrp vrid 1 preempt-mode</code>。主机网关填<b>虚拟 IP</b>。Master 选举先比优先级（默认 100）再比接口 IP；Master 失效后 Backup 自动接管。<code>display vrrp</code> / <code>display vrrp brief</code> 看角色。两台路由器的 vrid 与虚拟 IP 必须完全一致。</span></div>
           <div class="r"><b>IPsec VPN</b><span><code>acl number 3000</code> + <code>rule permit ip source 192.168.1.0 0.0.0.255 destination 192.168.2.0 0.0.0.255</code>（感兴趣流）→ <code>ipsec proposal prop1</code> → <code>ike peer peer1 v2</code>（<code>pre-shared-key cipher …</code> + <code>remote-address 对端公网口</code>）→ <code>ipsec policy p1 10 isakmp</code>（<code>security acl</code> / <code>ike-peer</code> / <code>proposal</code>）→ 接口上 <code>ipsec policy p1</code>。<b>两端都要配、ACL 要互为反向</b>，路由另配。<code>display ipsec sa</code> 看隧道。</span></div>
           <div class="r"><b>单臂路由</b><span><code>interface GigabitEthernet0/0/0.10</code> → <code>dot1q termination vid 10</code> → <code>ip address 192.168.10.254 24</code> → <b><code>arp broadcast enable</code></b>（少这条 ping 不通）。上联口要 <code>port link-type trunk</code> + <code>port trunk allow-pass vlan 10 20</code>。</span></div>
@@ -12533,9 +12651,9 @@
         <h4 class="sec">这个程序</h4>
         <div class="kv">
           <div class="r"><b>形态</b><span>单个 HTML 文件，双击即用。没有后端、没有账号、<b>不联网、不采集任何数据</b> —— 断网也能正常跑。</span></div>
-          <div class="r"><b>内置</b><span>25 个实训实验（16 个配置实验 + 3 个进阶实验 + 6 个排错场景）· 6 种设备（S5700-28C-EI / S3700-28TP-EI / AR6121E / USG6000V / Server / PC）· 华为 VRP 命令行</span></div>
+          <div class="r"><b>内置</b><span>25 个实训实验（16 个配置实验 + 3 个进阶实验 + 6 个排错场景）· 6 种设备（S5700-28C-EI / S3700-28TP-EI / AR6121E / USG6000V / Server（Windows·Linux）/ PC）· 华为 VRP 命令行</span></div>
           <div class="r"><b>端口</b><span>按真机型号还原，含<b>光电复用（Combo）口</b> —— 接网线用电口、插光模块用光口，二选一</span></div>
-          <div class="r"><b>体积</b><span>约 590 KB 的单个 HTML 文件，不需要安装任何东西</span></div>
+          <div class="r"><b>体积</b><span>约 596 KB 的单个 HTML 文件，不需要安装任何东西</span></div>
           <div class="r"><b>许可</b><span><b>MIT License</b> —— 可以自由使用、修改、商用，甚至不用告诉我</span></div>
         </div>
 
