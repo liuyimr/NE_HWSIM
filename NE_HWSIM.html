@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <!--
   NE_HWSIM —— 华为 VRP 网络实训模拟器（单文件版）
-  版本：v1.7.0
+  版本：v1.8.0
 
   Copyright (c) 2026 新易科技工作室 NewE
   作者：Liuyi  <yimr@sohu.com>
@@ -940,6 +940,7 @@
       label: '服务器',
       vendor: 'Server',
       desc: '1×以太网口 · HTTP / DNS / FTP',
+      os: 'windows',
       ports: [{ name: 'Ethernet0/0/0', kind: 'RJ45' }]
     },
     'USG6000V': {
@@ -1037,11 +1038,16 @@
       /* 服务器：对外提供哪些应用层服务 + 本机 DNS 记录（只有 Server 用，其它设备留空即可） */
       services: { http: false, dns: false, ftp: false },
       dnsRecords: [], // { name, ip }
+      os: t.os || 'windows', // 服务器操作系统：windows | linux（决定可用命令与配置文件格式）
+      dnsZone: 'lab.cn', // Linux 下 zone 文件名用（/var/named/lab.cn.zone）
       /* 防火墙：安全区域成员（存接口名，不是 portId —— 区域里记的就是接口名，和 running-config 一致）/
          安全策略 / 会话表。只有 firewall 用，其它设备留空。 */
       zones: { local: [], trust: [], untrust: [], dmz: [] },
       securityPolicies: [], // { name, srcZone, dstZone, action, srcAddr, dstAddr, service, desc }
       fwSessions: [], // { srcIp, dstIp, srcZone, dstZone, policy, service, at }
+      vrrp: [], // { vrid, virtualIp, priority, preempt, portId | vlanifId }
+      /* IPsec VPN：提议 / IKE 对端 / 策略 / 已建立的 SA（只有路由器与防火墙用） */
+      ipsec: { proposals: [], ikePeers: [], policies: [], sas: [] },
       // VLAN 附加信息：{ [vlanId]: { desc, name } }。VLAN 号本身仍存在 vlans 数组里，这里只放可选属性，
       // 避免改动既有引擎逻辑。
       vlanMeta: {},
@@ -1088,6 +1094,15 @@
     for (const z of ['local', 'trust', 'untrust', 'dmz']) if (!Array.isArray(dev.zones[z])) dev.zones[z] = [];
     if (!Array.isArray(dev.securityPolicies)) dev.securityPolicies = [];
     if (!Array.isArray(dev.fwSessions)) dev.fwSessions = [];
+    if (dev.os == null) dev.os = 'windows';
+    if (!dev.dnsZone) dev.dnsZone = 'lab.cn';
+    // IPsec 结构补齐（老存档 / 早期实验里没有）
+    if (!dev.ipsec || typeof dev.ipsec !== 'object') dev.ipsec = {};
+    for (const k of ['proposals', 'ikePeers', 'policies', 'sas']) {
+      if (!Array.isArray(dev.ipsec[k])) dev.ipsec[k] = [];
+    }
+    // VRRP 虚拟路由器组（网关冗余）：每条绑定物理路由口或 Vlanif
+    if (!Array.isArray(dev.vrrp)) dev.vrrp = [];
     // 子接口字段补齐（老存档里没有）
     for (const s of dev.subifs) {
       if (s.enabled == null) s.enabled = true;
@@ -1366,6 +1381,109 @@
     return null;
   }
 
+  /* ------------------------------ VRRP ------------------------------ */
+
+  /**
+   * VRRP（虚拟路由器冗余协议）：多台路由器共用一个虚拟 IP 作网关，Master 应答 ARP、转发报文，
+   * Master 失效后 Backup 按优先级接管。真机上还有抢占延时、认证、跟踪接口，这里保留
+   * **优先级 + 抢占 + 接口状态** 三件事 —— 恰好是考题里真正会问的部分。
+   */
+
+  /** VRRP 组绑定的接口信息：{ kind, ip, mask, up, vlanId?/portId? }，拿不到返回 null */
+  function vrrpIface(dev, g) {
+    if (g.vlanifId) {
+      const vi = (dev.vlanifs || []).find((x) => x.id === g.vlanifId);
+      if (!vi || !vi.enabled || !vi.ip) return null;
+      return { kind: 'vlanif', ip: vi.ip, mask: vi.mask, vlanId: vi.vlanId, up: true };
+    }
+    const p = (dev.ports || []).find((x) => x.id === g.portId);
+    if (!p || !p.ip || p.mask == null) return null;
+    return { kind: 'port', name: p.name, ip: p.ip, mask: p.mask, portId: p.id, up: !p.shutdown && !!p.cableId };
+  }
+
+  function vrrpIfaceUp(dev, g) {
+    const i = vrrpIface(dev, g);
+    return !!(i && i.up);
+  }
+
+  /** 参选同一虚拟 IP 的所有设备（同 vrid + 同虚拟地址 + 接口 up） */
+  function vrrpMembers(g) {
+    const out = [];
+    for (const d of Net.devices) {
+      for (const x of d.vrrp || []) {
+        if (x.vrid !== g.vrid || x.virtualIp !== g.virtualIp) continue;
+        if (!vrrpIfaceUp(d, x)) continue;
+        const i = vrrpIface(d, x);
+        // 接口地址必须和虚拟地址同网段，否则这个组根本不可能生效
+        if (!sameSubnet(i.ip, i.mask, g.virtualIp)) continue;
+        out.push({ dev: d, g: x, iface: i });
+      }
+    }
+    return out;
+  }
+
+  /** 选 Master：优先级高者胜（默认 100），相同时接口 IP 大者胜 —— 与真机规则一致 */
+  function vrrpMasterOf(g) {
+    const ms = vrrpMembers(g);
+    if (!ms.length) return null;
+    ms.sort((a, b) => {
+      const pa = a.g.priority == null ? 100 : a.g.priority;
+      const pb = b.g.priority == null ? 100 : b.g.priority;
+      if (pa !== pb) return pb - pa;
+      return ipToInt(b.iface.ip) - ipToInt(a.iface.ip);
+    });
+    return ms[0];
+  }
+
+  /** 这条虚拟地址此刻是否由 dev 应答（Master + 在该二层域内） */
+  function isVrrpMasterIp(dev, ip, domain, viaPortId) {
+    for (const g of dev.vrrp || []) {
+      if (g.virtualIp !== ip) continue;
+      const i = vrrpIface(dev, g);
+      if (!i || !i.up) continue;
+      if (domain.type === P2P_DOMAIN) {
+        if (i.kind !== 'port') continue;
+        if (viaPortId != null && i.portId !== viaPortId) continue;
+      } else if (domain.type === VLAN_DOMAIN) {
+        if (i.kind === 'vlanif') {
+          if (i.vlanId !== domain.vlan) continue;
+        } else {
+          const p = (dev.ports || []).find((x) => x.id === i.portId);
+          if (!p) continue;
+          if (p.mode === 'routed') {
+            // 路由口在二层域里是「终结者」：它不属于任何 VLAN，但可以落在某个 VLAN 域上
+            const d = egressDomain(dev, p);
+            if (!d || d.type !== VLAN_DOMAIN || d.vlan !== domain.vlan) continue;
+          } else if (!portPassesVlan(p, domain.vlan)) {
+            continue;
+          }
+        }
+      }
+      const m = vrrpMasterOf(g);
+      if (!m || m.dev !== dev) continue;
+      return true;
+    }
+    return false;
+  }
+
+  /** 设备的 VRRP 组状态（给 display vrrp 用） */
+  function vrrpStatus(dev) {
+    return (dev.vrrp || []).map((g) => {
+      const i = vrrpIface(dev, g);
+      const m = vrrpMasterOf(g);
+      const members = vrrpMembers(g);
+      return {
+        group: g,
+        iface: i,
+        up: !!(i && i.up),
+        role: !i || !i.up ? 'Initialize' : m && m.dev === dev ? 'Master' : 'Backup',
+        master: m ? m.dev : null,
+        priority: g.priority == null ? 100 : g.priority,
+        members: members.length
+      };
+    });
+  }
+
   /** 设备在给定二层域下是否拥有该 IP 地址（三层拥有关系） */
   /**
    * 设备在给定二层域下是否拥有该 IP 地址（三层拥有关系）。
@@ -1412,6 +1530,8 @@
         return true;
       }
     }
+    // VRRP 虚拟地址：只有 Master 应答（Backup 不应答 ARP，所以主机只能找到 Master）
+    if (isVrrpMasterIp(device, ip, domain, viaPortId)) return true;
     return false;
   }
 
@@ -1562,6 +1682,114 @@
     return null;
   }
 
+  /* ------------------------------ IPsec VPN ------------------------------ */
+
+  /**
+   * 站点到站点 IPsec（隧道模式）。真实流程：路由 → 出接口匹配 ipsec policy →
+   * 查 IKE 对端 → 协商 SA → ESP 封装 → 走公网到对端 → 解封装后继续路由。
+   *
+   * 本引擎是单向转发，所以把「加密走公网 + 对端解密」折叠成一步：
+   * 命中感兴趣流且对端也有反向策略，就把报文直接交给对端设备继续转发。
+   * 这样配错任何一环（ACL、对端地址、密钥、对端没配）都能得到明确提示。
+   */
+
+  /** 某台设备上是否有匹配 src→dst 且已应用到接口的策略；返回 { pol, portId } */
+  function findIpsecPolicyFor(dev, srcIp, dstIp) {
+    const ip = dev.ipsec;
+    if (!ip || !Array.isArray(ip.policies)) return null;
+    for (const pol of ip.policies) {
+      if (!pol.applied) continue;
+      const acl = (dev.acl || []).find((a) => a.id === pol.aclId);
+      if (!acl || !Array.isArray(acl.rules)) continue;
+      for (const r of acl.rules) {
+        if (!matchAclRule(r, srcIp, dstIp)) continue;
+        if (r.action !== 'permit') break; // 显式 deny：这条流不加密，继续找下一条策略
+        const port = (dev.ports || []).find((p) => p.name === pol.ifaceName);
+        return { pol, portId: port ? port.id : null };
+      }
+    }
+    return null;
+  }
+
+  /** 记一条 IPsec SA（供 display ipsec sa 查看） */
+  function recordIpsecSa(dev, srcIp, dstIp, peer, pol) {
+    if (!dev.ipsec) dev.ipsec = { proposals: [], ikePeers: [], policies: [], sas: [] };
+    if (!Array.isArray(dev.ipsec.sas)) dev.ipsec.sas = [];
+    const key = `${srcIp}|${dstIp}|${pol.name}`;
+    const old = dev.ipsec.sas.find((s) => s.key === key);
+    if (old) { old.count = (old.count || 1) + 1; return old; }
+    const sa = {
+      key,
+      src: srcIp,
+      dst: dstIp,
+      spi: (Math.abs(hashStr(key)) % 0xffffff).toString(16).toUpperCase().padStart(8, '0').slice(-8),
+      proto: 'ESP',
+      mode: 'Tunnel',
+      peerName: peer.name,
+      policy: pol.name,
+      count: 1,
+      at: Date.now()
+    };
+    dev.ipsec.sas.push(sa);
+    return sa;
+  }
+
+  /** 简单字符串散列，用来生成稳定的 SPI（同一对地址每次一致，便于对比） */
+  function hashStr(s) {
+    let h = 0;
+    for (let i = 0; i < s.length; i++) h = (h * 31 + s.charCodeAt(i)) | 0;
+    return h;
+  }
+
+  /**
+   * 出接口的 IPsec 判定。
+   * 返回 null（不涉及） / { blocked, reason } / { peerDev, peerPortId, peer, pol }
+   */
+  function ipsecEgress(device, srcIp, dstIp, port) {
+    const ip = device.ipsec;
+    if (!ip || !port) return null;
+    const pol = (ip.policies || []).find((p) => p.applied && p.ifaceName === port.name);
+    if (!pol) return null;
+
+    const acl = (device.acl || []).find((a) => a.id === pol.aclId);
+    if (!acl) {
+      return { blocked: `${device.hostname} 的 IPsec 策略 ${pol.name} 引用的 ACL ${pol.aclId} 不存在（先 acl number ${pol.aclId} 建规则）` };
+    }
+    let matched = false;
+    for (const r of acl.rules || []) {
+      if (!matchAclRule(r, srcIp, dstIp)) continue;
+      matched = r.action === 'permit';
+      break;
+    }
+    if (!matched) return null; // 不在感兴趣流里 → 明文转发
+
+    const peer = (ip.ikePeers || []).find((x) => x.name === pol.peerName);
+    if (!peer) {
+      return { blocked: `IPsec 策略 ${pol.name} 引用的 IKE 对端 ${pol.peerName || '(未配置)'} 不存在` };
+    }
+    if (!peer.remoteAddress) {
+      return { blocked: `IKE 对端 ${peer.name} 没有配置 remote-address，不知道隧道对端是谁` };
+    }
+    if (!peer.psk) {
+      return { blocked: `IKE 对端 ${peer.name} 没有配置 pre-shared-key，IKE 认证会失败` };
+    }
+    const peerDev = Net.devices.find(
+      (d) => d !== device && (d.ports || []).some((p) => p.ip === peer.remoteAddress) ||
+        d !== device && (d.vlanifs || []).some((v) => v.enabled && v.ip === peer.remoteAddress)
+    );
+    if (!peerDev) {
+      return { blocked: `IPsec 对端地址 ${peer.remoteAddress} 在拓扑里没有设备使用（检查 remote-address 是否写成了对端公网口地址）` };
+    }
+    const back = findIpsecPolicyFor(peerDev, dstIp, srcIp);
+    if (!back) {
+      return {
+        blocked: `${peerDev.hostname} 上没有匹配 ${dstIp} → ${srcIp} 的 IPsec 策略，隧道两端都要配（反向 ACL 也要写对）`
+      };
+    }
+    recordIpsecSa(device, srcIp, dstIp, peer, pol);
+    return { peerDev, peerPortId: back.portId, peer, pol };
+  }
+
   /** 命中 NAT Server 表项？（按公网地址匹配；端口/协议在转发层不细分，仅作展示） */
   function matchNatServer(device, dstIp) {
     for (const p of device.ports) {
@@ -1660,6 +1888,25 @@
     if (device.type === 'firewall') {
       const fwDeny = checkFirewall(device, srcIp, dstIp, options.ingressPortId, egress.name, options.service);
       if (fwDeny) return { ok: false, path, reason: fwDeny.reason, blocked: true };
+    }
+
+    // ---- IPsec：出接口应用了策略、且报文落在感兴趣流里 → 加密后直达隧道对端 ----
+    // 放在 NAT 之前：隧道里传的是内网原始地址，被 NAT 改写就对不上了（这也是真实网络里
+    // 「IPsec 与 NAT 打架」的根源，NAT 穿越要额外处理）。
+    if (egress.kind === 'port') {
+      const ipsecPort = Net.getPort(device, egress.portId);
+      const tunnel = ipsecEgress(device, srcIp, dstIp, ipsecPort);
+      if (tunnel) {
+        if (tunnel.blocked) return { ok: false, path, reason: tunnel.blocked, blocked: true };
+        const nextPath = [...path, tunnel.peerDev.id];
+        return forward(tunnel.peerDev, dstIp, {
+          srcIp,
+          path: nextPath,
+          visitedDevices: new Set([...visitedDevices, tunnel.peerDev.id]),
+          maxHops: maxHops - 1,
+          ingressPortId: tunnel.peerPortId
+        });
+      }
     }
 
     // ---- NAT：私网源地址去往公网地址，必须在出口做地址转换 ----
@@ -2096,7 +2343,30 @@
         d.vlanifs.some((v) => v.enabled && v.ip === p.gateway) ||
         (d.subifs || []).some((s) => s.ip === p.gateway)
     );
+    // 网关是 VRRP 虚拟地址：真正应答它的是当前 Master，不是「拥有这个 IP 的设备」
     if (!owner) {
+      let hasGroup = false;
+      let master = null;
+      for (const d of Net.devices) {
+        for (const g of d.vrrp || []) {
+          if (g.virtualIp !== p.gateway) continue;
+          hasGroup = true;
+          const m = vrrpMasterOf(g);
+          if (m && m.dev) master = m.dev;
+        }
+      }
+      if (hasGroup && !master) {
+        return (
+          `${pc.hostname} 的默认网关 ${p.gateway} 是 VRRP 虚拟地址，但组里没有一台处于 Master —— ` +
+          '两台路由器的接口都要有 IP、网线要接、不能 shutdown（display vrrp brief 看状态）'
+        );
+      }
+      if (master) {
+        return (
+          `${pc.hostname} 的默认网关 ${p.gateway} 是 VRRP 虚拟地址，Master 是 ${master.hostname} —— ` +
+          '报文已经发出去了，检查 Master 上有没有到目的网段的路由或默认路由'
+        );
+      }
       return (
         `${pc.hostname} 的默认网关 ${p.gateway} 在整个拓扑里没有任何设备配置 —— ` +
         '检查路由器接口地址是否就是它（display ip interface brief），或网关是不是抄错了'
@@ -3219,6 +3489,16 @@
    * display current-configuration 与接口视图下的 display this 共用这一份，
    * 避免两处各写一遍导致回显不一致。
    */
+  /** 一条 VRRP 组的配置行（缺省值不写：优先级 100、抢占开启、通告 1s） */
+  function vrrpConfigLines(g) {
+    const out = [` vrrp vrid ${g.vrid} virtual-ip ${g.virtualIp}`];
+    if (g.priority != null && g.priority !== 100) out.push(` vrrp vrid ${g.vrid} priority ${g.priority}`);
+    if (g.preempt === false) out.push(` undo vrrp vrid ${g.vrid} preempt-mode`);
+    else if (g.preemptDelay) out.push(` vrrp vrid ${g.vrid} preempt-mode timer delay ${g.preemptDelay}`);
+    if (g.adverInterval && g.adverInterval !== 1) out.push(` vrrp vrid ${g.vrid} timer adver ${g.adverInterval}`);
+    return out;
+  }
+
   function portConfigLines(dev, p) {
     const lines = [];
     if (p.desc) lines.push(` description ${p.desc}`);
@@ -3267,6 +3547,10 @@
         ` nat server${ns.proto ? ' protocol ' + ns.proto : ''} global ${ns.globalIp}${gp} inside ${ns.insideIp}${ip}`
       );
     }
+    for (const g of (dev.vrrp || []).filter((x) => x.portId === p.id)) lines.push(...vrrpConfigLines(g));
+    for (const pol of (dev.ipsec && dev.ipsec.policies) || []) {
+      if (pol.applied && pol.ifaceName === p.name) lines.push(` ipsec policy ${pol.name}`);
+    }
     if (p.shutdown) lines.push(' shutdown');
     return lines;
   }
@@ -3292,6 +3576,7 @@
     for (const b of (dev.aclBindings || []).filter((b) => b.vlanifId === vi.vlanId)) {
       lines.push(` traffic-filter ${b.direction} acl ${b.aclId}`);
     }
+    for (const g of (dev.vrrp || []).filter((x) => x.vlanifId === vi.id)) lines.push(...vrrpConfigLines(g));
     if (!vi.enabled) lines.push(' shutdown');
     return lines;
   }
@@ -3374,9 +3659,30 @@
       }
     }
 
+    /* IPsec VPN：提议 → IKE 对端 → 策略（接口上的应用在端口段里写） */
+    const ipsec = dev.ipsec || {};
+    for (const p of ipsec.proposals || []) {
+      out.push(`ipsec proposal ${p.name}`);
+      out.push(` esp encryption-algorithm ${p.enc}`);
+      out.push(` esp authentication-algorithm ${p.auth}`);
+      out.push('#');
+    }
+    for (const p of ipsec.ikePeers || []) {
+      out.push(`ike peer ${p.name} v${p.version || 1}`);
+      if (p.remoteAddress) out.push(` remote-address ${p.remoteAddress}`);
+      if (p.psk) out.push(` pre-shared-key cipher ${p.psk}`);
+      out.push('#');
+    }
+    for (const pol of ipsec.policies || []) {
+      out.push(`ipsec policy ${pol.name} ${pol.seq} isakmp`);
+      if (pol.aclId != null) out.push(` security acl ${pol.aclId}`);
+      if (pol.peerName) out.push(` ike-peer ${pol.peerName}`);
+      if (pol.proposalName) out.push(` proposal ${pol.proposalName}`);
+      out.push('#');
+    }
+
     // 真实 VRP 里没有附加属性的 VLAN 会合并成 vlan batch，有描述/名称的单独成段
-    const meta = dev.vlanMeta || {};
-    const plainVlans = dev.vlans.filter((v) => {
+    const meta = dev.vlanMeta || {};    const plainVlans = dev.vlans.filter((v) => {
       const m = meta[v];
       return !m || (!m.desc && !m.name);
     });
@@ -3585,6 +3891,14 @@
     ospfPeerDiag,
     ripPeerDiag,
     routeActive,
+    // VRRP
+    vrrpIface,
+    vrrpIfaceUp,
+    vrrpMasterOf,
+    vrrpStatus,
+    // IPsec
+    findIpsecPolicyFor,
+    ipsecEgress,
     // DHCP
     findDhcpServer,
     allocateFromPool,
@@ -3740,7 +4054,10 @@
     'subifKey',
     'uiType',
     'zoneName',
-    'ruleName'
+    'ruleName',
+    'ipsecName',
+    'ipsecSeq',
+    'ikePeerName'
   ];
 
   /** 接口视图 / 端口组视图下当前被配置的端口列表 */
@@ -3816,6 +4133,10 @@
     const name = dev.hostname;
     switch (dev.cli.view) {
       case 'user-view':
+        // 服务器按操作系统给真实提示符：Windows 是 cmd 的 C:\>，Linux 是 bash 的 [root@host ~]#
+        if (dev.type === 'server') {
+          return dev.os === 'linux' ? `[root@${String(name).toLowerCase()} ~]#` : 'C:\\>';
+        }
         return `<${name}>`;
       case 'system-view':
         return `[${name}]`;
@@ -3864,6 +4185,12 @@
         return `[${name}-policy-security]`;
       case 'policy-rule-view':
         return `[${name}-policy-security-rule-${dev.cli.ruleName || ''}]`;
+      case 'ipsec-proposal-view':
+        return `[${name}-ipsec-proposal-${dev.cli.ipsecName || ''}]`;
+      case 'ipsec-policy-view':
+        return `[${name}-ipsec-policy-${dev.cli.ipsecName || ''}-${dev.cli.ipsecSeq != null ? dev.cli.ipsecSeq : ''}]`;
+      case 'ike-peer-view':
+        return `[${name}-ike-peer-${dev.cli.ikePeerName || ''}]`;
       default:
         return `[${name}]`;
     }
@@ -5034,6 +5361,350 @@
 
   /* ======================= 服务器（Server） ======================= */
 
+  /* ---------------- 服务器操作系统：Windows / Linux ----------------
+   * 真机上这两个系统的服务配置方式完全不同，而软考《网络工程师》恰好两套都考：
+   *   Windows：图形界面 + net start / dnscmd / ipconfig
+   *   Linux  ：systemctl + 配置文件（named.conf、zone 文件、httpd.conf）
+   * 这里用同一份数据（services / dnsRecords）配两套「外壳」，让学生看到两种系统的差别。
+   * ----------------------------------------------------------------- */
+  const SVC_NAMES = {
+    windows: { http: 'w3svc', dns: 'dns', ftp: 'msftpsvc' },
+    linux: { http: 'httpd', dns: 'named', ftp: 'vsftpd' }
+  };
+
+  const hostOs = (dev) => (dev.os === 'linux' ? 'linux' : 'windows');
+
+  /** 服务名（w3svc / httpd …）→ 内部键（http / dns / ftp） */
+  function svcKeyOf(dev, name) {
+    const n = String(name || '').toLowerCase();
+    const map = SVC_NAMES[hostOs(dev)];
+    for (const k of ['http', 'dns', 'ftp']) if (map[k] === n) return k;
+    return null;
+  }
+
+  function hostNet(dev) {
+    const p = (dev.ports || [])[0] || {};
+    return {
+      ip: p.ip || null,
+      mask: p.mask == null ? null : p.mask,
+      maskText: p.mask == null ? null : E.prefixToMask(p.mask),
+      gw: p.gateway || null,
+      dns: p.dns || null,
+      mac: p.mac || '00-0c-29-1a-2b-3c',
+      up: !!p.cableId && !p.shutdown
+    };
+  }
+
+  /* -------- Windows -------- */
+
+  function winIpconfig(dev, all) {
+    const n = hostNet(dev);
+    const mask = n.mask == null ? '' : (E.prefixToMask ? E.prefixToMask(n.mask) : '255.255.255.0');
+    const lines = ['', 'Windows IP Configuration', '', '以太网适配器 本地连接:', ''];
+    if (!n.ip) {
+      lines.push('   Media State . . . . . . . . . . . : 媒体已断开');
+      lines.push('   连接特定的 DNS 后缀 . . . . . . . :');
+      return lines;
+    }
+    lines.push(`   Connection-specific DNS Suffix  . : ${dev.dnsZone || 'lab.cn'}`);
+    lines.push(`   IPv4 Address. . . . . . . . . . . : ${n.ip}`);
+    lines.push(`   Subnet Mask . . . . . . . . . . . : ${mask}`);
+    lines.push(`   Default Gateway . . . . . . . . . : ${n.gw || ''}`);
+    lines.push(`   DNS Servers . . . . . . . . . . . : ${n.dns || ''}`);
+    if (all) {
+      lines.push(`   Physical Address. . . . . . . . . : ${n.mac}`);
+      lines.push(`   DHCP Enabled. . . . . . . . . . . : No`);
+      lines.push(`   自动配置 IPv4 地址 . . . . . . . : 否`);
+    }
+    return lines;
+  }
+
+  function winNetStart(dev, name) {
+    const map = SVC_NAMES.windows;
+    const svc = dev.services || (dev.services = { http: false, dns: false, ftp: false });
+    if (!name) {
+      const lines = ['这些 Windows 服务正在运行:', ''];
+      let n = 0;
+      for (const k of ['http', 'dns', 'ftp']) {
+        if (svc[k]) { lines.push(`   ${map[k]}`); n++; }
+      }
+      if (!n) lines.push('   （没有已启动的服务器角色，用 net start w3svc 之类启动）');
+      return lines;
+    }
+    const key = svcKeyOf(dev, name);
+    if (!key) {
+      return [
+        `系统错误 5。`,
+        `// 提示：这台服务器上可用的服务名是 w3svc（Web）、dns（DNS）、msftpsvc（FTP）。`
+      ];
+    }
+    if (svc[key]) {
+      return [`请求的服务已经启动。`, '', `请键入 NET HELPMSG 2182 以获得更多的帮助。`];
+    }
+    svc[key] = true;
+    return ['', `${map[key]} 服务正在启动 .`, `${map[key]} 服务已经启动成功。`, ''];
+  }
+
+  function winNetStop(dev, name) {
+    const map = SVC_NAMES.windows;
+    const svc = dev.services || (dev.services = { http: false, dns: false, ftp: false });
+    const key = svcKeyOf(dev, name);
+    if (!key) {
+      return [`系统错误 5。`, '// 提示：服务名是 w3svc、dns、msftpsvc。'];
+    }
+    if (!svc[key]) return [`没有启动 ${map[key]} 服务。`, '', '请键入 NET HELPMSG 2185 以获得更多的帮助。'];
+    svc[key] = false;
+    return ['', `${map[key]} 服务已成功停止。`, ''];
+  }
+
+  function winDnsCmd(dev, args) {
+    const act = String(args[1] || '').toLowerCase();
+    const zone = String(args[2] || dev.dnsZone || 'lab.cn');
+    const name = args[3];
+    if (!dev.dnsRecords) dev.dnsRecords = [];
+    if (act === '/recordadd') {
+      const ip = args[args.length - 1];
+      if (!name || !E.isValidIp(ip)) {
+        return ['命令失败: 参数不正确。', '// 用法：dnscmd /recordadd lab.cn www A 192.168.1.100'];
+      }
+      const fqdn = name.indexOf('.') >= 0 ? name : `${name}.${zone}`;
+      dev.dnsRecords = dev.dnsRecords.filter((r) => r.name !== fqdn);
+      dev.dnsRecords.push({ name: fqdn, ip });
+      return ['', `在 ${zone} 区域添加记录 ${fqdn} A ${ip} 成功。`, ''];
+    }
+    if (act === '/recorddelete') {
+      if (!name) return ['命令失败: 参数不正确。', '// 用法：dnscmd /recorddelete lab.cn www A'];
+      const fqdn = name.indexOf('.') >= 0 ? name : `${name}.${zone}`;
+      const before = dev.dnsRecords.length;
+      dev.dnsRecords = dev.dnsRecords.filter((r) => r.name !== fqdn);
+      return before === dev.dnsRecords.length
+        ? [`// 没有找到记录 ${fqdn}`]
+        : ['', `删除记录 ${fqdn} 成功。`, ''];
+    }
+    if (act === '/zoneinfo' || args.length === 1) {
+      const recs = dev.dnsRecords.filter((r) => r.name.endsWith(zone));
+      const lines = [`区域名称: ${zone}`, `记录数: ${recs.length}`];
+      for (const r of recs) lines.push(`  ${r.name}  A  ${r.ip}`);
+      return lines;
+    }
+    return ['命令失败: 未知参数。', '// 可用：/recordadd、/recorddelete、/zoneinfo'];
+  }
+
+  /* -------- Linux -------- */
+
+  function linuxIfconfig(dev) {
+    const n = hostNet(dev);
+    if (!n.ip) {
+      return ['eth0: flags=4098<BROADCAST,MULTICAST>  mtu 1500', '        ether ' + n.mac + '  txqueuelen 1000  (Ethernet)'];
+    }
+    const maskText = E.prefixToMask(n.mask);
+    const bc = E.intToIp(((E.ipToInt(n.ip) | (~E.ipToInt(maskText) >>> 0)) >>> 0));
+    return [
+      'eth0: flags=4163<UP,BROADCAST,RUNNING,MULTICAST>  mtu 1500',
+      `        inet ${n.ip}  netmask ${maskText}  broadcast ${bc}`,
+      `        ether ${n.mac}  txqueuelen 1000  (Ethernet)`,
+      '        RX packets 128  bytes 16384 (16.0 KiB)',
+      '        TX packets 96   bytes 12288 (12.0 KiB)'
+    ];
+  }
+
+  function linuxSystemctl(dev, act, name) {
+    const map = SVC_NAMES.linux;
+    const svc = dev.services || (dev.services = { http: false, dns: false, ftp: false });
+    const a = String(act || '').toLowerCase();
+    const key = svcKeyOf(dev, name);
+    if (!key) {
+      return [
+        `Failed to ${a || 'start'} ${name || '?'}: Unit ${name || '?'}.service not found.`,
+        '// 提示：这台服务器上的服务是 httpd（Web）、named（DNS）、vsftpd（FTP）。'
+      ];
+    }
+    if (a === 'status') {
+      const on = svc[key];
+      return [
+        `● ${map[key]}.service - ${key === 'http' ? 'The Apache HTTP Server' : key === 'dns' ? 'Berkeley Internet Name Domain (DNS)' : 'Vsftpd ftp daemon'}`,
+        `   Loaded: loaded (/usr/lib/systemd/system/${map[key]}.service; ${on ? 'enabled' : 'disabled'})`,
+        `   Active: ${on ? 'active (running)' : 'inactive (dead)'}`
+      ];
+    }
+    if (a === 'start' || a === 'restart') {
+      if (svc[key] && a === 'start') return [`// ${map[key]}.service 已经在运行`];
+      svc[key] = true;
+      return [`==== AUTHENTICATING FOR org.freedesktop.systemd1.manage-units ===`, '', `Started ${map[key]}.service.`, ''];
+    }
+    if (a === 'stop') {
+      if (!svc[key]) return [`// ${map[key]}.service 没有在运行`];
+      svc[key] = false;
+      return [`Stopped ${map[key]}.service.`];
+    }
+    if (a === 'enable' || a === 'disable') {
+      return [`Created symlink /etc/systemd/system/multi-user.target.wants/${map[key]}.service → /usr/lib/systemd/system/${map[key]}.service.`];
+    }
+    return [`Unknown command verb ${act}.`, '// 可用：start / stop / restart / status / enable'];
+  }
+
+  /** 找 zone 名：域名最后两段（www.lab.cn → lab.cn） */
+  function zoneOfName(name) {
+    const parts = String(name || '').split('.');
+    return parts.length >= 2 ? parts.slice(-2).join('.') : String(name || '');
+  }
+
+  function linuxZoneFile(dev, zone) {
+    const z = zone || dev.dnsZone || 'lab.cn';
+    const recs = (dev.dnsRecords || []).filter((r) => r.name.endsWith(z));
+    const lines = [
+      '$TTL 1D',
+      '@       IN      SOA     ns.' + z + '. admin.' + z + '. (',
+      '                        2026111301      ; serial',
+      '                        1D              ; refresh',
+      '                        1H              ; retry',
+      '                        1W              ; expire',
+      '                        3H )            ; minimum',
+      '        IN      NS      ns.' + z + '.',
+      'ns      IN      A       192.168.1.100'
+    ];
+    for (const r of recs) {
+      const host = r.name.replace('.' + z, '');
+      lines.push(`${host}${' '.repeat(Math.max(1, 8 - host.length))}IN      A       ${r.ip}`);
+    }
+    return lines;
+  }
+
+  function linuxCat(dev, file) {
+    const f = String(file || '').trim();
+    if (!f) return ['// 用法：cat /var/named/lab.cn.zone 或 cat /etc/httpd/conf/httpd.conf'];
+    if (/\.zone$/.test(f)) {
+      const zone = f.split('/').pop().replace('.zone', '');
+      return linuxZoneFile(dev, zone);
+    }
+    if (/named\.conf$/.test(f)) {
+      return [
+        'options {',
+        '        listen-on port 53 { any; };',
+        '        directory       "/var/named";',
+        '        allow-query     { any; };',
+        '};',
+        'zone "' + (dev.dnsZone || 'lab.cn') + '" IN {',
+        '        type master;',
+        '        file "/var/named/' + (dev.dnsZone || 'lab.cn') + '.zone";',
+        '};'
+      ];
+    }
+    if (/httpd\.conf$/.test(f)) {
+      return [
+        'ServerRoot "/etc/httpd"',
+        'Listen 80',
+        'ServerName www.' + (dev.dnsZone || 'lab.cn') + ':80',
+        'DocumentRoot "/var/www/html"',
+        '<Directory "/var/www/html">',
+        '    Require all granted',
+        '</Directory>'
+      ];
+    }
+    if (/vsftpd\.conf$/.test(f)) {
+      return [
+        'anonymous_enable=NO',
+        'local_enable=YES',
+        'write_enable=YES',
+        'local_root=/var/ftp',
+        'chroot_local_user=YES'
+      ];
+    }
+    return ['cat: ' + f + ': No such file or directory'];
+  }
+
+  /** echo "www IN A 1.2.3.4" >> /var/named/lab.cn.zone */
+  function linuxEchoAppend(dev, args) {
+    const text = args.slice(1, -2).join(' ').replace(/^["']|["']$/g, '');
+    const file = args[args.length - 1];
+    if (!/>>/.test(args[args.length - 2] || '')) {
+      return ['// 追加记录请用：echo "www IN A 192.168.1.100" >> /var/named/lab.cn.zone'];
+    }
+    if (!/\.zone$/.test(file)) return ['// 目前只支持追加到 zone 文件'];
+    const m = /^\s*(\S+)\s+IN\s+A\s+(\d+\.\d+\.\d+\.\d+)\s*$/i.exec(text);
+    if (!m || !E.isValidIp(m[2])) {
+      return ['// 记录格式应为：<主机名> IN A <IP>，例如 echo "www IN A 192.168.1.100" >> /var/named/lab.cn.zone'];
+    }
+    const zone = file.split('/').pop().replace('.zone', '');
+    const fqdn = m[1].indexOf('.') >= 0 ? m[1] : `${m[1]}.${zone}`;
+    if (!dev.dnsRecords) dev.dnsRecords = [];
+    dev.dnsRecords = dev.dnsRecords.filter((r) => r.name !== fqdn);
+    dev.dnsRecords.push({ name: fqdn, ip: m[2] });
+    return [];
+  }
+
+  /** 两台系统的命令分派；未命中返回 null，交给下面的通用命令 */
+  function osCommands(dev, cmd, args) {
+    const os = hostOs(dev);
+
+    // 查看 / 切换系统（模拟器专用，真机不能这样切）
+    if (cmd === 'os') {
+      const want = String(args[1] || '').toLowerCase();
+      if (!want) {
+        return {
+          lines: [
+            `当前系统：${os === 'linux' ? 'Linux（CentOS 7 风格）' : 'Windows Server'}`,
+            '// 切换：os linux / os windows（这是模拟器的便利命令，真机需要重装系统）'
+          ]
+        };
+      }
+      if (want !== 'linux' && want !== 'windows') return errWrong(args[1]);
+      dev.os = want;
+      return { lines: [`已切换为 ${want === 'linux' ? 'Linux' : 'Windows'} —— 命令、配置文件与提示符都会跟着变。`] };
+    }
+
+    if (os === 'windows') {
+      if (cmd === 'ipconfig') return { lines: winIpconfig(dev, args.indexOf('/all') > 0) };
+      if (cmd === 'net') {
+        const act = String(args[1] || '').toLowerCase();
+        if (act === 'start') return { lines: winNetStart(dev, args[2]) };
+        if (act === 'stop') return { lines: winNetStop(dev, args[2]) };
+        return { lines: ['// 用法：net start [服务名] / net stop 服务名'] };
+      }
+      if (cmd === 'dnscmd') return { lines: winDnsCmd(dev, args) };
+      if (cmd === 'nslookup') {
+        if (!args[1]) return { lines: ['// 用法：nslookup www.lab.cn'] };
+        const r = E.resolveName(dev, args[1]);
+        if (r.error) return { lines: ['服务器:  UnKnown', 'Address:  192.168.1.100', '', '*** ' + r.error] };
+        return {
+          lines: [
+            `服务器:  ${r.server.hostname}`,
+            `Address:  ${r.server.ports[0] && r.server.ports[0].ip}`,
+            '',
+            `名称:    ${args[1]}`,
+            `Address:  ${r.ip}`
+          ]
+        };
+      }
+      return null;
+    }
+
+    // Linux
+    if (cmd === 'ifconfig' || (cmd === 'ip' && String(args[1] || '').toLowerCase() === 'addr')) {
+      return { lines: linuxIfconfig(dev) };
+    }
+    if (cmd === 'systemctl') {
+      return { lines: linuxSystemctl(dev, args[1], args[2]) };
+    }
+    if (cmd === 'cat') return { lines: linuxCat(dev, args[1]) };
+    if (cmd === 'echo') return { lines: linuxEchoAppend(dev, args) };
+    if (cmd === 'nslookup') {
+      if (!args[1]) return { lines: ['// 用法：nslookup www.lab.cn'] };
+      const r = E.resolveName(dev, args[1]);
+      if (r.error) return { lines: ['Server:         192.168.1.100', 'Address:        192.168.1.100#53', '', '** server can\'t find ' + args[1] + ': ' + r.error] };
+      return {
+        lines: [
+          'Server:         ' + (r.server.ports[0] ? r.server.ports[0].ip : '192.168.1.100'),
+          'Address:        ' + (r.server.ports[0] ? r.server.ports[0].ip : '192.168.1.100') + '#53',
+          '',
+          'Name:   ' + args[1],
+          'Address: ' + r.ip
+        ]
+      };
+    }
+    return null;
+  }
+
   /** 服务器面板命令：三个服务开关 + DNS 记录维护 */
   function serverCommands(dev, cmd, args) {
     const svc = dev.services || (dev.services = { http: false, dns: false, ftp: false });
@@ -5070,6 +5741,7 @@
     const ok = (v) => (v ? 'enabled' : 'disabled');
     const lines = [
       `Hostname     : ${dev.hostname}`,
+      `OS           : ${dev.os === 'linux' ? 'Linux (CentOS 7)' : 'Windows Server'}`,
       `IP address   : ${p.ip ? p.ip + '/' + p.mask : '未配置'}`,
       `Gateway      : ${p.gateway || '未配置'}`,
       `HTTP server  : ${ok(svc.http)}`,
@@ -5351,6 +6023,357 @@
     return lines;
   }
 
+  /* ======================= VRRP（网关冗余） ======================= */
+
+  /** 当前视图绑定的接口：物理路由口或 Vlanif */
+  function vrrpBindCtx(dev) {
+    const view = dev.cli.view;
+    if (view === 'vlanif-view') {
+      const vi = dev.vlanifs.find((v) => v.vlanId === dev.cli.vlanifId);
+      if (!vi) return null;
+      return { key: { vlanifId: vi.id }, ip: vi.ip, mask: vi.mask, name: `Vlanif${vi.vlanId}` };
+    }
+    if (view === 'interface-view') {
+      const p = E.Net.getPort(dev, dev.cli.ifaceId);
+      if (!p) return null;
+      return { key: { portId: p.id }, ip: p.ip, mask: p.mask, name: p.name };
+    }
+    return null;
+  }
+
+  function vrrpGroupOf(dev, bind, vrid) {
+    const k = bind.key;
+    return (dev.vrrp || []).find((g) =>
+      g.vrid === vrid && (k.vlanifId ? g.vlanifId === k.vlanifId : g.portId === k.portId)
+    );
+  }
+
+  function vrrpCommands(dev, args) {
+    const bind = vrrpBindCtx(dev);
+    if (!bind) return null;
+    if (String(args[1] || '').toLowerCase() !== 'vrid') return null;
+    const vrid = parseInt(args[2], 10);
+    if (isNaN(vrid) || vrid < 1 || vrid > 255) return errWrong(args[2] || 'vrid');
+    const act = String(args[3] || '').toLowerCase();
+
+    if (act === 'virtual-ip') {
+      const ip = args[4];
+      if (!E.isValidIp(ip)) return errWrong(ip || 'virtual-ip');
+      if (!bind.ip) {
+        return [
+          ...errIncomplete('virtual-ip'),
+          '// 提示：接口还没配 IP —— VRRP 不能架在空接口上，先 ip address x.x.x.x 24。'
+        ];
+      }
+      let g = vrrpGroupOf(dev, bind, vrid);
+      if (!g) {
+        g = {
+          vrid,
+          virtualIp: ip,
+          priority: 100,
+          preempt: true,
+          portId: bind.key.portId || null,
+          vlanifId: bind.key.vlanifId || null
+        };
+        dev.vrrp.push(g);
+      } else {
+        g.virtualIp = ip;
+      }
+      return { lines: [] };
+    }
+
+    const g = vrrpGroupOf(dev, bind, vrid);
+    if (!g) {
+      return [
+        ...errIncomplete('vrid'),
+        `// 提示：本接口还没有 VRID ${vrid}，先执行 vrrp vrid ${vrid} virtual-ip <虚拟IP>。`
+      ];
+    }
+    if (act === 'priority') {
+      const n = parseInt(args[4], 10);
+      if (isNaN(n) || n < 1 || n > 254) return errWrong(args[4] || 'priority');
+      g.priority = n;
+      return { lines: [] };
+    }
+    if (act === 'preempt-mode') {
+      g.preempt = true;
+      const i = args.indexOf('delay');
+      if (i > 0) {
+        const d = parseInt(args[i + 1], 10);
+        if (!isNaN(d)) g.preemptDelay = d;
+      }
+      return { lines: [] };
+    }
+    if (act === 'timer') {
+      const i = args.indexOf('adver');
+      const n = i > 0 ? parseInt(args[i + 1], 10) : NaN;
+      if (!isNaN(n) && n >= 1) g.adverInterval = n;
+      return { lines: [] };
+    }
+    return errUnrecognized(act || args[2]);
+  }
+
+  function vrrpRemove(dev, args) {
+    const bind = vrrpBindCtx(dev);
+    if (!bind) return null;
+    if (String(args[2] || '').toLowerCase() !== 'vrid') return null;
+    const vrid = parseInt(args[3], 10);
+    if (isNaN(vrid)) return errWrong(args[3] || 'vrid');
+    const k = bind.key;
+    const i = (dev.vrrp || []).findIndex((g) =>
+      g.vrid === vrid && (k.vlanifId ? g.vlanifId === k.vlanifId : g.portId === k.portId)
+    );
+    if (i >= 0) dev.vrrp.splice(i, 1);
+    return { lines: [] };
+  }
+
+  /** display vrrp [brief] 的输出 */
+  function vrrpDisplayLines(dev, brief) {
+    const st = E.vrrpStatus(dev);
+    if (!st.length) {
+      return ['// 本设备没有配置 VRRP（在接口视图执行 vrrp vrid <组号> virtual-ip <虚拟IP>）'];
+    }
+    if (brief) {
+      const lines = [' VRID  State      Interface               Virtual IP        Priority  Preempt'];
+      for (const s of st) {
+        const name = s.iface
+          ? s.iface.kind === 'vlanif'
+            ? `Vlanif${s.iface.vlanId}`
+            : s.iface.name
+          : '-';
+        lines.push(
+          ' ' + padEnd(String(s.group.vrid), 6) + padEnd(s.role, 11) + padEnd(name, 24) +
+          padEnd(s.group.virtualIp, 18) + padEnd(String(s.priority), 10) + (s.group.preempt ? 'YES' : 'NO')
+        );
+      }
+      return lines;
+    }
+    const lines = [];
+    for (const s of st) {
+      lines.push(`VRID ${s.group.vrid}`);
+      lines.push(`  State          : ${s.role}`);
+      lines.push(`  Virtual IP     : ${s.group.virtualIp}`);
+      lines.push(`  Priority       : ${s.priority}`);
+      lines.push(
+        `  Preempt        : ${s.group.preempt ? 'YES' : 'NO'}` +
+        (s.group.preemptDelay ? ` (delay ${s.group.preemptDelay}s)` : '')
+      );
+      lines.push(`  Adver interval : ${s.group.adverInterval || 1}s`);
+      if (s.master && s.master !== dev) lines.push(`  Master         : ${s.master.hostname}`);
+      if (!s.up) lines.push('  // 接口没有 IP 或已 down，本组处于 Initialize');
+      lines.push('');
+    }
+    return lines;
+  }
+
+  /* ======================= IPsec VPN ======================= */
+
+  const IPSEC_ENC = ['des', '3des', 'aes-128', 'aes-192', 'aes-256'];
+  const IPSEC_AUTH = ['md5', 'sha1', 'sha2-256', 'sha2-384', 'sha2-512'];
+
+  const ipsecProposalOf = (dev, name) => (dev.ipsec.proposals || []).find((p) => p.name === name);
+  const ikePeerOf = (dev, name) => (dev.ipsec.ikePeers || []).find((p) => p.name === name);
+  const ipsecPolicyOf = (dev, name) => (dev.ipsec.policies || []).find((p) => p.name === name);
+
+  /** 系统视图：ipsec proposal / ipsec policy / ike peer */
+  function ipsecSystemCommands(dev, cmd, args) {
+    if (cmd === 'ipsec' && String(args[1] || '').toLowerCase() === 'proposal') {
+      const name = args[2];
+      if (!name) return errIncomplete('proposal');
+      if (!ipsecProposalOf(dev, name)) {
+        dev.ipsec.proposals.push({ name, enc: 'aes-128', auth: 'sha2-256' });
+      }
+      enterView(dev, 'ipsec-proposal-view', { ipsecName: name });
+      return { lines: [] };
+    }
+    if (cmd === 'ipsec' && String(args[1] || '').toLowerCase() === 'policy') {
+      const name = args[2];
+      if (!name) return errIncomplete('policy');
+      const seq = parseInt(args[3], 10);
+      if (isNaN(seq)) return errIncomplete('seq-number');
+      if (String(args[4] || '').toLowerCase() !== 'isakmp') {
+        return [
+          ...errWrong(args[4] || 'isakmp'),
+          '// 提示：写法为 ipsec policy <策略名> <序号> isakmp（isakmp 表示用 IKE 自动协商）。'
+        ];
+      }
+      if (!ipsecPolicyOf(dev, name)) {
+        dev.ipsec.policies.push({
+          name, seq, aclId: null, peerName: null, proposalName: null, ifaceName: null, applied: false
+        });
+      }
+      enterView(dev, 'ipsec-policy-view', { ipsecName: name, ipsecSeq: seq });
+      return { lines: [] };
+    }
+    if (cmd === 'ike' && String(args[1] || '').toLowerCase() === 'peer') {
+      const name = args[2];
+      if (!name) return errIncomplete('peer');
+      const ver = String(args[3] || 'v1').toLowerCase();
+      if (!ikePeerOf(dev, name)) {
+        dev.ipsec.ikePeers.push({ name, remoteAddress: null, psk: null, version: ver === 'v2' ? 2 : 1 });
+      }
+      enterView(dev, 'ike-peer-view', { ikePeerName: name });
+      return { lines: [] };
+    }
+    return null;
+  }
+
+  function ipsecProposalCommands(dev, cmd, args) {
+    const p = ipsecProposalOf(dev, dev.cli.ipsecName);
+    if (!p) return null;
+    if (cmd === 'esp') {
+      const sub = String(args[1] || '').toLowerCase();
+      if (sub === 'encryption-algorithm') {
+        const a = String(args[2] || '').toLowerCase();
+        if (IPSEC_ENC.indexOf(a) < 0) {
+          return [...errWrong(args[2] || 'algorithm'), `// 提示：可选 ${IPSEC_ENC.join(' / ')}`];
+        }
+        p.enc = a;
+        return { lines: [] };
+      }
+      if (sub === 'authentication-algorithm') {
+        const a = String(args[2] || '').toLowerCase();
+        if (IPSEC_AUTH.indexOf(a) < 0) {
+          return [...errWrong(args[2] || 'algorithm'), `// 提示：可选 ${IPSEC_AUTH.join(' / ')}`];
+        }
+        p.auth = a;
+        return { lines: [] };
+      }
+    }
+    if (cmd === 'display' && args[1] === 'this') {
+      return {
+        lines: [
+          `ipsec proposal ${p.name}`,
+          ` esp encryption-algorithm ${p.enc}`,
+          ` esp authentication-algorithm ${p.auth}`
+        ]
+      };
+    }
+    return null;
+  }
+
+  function ikePeerCommands(dev, cmd, args) {
+    const p = ikePeerOf(dev, dev.cli.ikePeerName);
+    if (!p) return null;
+    if (cmd === 'pre-shared-key') {
+      const kw = String(args[1] || '').toLowerCase();
+      const key = kw === 'cipher' || kw === 'simple' ? args[2] : args[1];
+      if (!key) return errIncomplete('pre-shared-key');
+      p.psk = key;
+      return { lines: [] };
+    }
+    if (cmd === 'remote-address') {
+      const ip = args[args.length - 1];
+      if (!E.isValidIp(ip)) return errWrong(ip || 'remote-address');
+      p.remoteAddress = ip;
+      return { lines: [] };
+    }
+    if (cmd === 'display' && args[1] === 'this') {
+      const lines = [`ike peer ${p.name} v${p.version}`];
+      if (p.remoteAddress) lines.push(` remote-address ${p.remoteAddress}`);
+      if (p.psk) lines.push(' pre-shared-key cipher %^%#******%^%#');
+      return { lines };
+    }
+    return null;
+  }
+
+  function ipsecPolicyCommands(dev, cmd, args) {
+    const pol = ipsecPolicyOf(dev, dev.cli.ipsecName);
+    if (!pol) return null;
+    if (cmd === 'security' && String(args[1] || '').toLowerCase() === 'acl') {
+      const id = parseInt(args[2], 10);
+      if (isNaN(id)) return errWrong(args[2] || 'acl');
+      if (!(dev.acl || []).some((a) => a.id === id)) {
+        return [`Error: ACL ${id} does not exist.`, `// 提示：先 acl number ${id} 建好规则，再回来引用。`];
+      }
+      pol.aclId = id;
+      return { lines: [] };
+    }
+    if (cmd === 'ike-peer') {
+      const name = args[1];
+      if (!name) return errIncomplete('ike-peer');
+      if (!ikePeerOf(dev, name)) return [`Error: IKE peer ${name} does not exist.`];
+      pol.peerName = name;
+      return { lines: [] };
+    }
+    if (cmd === 'proposal') {
+      const name = args[1];
+      if (!name) return errIncomplete('proposal');
+      if (!ipsecProposalOf(dev, name)) return [`Error: IPsec proposal ${name} does not exist.`];
+      pol.proposalName = name;
+      return { lines: [] };
+    }
+    if (cmd === 'display' && args[1] === 'this') {
+      const lines = [`ipsec policy ${pol.name} ${pol.seq} isakmp`];
+      if (pol.aclId != null) lines.push(` security acl ${pol.aclId}`);
+      if (pol.peerName) lines.push(` ike-peer ${pol.peerName}`);
+      if (pol.proposalName) lines.push(` proposal ${pol.proposalName}`);
+      return { lines };
+    }
+    return null;
+  }
+
+  /** display ipsec / display ike 的各种表（a 是完整参数数组，a[1]=ipsec|ike，a[2]=子项） */
+  function ipsecDisplay(dev, a) {
+    const kind = String(a[2] || '').toLowerCase();
+
+    if (kind === 'proposal') {
+      const list = dev.ipsec.proposals || [];
+      if (!list.length) return ['// 没有 IPsec 提议（系统视图：ipsec proposal <名字>）'];
+      const lines = [' IPSec proposal name:'];
+      for (const p of list) {
+        lines.push(`   ${p.name}: ESP, ${p.enc}, ${p.auth}`);
+      }
+      return lines;
+    }
+
+    if (kind === 'policy') {
+      const list = dev.ipsec.policies || [];
+      if (!list.length) return ['// 没有 IPsec 策略（系统视图：ipsec policy <名字> <序号> isakmp）'];
+      const lines = [' IPSec policy name:', `   ${padEnd('name', 14)}${padEnd('seq', 6)}${padEnd('ACL', 8)}${padEnd('IKE peer', 14)}${padEnd('Proposal', 14)}Applied`];
+      for (const p of list) {
+        lines.push(
+          `   ${padEnd(p.name, 14)}${padEnd(String(p.seq), 6)}${padEnd(String(p.aclId == null ? '-' : p.aclId), 8)}` +
+          `${padEnd(p.peerName || '-', 14)}${padEnd(p.proposalName || '-', 14)}` +
+          (p.applied ? `yes (${p.ifaceName})` : 'no')
+        );
+      }
+      return lines;
+    }
+
+    if (kind === 'sa') {
+      const list = dev.ipsec.sas || [];
+      if (!list.length) {
+        return [
+          '// 当前没有已建立的 IPsec SA',
+          '// 常见原因：没有流量触发（先 ping 一下对端网段）、两端 ACL 不对称、预共享密钥不一致'
+        ];
+      }
+      const lines = ['Number of SAs: ' + list.length];
+      for (const s of list) {
+        lines.push(`  SPI: ${s.spi}  Mode: ${s.mode}  Protocol: ${s.proto}`);
+        lines.push(`    Source     : ${s.src}`);
+        lines.push(`    Destination: ${s.dst}`);
+        lines.push(`    Policy     : ${s.policy}  (peer ${s.peerName})  Packets: ${s.count || 1}`);
+      }
+      return lines;
+    }
+
+    if (kind === 'peer') {
+      const list = dev.ipsec.ikePeers || [];
+      if (!list.length) return ['// 没有 IKE 对端（系统视图：ike peer <名字> v2）'];
+      const lines = [];
+      for (const p of list) {
+        lines.push(` IKE Peer: ${p.name}  version: v${p.version}`);
+        lines.push(`   remote address   : ${p.remoteAddress || '(未配置)'}`);
+        lines.push(`   pre-shared-key   : ${p.psk ? '******' : '(未配置)'}`);
+      }
+      return lines;
+    }
+
+    return ['// 用法：display ipsec proposal | policy | sa ；display ike peer | sa'];
+  }
+
   function dispatchDisplay(dev, args) {
     const a = args.map((x) => x.toLowerCase());
     const rest = args.slice(1);
@@ -5361,6 +6384,12 @@
         return cmdDisplayVersion(dev);
       case 'security-policy':
         return fwPolicyTable(dev);
+      case 'vrrp':
+        return vrrpDisplayLines(dev, String(a[2] || '').toLowerCase() === 'brief');
+      case 'ipsec':
+        return ipsecDisplay(dev, a);
+      case 'ike':
+        return ipsecDisplay(dev, a);
       case 'firewall':
         // display firewall session table / display firewall zone
         if (a[2] === 'session') return fwSessionTable(dev);
@@ -5987,6 +7016,8 @@
       }
 
       if (dev.type === 'server') {
+        const osR = osCommands(dev, cmd, args);
+        if (osR) return osR;
         const sr = serverCommands(dev, cmd, args);
         if (sr) return sr;
       }
@@ -6018,9 +7049,27 @@
       if (r) return r;
       return errUnrecognized(cmd);
     }
+    if (view === 'ipsec-proposal-view') {
+      const r = ipsecProposalCommands(dev, cmd, args);
+      if (r) return r;
+      if (cmd === 'display' && args[1] === 'this') return { lines: [] };
+      return errUnrecognized(cmd);
+    }
+    if (view === 'ike-peer-view') {
+      const r = ikePeerCommands(dev, cmd, args);
+      if (r) return r;
+      return errUnrecognized(cmd);
+    }
+    if (view === 'ipsec-policy-view') {
+      const r = ipsecPolicyCommands(dev, cmd, args);
+      if (r) return r;
+      return errUnrecognized(cmd);
+    }
 
     /* ================= 系统视图 ================= */
     if (view === 'system-view') {
+      const ipsecR = ipsecSystemCommands(dev, cmd, args);
+      if (ipsecR) return ipsecR;
       if (dev.type === 'firewall') {
         const fwR = fwSystemCommands(dev, cmd, args);
         if (fwR) return fwR;
@@ -6460,6 +7509,21 @@
 
       const ports = viewPorts(dev);
       if (!ports.length) { quitView(dev); return errUnrecognized(cmd); }
+      if (cmd === 'vrrp') return vrrpCommands(dev, args) || errUnrecognized(cmd);
+      if (cmd === 'undo' && args[1] === 'vrrp') return vrrpRemove(dev, args) || errUnrecognized(cmd);
+      if (cmd === 'ipsec' && String(args[1] || '').toLowerCase() === 'policy') {
+        const polName = args[2];
+        const pol = ipsecPolicyOf(dev, polName);
+        if (!pol) {
+          return [
+            `Error: IPsec policy ${polName || ''} does not exist.`,
+            '// 提示：先 ipsec policy <名字> <序号> isakmp 建策略，再在本接口应用。'
+          ];
+        }
+        pol.ifaceName = ports[0].name;
+        pol.applied = true;
+        return { lines: [] };
+      }
       if (cmd === 'description') {
         ports.forEach((p) => { p.desc = args.slice(1).join(' '); });
         return { lines: [] };
@@ -6933,6 +7997,8 @@
         return { lines: [] };
       }
       if (cmd === 'description') { vi.desc = args.slice(1).join(' '); return { lines: [] }; }
+      if (cmd === 'vrrp') return vrrpCommands(dev, args) || errUnrecognized(cmd);
+      if (cmd === 'undo' && args[1] === 'vrrp') return vrrpRemove(dev, args) || errUnrecognized(cmd);
       if (cmd === 'shutdown') { vi.enabled = false; return { lines: [] }; }
       if (cmd === 'undo' && args[1] === 'shutdown') { vi.enabled = true; return { lines: [] }; }
       if (cmd === 'ipv6' && args[1] === 'address') {
@@ -7107,7 +8173,13 @@
       if (!acl) { quitView(dev); return errUnrecognized(cmd); }
 
       if (cmd === 'rule') {
-        const parsed = parseAclRule(args.slice(1));
+        let toks = args.slice(1);
+        // 真机允许省略规则序号（自动按 5、10、15… 分配）；这里补上，别让 `rule permit ip source …` 被拒
+        if (toks.length && !/^\d+$/.test(toks[0])) {
+          const maxId = acl.rules.reduce((m, r) => Math.max(m, r.ruleId), 0);
+          toks = [String(maxId + 5), ...toks];
+        }
+        const parsed = parseAclRule(toks);
         if (parsed.err) return parsed.err;
         const rule = parsed.rule;
         acl.rules = acl.rules.filter((r) => r.ruleId !== rule.ruleId);
@@ -7153,6 +8225,15 @@
           dev.ospf.areas.push({ areaId: norm, networks: [] });
         }
         enterView(dev, 'ospf-area-view', { ospfPid: dev.ospf.pid, areaId: norm });
+        return { lines: [] };
+      }
+      // 删除一个区域（连同它里面的 network）：改区域号时真机也是先 undo area 再重建
+      if (cmd === 'undo' && args[1] === 'area') {
+        const areaId = args[2];
+        if (areaId == null) return errIncomplete('undo area');
+        const norm = areaId === '0' ? '0.0.0.0' : areaId;
+        const i = dev.ospf.areas.findIndex((a) => String(a.areaId) === String(norm));
+        if (i >= 0) dev.ospf.areas.splice(i, 1);
         return { lines: [] };
       }
       return errUnrecognized(cmd);
@@ -8116,7 +9197,7 @@
   /* ------------------------------ 版本信息 ------------------------------ */
   /* 版本号的唯一来源：改这一处即可。
      build.mjs 会把它读出来写进产物开头的注释，所以交付文件本身也能看出是哪个版本。 */
-  const APP_VERSION = '1.7.0';
+  const APP_VERSION = '1.8.0';
   const APP_INFO = {
     name: '新易网络沙盘',
     tagline: '华为 VRP 命令实训 · 单文件离线版',
@@ -8332,7 +9413,7 @@
 
       const tagTxt =
         d.type === 'pc' ? 'PC' :
-        d.type === 'server' ? 'Server' :
+        d.type === 'server' ? (d.os === 'linux' ? 'Linux' : 'Windows') :
         d.type === 'firewall' ? 'Firewall' :
         d.type === 'router' ? 'Router' :
         d.key === 'S3700' ? 'L2 Switch' : 'L3 Switch';
@@ -9146,8 +10227,13 @@
     if (!d.logs.length) {
       d.logs.push({ t: `--- 已进入 ${d.hostname} 的命令行（${d.model}）---`, c: 'dim' });
       if (d.type === 'server') {
-        d.logs.push({ t: '提示：这是模拟服务器的命令行。http / dns / ftp server enable 开启对外服务，dns add 加解析记录，display server 看状态。', c: 'dim' });
-        d.logs.push({ t: '      （真机上这些服务由操作系统管理，这里用命令代替图形面板，方便边敲边看。）', c: 'dim' });
+        if (d.os === 'linux') {
+          d.logs.push({ t: '提示：这是 Linux 服务器（CentOS 风格）。systemctl start httpd / named / vsftpd 启服务，cat /var/named/lab.cn.zone 看区域文件。', c: 'dim' });
+          d.logs.push({ t: '      echo "www IN A 192.168.1.100" >> /var/named/lab.cn.zone 追加记录；nslookup 域名 验证解析。', c: 'dim' });
+        } else {
+          d.logs.push({ t: '提示：这是 Windows Server。net start w3svc / dns / msftpsvc 启服务，dnscmd /recordadd lab.cn www A 192.168.1.100 加记录。', c: 'dim' });
+          d.logs.push({ t: '      ipconfig 看网络配置，nslookup 域名 验证解析。想切到 Linux 用 os linux。', c: 'dim' });
+        }
       } else if (d.type === 'firewall') {
         d.logs.push({ t: '提示：接口默认不属于任何安全区域 —— 先 firewall zone trust 再 add interface，否则报文会被丢弃。', c: 'dim' });
         d.logs.push({ t: '      区域间缺省策略是 deny，要在 security-policy 里写 permit 规则才放行。输入 ? 查看命令。', c: 'dim' });
@@ -9284,12 +10370,12 @@
   }
 
   const CANDIDATES = {
-    'user-view': ['system-view', 'display version', 'display current-configuration', 'display ip interface brief', 'display interface ', 'display port vlan', 'display vlan', 'display ip routing-table', 'display mac-address', 'display arp', 'display stp brief', 'display eth-trunk', 'display ospf peer brief', 'display ospf interface', 'display ospf routing', 'display rip', 'display rip routing', 'display rip neighbor', 'display ip pool', 'display acl all', 'display nat session all', 'display port-group all', 'display ipv6 interface brief', 'display ipv6 routing-table', 'display ipv6 neighbors', 'display nat server', 'display nat outbound', 'display security-policy rule all', 'display firewall session table', 'display zone', 'ping ', 'ping ipv6 ', 'tracert ', 'telnet ', 'save', 'help'],
-    'system-view': ['sysname ', 'vlan ', 'vlan batch ', 'interface ', 'interface range GigabitEthernet0/0/1 to GigabitEthernet0/0/5', 'interface Ethernet0/0/1', 'interface GigabitEthernet0/1/1', 'interface 10GE0/0/0', 'interface range Ethernet0/0/1 to Ethernet0/0/8', 'port-group group-member GigabitEthernet0/0/1 to GigabitEthernet0/0/8', 'port-group group-member Ethernet0/0/1 to Ethernet0/0/8', 'port-group 1', 'ip route-static ', 'ip pool ', 'dhcp enable', 'nat address-group 1', 'ospf 1 router-id ', 'rip 1', 'undo rip', 'acl number 2000', 'acl number 3000', 'stp mode rstp', 'stp priority ', 'ipv6', 'ipv6 route-static ', 'telnet server enable', 'stelnet server enable', 'firewall zone trust', 'firewall zone untrust', 'firewall zone dmz', 'security-policy', 'aaa', 'user-interface vty 0 4', 'display current-configuration', 'display this', 'save', 'quit', 'return'],
+    'user-view': ['system-view', 'display version', 'display current-configuration', 'display ip interface brief', 'display interface ', 'display port vlan', 'display vlan', 'display ip routing-table', 'display mac-address', 'display arp', 'display stp brief', 'display eth-trunk', 'display ospf peer brief', 'display ospf interface', 'display ospf routing', 'display rip', 'display rip routing', 'display rip neighbor', 'display ip pool', 'display acl all', 'display nat session all', 'display port-group all', 'display ipv6 interface brief', 'display ipv6 routing-table', 'display ipv6 neighbors', 'display nat server', 'display nat outbound', 'display security-policy rule all', 'display firewall session table', 'display zone', 'display vrrp', 'display vrrp brief', 'display ipsec proposal', 'display ipsec policy', 'display ipsec sa', 'display ike peer', 'ping ', 'ping ipv6 ', 'tracert ', 'telnet ', 'save', 'help'],
+    'system-view': ['sysname ', 'vlan ', 'vlan batch ', 'interface ', 'interface range GigabitEthernet0/0/1 to GigabitEthernet0/0/5', 'interface Ethernet0/0/1', 'interface GigabitEthernet0/1/1', 'interface 10GE0/0/0', 'interface range Ethernet0/0/1 to Ethernet0/0/8', 'port-group group-member GigabitEthernet0/0/1 to GigabitEthernet0/0/8', 'port-group group-member Ethernet0/0/1 to Ethernet0/0/8', 'port-group 1', 'ip route-static ', 'ip pool ', 'dhcp enable', 'nat address-group 1', 'ospf 1 router-id ', 'rip 1', 'undo rip', 'acl number 2000', 'acl number 3000', 'stp mode rstp', 'stp priority ', 'ipv6', 'ipv6 route-static ', 'telnet server enable', 'stelnet server enable', 'firewall zone trust', 'firewall zone untrust', 'firewall zone dmz', 'security-policy', 'ipsec proposal prop1', 'ipsec policy p1 10 isakmp', 'ike peer peer1 v2', 'aaa', 'user-interface vty 0 4', 'display current-configuration', 'display this', 'save', 'quit', 'return'],
     'vlan-view': ['description ', 'name ', 'display this', 'display vlan', 'quit', 'return'],
-    'interface-view': ['description ', 'shutdown', 'undo shutdown', 'port link-type access', 'port link-type trunk', 'port default vlan ', 'port trunk allow-pass vlan ', 'portswitch', 'undo portswitch', 'ip address ', 'eth-trunk 1', 'stp edged-port enable', 'port-security enable', 'port-security max-mac-num 2', 'traffic-filter inbound acl 3000', 'nat outbound 2000', 'nat server global ', 'dhcp select relay', 'dhcp relay server-ip ', 'ipv6 address ', 'ipv6 enable', 'display this', 'display interface ', 'quit', 'return'],
+    'interface-view': ['description ', 'shutdown', 'undo shutdown', 'port link-type access', 'port link-type trunk', 'port default vlan ', 'port trunk allow-pass vlan ', 'portswitch', 'undo portswitch', 'ip address ', 'eth-trunk 1', 'stp edged-port enable', 'port-security enable', 'port-security max-mac-num 2', 'traffic-filter inbound acl 3000', 'nat outbound 2000', 'nat server global ', 'dhcp select relay', 'dhcp relay server-ip ', 'ipv6 address ', 'ipv6 enable', 'vrrp vrid 1 virtual-ip ', 'vrrp vrid 1 priority 120', 'vrrp vrid 1 preempt-mode', 'ipsec policy p1', 'display vrrp brief', 'display this', 'display interface ', 'quit', 'return'],
     'portgroup-view': ['group-member GigabitEthernet0/0/1 to GigabitEthernet0/0/8', 'group-member Ethernet0/0/1 to Ethernet0/0/8', 'description ', 'shutdown', 'undo shutdown', 'port link-type access', 'port link-type trunk', 'port default vlan ', 'port trunk allow-pass vlan ', 'stp edged-port enable', 'port-security enable', 'display this', 'quit', 'return'],
-    'vlanif-view': ['ip address ', 'dhcp select global', 'dhcp select relay', 'dhcp relay server-ip ', 'traffic-filter inbound acl 3000', 'ipv6 address ', 'description ', 'shutdown', 'undo shutdown', 'display this', 'quit', 'return'],
+    'vlanif-view': ['ip address ', 'dhcp select global', 'dhcp select relay', 'dhcp relay server-ip ', 'traffic-filter inbound acl 3000', 'ipv6 address ', 'vrrp vrid 1 virtual-ip ', 'vrrp vrid 1 priority 120', 'display vrrp brief', 'description ', 'shutdown', 'undo shutdown', 'display this', 'quit', 'return'],
     'subif-view': ['dot1q termination vid 10', 'ip address ', 'arp broadcast enable', 'undo arp broadcast enable', 'description ', 'shutdown', 'undo shutdown', 'display this', 'quit', 'return'],
     'vty-view': ['authentication-mode aaa', 'authentication-mode password', 'authentication-mode none', 'protocol inbound all', 'protocol inbound ssh', 'set authentication password cipher ', 'idle-timeout 10 0', 'display this', 'quit', 'return'],
     'aaa-view': ['local-user admin password irreversible-cipher ', 'local-user admin privilege level 15', 'local-user admin service-type telnet', 'undo local-user admin', 'display this', 'quit', 'return'],
@@ -9302,6 +10388,9 @@
     'trunk-view': ['mode lacp-static', 'mode manual load-balance', 'ip address ', 'display this', 'quit', 'return'],
     'zone-view': ['add interface GigabitEthernet1/0/1', 'add interface GigabitEthernet1/0/0', 'delete interface GigabitEthernet1/0/1', 'display this', 'display zone', 'quit', 'return'],
     'policy-view': ['rule name allow-icmp', 'rule name allow-web', 'display this', 'display security-policy rule all', 'quit', 'return'],
+    'ipsec-proposal-view': ['esp encryption-algorithm aes-256', 'esp authentication-algorithm sha2-256', 'esp encryption-algorithm aes-128', 'display this', 'quit', 'return'],
+    'ike-peer-view': ['pre-shared-key cipher Huawei@123', 'remote-address 200.1.1.2', 'remote-address 200.1.1.1', 'display this', 'quit', 'return'],
+    'ipsec-policy-view': ['security acl 3000', 'ike-peer peer1', 'proposal prop1', 'display this', 'quit', 'return'],
     'policy-rule-view': [
       'source-zone trust', 'source-zone untrust', 'source-zone any',
       'destination-zone trust', 'destination-zone untrust', 'destination-zone any',
@@ -9318,9 +10407,23 @@
     if (d.type === 'pc') {
       list = ['ipconfig', 'ipconfig /renew', 'ipconfig /release', 'ip ', 'ipv6 ', 'sysname ', 'dns ', 'dns query ', 'http get ', 'ping ', 'ping ipv6 ', 'tracert ', 'telnet ', 'help'];
     } else if (d.type === 'server') {
-      list = ['ip ', 'ipv6 ', 'sysname ', 'dns ', 'dns server enable', 'dns server disable', 'dns add ', 'dns delete ',
-        'http server enable', 'http server disable', 'ftp server enable', 'ftp server disable',
-        'display server', 'ping ', 'tracert ', 'telnet ', 'help'];
+      list = ['ip ', 'ipv6 ', 'sysname ', 'os linux', 'os windows',
+        'ping ', 'tracert ', 'telnet ', 'nslookup ', 'display server', 'help'];
+      if (d.os === 'linux') {
+        list = list.concat([
+          'ifconfig', 'ip addr', 'systemctl start httpd', 'systemctl stop httpd', 'systemctl status httpd',
+          'systemctl start named', 'systemctl restart named', 'systemctl start vsftpd',
+          'cat /var/named/lab.cn.zone', 'cat /etc/named.conf', 'cat /etc/httpd/conf/httpd.conf',
+          'echo "www IN A 192.168.1.100" >> /var/named/lab.cn.zone'
+        ]);
+      } else {
+        list = list.concat([
+          'ipconfig', 'ipconfig /all', 'net start', 'net start w3svc', 'net stop w3svc',
+          'net start dns', 'net stop dns', 'net start msftpsvc', 'net stop msftpsvc',
+          'dnscmd /recordadd lab.cn www A 192.168.1.100', 'dnscmd /recorddelete lab.cn www A',
+          'dnscmd /zoneinfo lab.cn'
+        ]);
+      }
     }
 
     if (!cur.trim()) {
@@ -10221,6 +11324,418 @@
         '策略自上而下匹配，命中第一条就停；顺序写错会出现「明明 permit 了还是不通」。',
         '防火墙接口是三层口，和路由器一样直接配 IP，不用 <code>portswitch</code>。'
       ]
+    },
+    {
+      id: 'vrrp',
+      name: '实验十三 · VRRP 网关冗余',
+      level: '进阶',
+      desc: '两台路由器共用一个虚拟网关 192.168.1.254：Master 承载流量，Master 失效后 Backup 自动接管。',
+      build() {
+        // 端口都在卡片底边：上联设备放上方、下联设备放下方偏左，连线才不会横穿卡片
+        const r1 = mk('AR6121', 450, 60, 'R1');
+        const r3 = mk('AR6121', 900, 60, 'R3');
+        const r2 = mk('AR6121', 450, 260, 'R2');
+        const sw = mk('S3700', 60, 300, 'SW1');
+        const pc1 = mk('PC', 60, 480, 'PC1');
+        setPort(pc1, 0, { ip: '192.168.1.10', mask: 24, gateway: '192.168.1.254' });
+        link(pc1, 0, sw, 0);
+        link(sw, 1, r1, 3); // R1 的 GE0/0/2
+        link(sw, 2, r2, 3); // R2 的 GE0/0/2
+        link(r1, 0, r3, 0);
+        link(r2, 0, r3, 1);
+        return { focus: r1 };
+      },
+      goals: [
+        'R1：<code>interface GigabitEthernet0/0/2</code> → <code>ip address 192.168.1.1 24</code>；<code>GigabitEthernet0/0/0</code> → <code>ip address 10.0.0.1 24</code>',
+        'R2：<code>GigabitEthernet0/0/2</code> → <code>ip address 192.168.1.2 24</code>；<code>GigabitEthernet0/0/0</code> → <code>ip address 10.0.0.2 24</code>',
+        'R3：<code>GigabitEthernet0/0/0</code> → <code>ip address 10.0.0.3 24</code>；<code>GigabitEthernet0/0/1</code> → <code>ip address 10.0.0.4 24</code>',
+        'R1 在 GE0/0/2 上配 VRRP：<code>vrrp vrid 1 virtual-ip 192.168.1.254</code>，再 <code>vrrp vrid 1 priority 120</code>',
+        'R2 在 GE0/0/2 上配同一个虚拟 IP（优先级用默认 100）',
+        'PC1 上 <code>ping 10.0.0.3</code> 应该能通；<code>display vrrp brief</code> 看谁是 Master',
+        '把 R1 的 GE0/0/2 <code>shutdown</code>，再 <code>display vrrp brief</code>，看 R2 接管后 ping 是否还通'
+      ],
+      tips: [
+        'VRRP 让两台（或多台）路由器<b>共用一个虚拟 IP</b> 当网关：主机网关只填这个虚拟地址，不用关心背后是谁在转发。',
+        '<b>Master 选举</b>：先比优先级（默认 100，大的赢），相同再比接口 IP（大的赢）。把 R1 设成 120 就是让它稳定当 Master。',
+        'Master 每 1 秒发一次 VRRP 通告；Backup 连续 3 个周期收不到就认为 Master 失效，自己接管 —— 这就是「网关秒级切换」的来源。',
+        'Master 应答虚拟 IP 的 ARP，Backup <b>不应答</b>，所以主机永远只会把包发给当前 Master。',
+        '真机还能用 <code>vrrp vrid 1 track interface GigabitEthernet0/0/0 reduced 30</code> 跟踪上行口：上行断了自动降优先级让 Backup 接管，否则会出现「Master 还在、但出不去」的黑洞。',
+        '两台路由器的 vrid 和虚拟 IP 必须完全一致，否则它们根本不在同一个组里。'
+      ]
+    },
+    {
+      id: 'linux-srv',
+      name: '实验十四 · Linux 服务器（DNS + Apache）',
+      level: '进阶',
+      desc: '用 Linux 的真实命令发布网站：systemctl 启服务、改 zone 文件加记录、cat 看配置文件，再用域名访问。',
+      build() {
+        // 端口都在卡片底边：交换机在上，两台主机分列左右下方，连线不横穿卡片
+        const sw = mk('S3700', 300, 100, 'SW1');
+        const srv = mk('Server', 60, 300, 'SRV1');
+        const pc = mk('PC', 560, 300, 'PC1');
+        srv.os = 'linux'; // 这台是 Linux 服务器
+        setPort(srv, 0, { ip: '192.168.1.100', mask: 24, gateway: '192.168.1.1' });
+        setPort(pc, 0, { ip: '192.168.1.10', mask: 24, gateway: '192.168.1.1' });
+        link(srv, 0, sw, 0);
+        link(pc, 0, sw, 1);
+        return { focus: srv };
+      },
+      goals: [
+        'SRV1 上 <code>ifconfig</code> 确认地址；<code>systemctl start named</code> 启动 DNS、<code>systemctl start httpd</code> 启动 Web',
+        '写区域记录：<code>echo "www IN A 192.168.1.100" &gt;&gt; /var/named/lab.cn.zone</code>',
+        '<code>cat /var/named/lab.cn.zone</code> 看 SOA / NS / A 记录长什么样',
+        'PC1：<code>dns 192.168.1.100</code> 配置 DNS，然后 <code>ping www.lab.cn</code>',
+        '<code>http get www.lab.cn</code> 访问网页；SRV1 上 <code>cat /etc/httpd/conf/httpd.conf</code> 对照 DocumentRoot',
+        '<code>systemctl status httpd</code> 看服务状态，再 <code>systemctl stop httpd</code> 观察访问失败'
+      ],
+      tips: [
+        'Linux 下的服务用 <b>systemctl</b> 管：start / stop / restart / status / enable（enable 是开机自启，不等于立刻启动）。',
+        'DNS 用 <b>bind</b>，服务名 <code>named</code>；网页用 <b>Apache</b>，服务名 <code>httpd</code>；FTP 是 <code>vsftpd</code>；Windows 共享是 <code>samba</code>。',
+        'zone 文件里三样东西必须对：<b>SOA</b>（授权信息）、<b>NS</b>（谁是权威服务器）、<b>A 记录</b>（域名 → IP）。',
+        '改完配置要 <code>systemctl restart named</code> 才生效 —— 只改文件不重启是新手最常犯的错。',
+        'Windows 服务器是另一套：<code>net start w3svc</code>、<code>dnscmd /recordadd</code>、<code>ipconfig</code>。在这台机器上敲 <code>os windows</code> 可以切过去对比。',
+        '本模拟器用 <code>echo ... &gt;&gt; zone文件</code> 代替 vi 编辑器，语法与真实 zone 文件一致，省掉编辑器操作。'
+      ]
+    },
+    {
+      id: 'ipsec',
+      name: '实验十五 · IPsec VPN 站点互联',
+      level: '进阶',
+      desc: '两个私网隔着公网互连：用 IPsec 隧道把 192.168.1.0/24 和 192.168.2.0/24 打通，报文在公网上是加密的。',
+      build() {
+        // 一排横向排开（端口都在底边，同高的设备之间连线是水平直线，不会穿卡片）
+        const sw1 = mk('S3700', 30, 120, 'SW1');
+        const r1 = mk('AR6121', 320, 120, 'R1');
+        const r2 = mk('AR6121', 620, 120, 'R2');
+        const sw2 = mk('S3700', 920, 120, 'SW2');
+        const pc1 = mk('PC', 30, 320, 'PC1');
+        const pc2 = mk('PC', 920, 320, 'PC2');
+        setPort(pc1, 0, { ip: '192.168.1.10', mask: 24, gateway: '192.168.1.1' });
+        setPort(pc2, 0, { ip: '192.168.2.10', mask: 24, gateway: '192.168.2.1' });
+        link(pc1, 0, sw1, 0);
+        link(sw1, 1, r1, 3); // R1 GE0/0/2
+        link(r1, 0, r2, 0); // 公网段 200.1.1.0/24
+        link(r2, 3, sw2, 0); // R2 GE0/0/2
+        link(pc2, 0, sw2, 1);
+        return { focus: r1 };
+      },
+      goals: [
+        'R1：<code>GigabitEthernet0/0/2</code> → <code>ip address 192.168.1.1 24</code>；<code>GigabitEthernet0/0/0</code> → <code>ip address 200.1.1.1 24</code>',
+        'R2：<code>GigabitEthernet0/0/2</code> → <code>ip address 192.168.2.1 24</code>；<code>GigabitEthernet0/0/0</code> → <code>ip address 200.1.1.2 24</code>',
+        '先通路由：R1 <code>ip route-static 192.168.2.0 24 200.1.1.2</code>；R2 <code>ip route-static 192.168.1.0 24 200.1.1.1</code>',
+        'R1 定义感兴趣流：<code>acl number 3000</code> → <code>rule permit ip source 192.168.1.0 0.0.0.255 destination 192.168.2.0 0.0.0.255</code>（R2 写反方向）',
+        'R1 配提议与对端：<code>ipsec proposal prop1</code>（可改 <code>esp encryption-algorithm aes-256</code>）；<code>ike peer peer1 v2</code> → <code>pre-shared-key cipher Huawei@123</code> → <code>remote-address 200.1.1.2</code>',
+        'R1 配策略并应用：<code>ipsec policy p1 10 isakmp</code> → <code>security acl 3000</code> / <code>ike-peer peer1</code> / <code>proposal prop1</code>；再到 <code>GigabitEthernet0/0/0</code> 执行 <code>ipsec policy p1</code>',
+        'R2 用同样顺序配一遍（remote-address 指向 200.1.1.1，ACL 写 192.168.2.0 → 192.168.1.0）',
+        'PC1 <code>ping 192.168.2.10</code> 通之后，在 R1 上 <code>display ipsec sa</code> 看建立的隧道'
+      ],
+      tips: [
+        'IPsec 只负责<b>加密</b>，路由还是要单独配 —— 两端都要有到对端私网的静态路由，少一边就不通。',
+        '<b>感兴趣流</b>就是 ACL 里 permit 的那几条：只有匹配的报文才进隧道，其它照常明文转发。两端 ACL 必须<b>互为反向</b>，写错了隧道建不起来。',
+        '<code>remote-address</code> 填的是<b>对端公网口地址</b>，不是对端私网网关 —— 这是最常见的错误。',
+        '两端 <code>pre-shared-key</code> 必须完全一致，否则 IKE 第一阶段就失败。',
+        'IPsec 的加密发生在 NAT <b>之前</b>：隧道里传的是原始私网地址，被 NAT 改写就对不上了（真实网络里这叫「IPsec 与 NAT 冲突」，需要 NAT 穿越）。',
+        '<b>隧道模式 vs 传输模式</b>：站点到站点用隧道模式（整个 IP 包加密后套新 IP 头）；传输模式只加密载荷，用于主机到主机。',
+        '<code>display ipsec sa</code> 没有输出？先 ping 一下对端网段触发协商，再检查两端 ACL 是否对称、密钥是否一致。'
+      ]
+    },
+    {
+      id: 'fault-trunk',
+      name: '排错一 · Trunk 没放行 VLAN',
+      level: '排错',
+      desc: '两台交换机之间的 trunk 只放行了 VLAN 10 —— 新部门在 VLAN 20，同一个网段跨交换机就是不通。',
+      build() {
+        const sw1 = mk('S3700', 60, 100, 'SW1');
+        const sw2 = mk('S3700', 460, 100, 'SW2');
+        const p1 = mk('PC', 60, 320, 'PC1');
+        const p2 = mk('PC', 460, 320, 'PC2');
+        setPort(p1, 0, { ip: '192.168.1.10', mask: 24 });
+        setPort(p2, 0, { ip: '192.168.1.20', mask: 24 });
+        link(p1, 0, sw1, 0);
+        link(sw2, 0, p2, 0);
+        link(sw1, 24, sw2, 24); // GE0/0/1 互联
+        // 预置：VLAN 都建了、接入口也对，只有 trunk 少放行一个 VLAN
+        for (const sw of [sw1, sw2]) {
+          E.execute(sw, 'system-view');
+          E.execute(sw, 'vlan batch 10 20');
+          E.execute(sw, 'interface Ethernet0/0/1');
+          E.execute(sw, 'port link-type access');
+          // 两台 PC 都在 VLAN 20（同网段同 VLAN），只差 trunk 没放行 —— 否则同网段不同 VLAN 本来就不通
+          E.execute(sw, 'port default vlan 20');
+          E.execute(sw, 'quit');
+          E.execute(sw, 'interface GigabitEthernet0/0/1');
+          E.execute(sw, 'port link-type trunk');
+          E.execute(sw, 'port trunk allow-pass vlan 10');
+          E.execute(sw, 'quit');
+          E.execute(sw, 'quit');
+          E.resetCli(sw);
+        }
+        return { focus: sw1 };
+      },
+      goals: [
+        'PC1 上 <code>ping 192.168.1.20</code> —— 不通。先别改配置，想想为什么两个同网段的主机不通',
+        'SW1 上 <code>display vlan</code> 看 VLAN 10 / 20 的端口归属是否正确',
+        'SW1 上 <code>display interface GigabitEthernet0/0/1</code>，看 trunk 放行了哪些 VLAN',
+        '改好 SW1 和 SW2 两端，再 ping —— 应该通'
+      ],
+      tips: [
+        'trunk 链路默认只放行 VLAN 1，新建的 VLAN 必须显式 <code>port trunk allow-pass vlan 20</code>。',
+        '<b>两端都要放行</b>，只改一端照样不通 —— 这是最常见的漏改。',
+        '排查顺序：端口是否 up → VLAN 是否存在 → 接入口归属 → trunk 放行列表。'
+      ]
+    },
+    {
+      id: 'fault-arp',
+      name: '排错二 · 单臂路由缺一条命令',
+      level: '排错',
+      desc: '路由器单臂路由配好了子接口和地址，但两台 PC 都 ping 不通网关。差的那条命令很容易漏。',
+      build() {
+        const sw = mk('S3700', 200, 100, 'SW1');
+        const r1 = mk('AR6121', 200, 320, 'R1');
+        const p1 = mk('PC', 40, 320, 'PC1');
+        const p2 = mk('PC', 400, 320, 'PC2');
+        setPort(p1, 0, { ip: '192.168.10.10', mask: 24, gateway: '192.168.10.254' });
+        setPort(p2, 0, { ip: '192.168.20.10', mask: 24, gateway: '192.168.20.254' });
+        link(p1, 0, sw, 0);
+        link(p2, 0, sw, 1);
+        link(sw, 24, r1, 3); // R1 GE0/0/2 接交换机
+        // 预置：只差 arp broadcast enable
+        E.execute(r1, 'system-view');
+        E.execute(r1, 'interface GigabitEthernet0/0/2.10');
+        E.execute(r1, 'dot1q termination vid 10');
+        E.execute(r1, 'ip address 192.168.10.254 24');
+        E.execute(r1, 'quit');
+        E.execute(r1, 'interface GigabitEthernet0/0/2.20');
+        E.execute(r1, 'dot1q termination vid 20');
+        E.execute(r1, 'ip address 192.168.20.254 24');
+        E.execute(r1, 'quit');
+        E.execute(r1, 'quit');
+        E.resetCli(r1);
+        E.execute(sw, 'system-view');
+        E.execute(sw, 'vlan batch 10 20');
+        E.execute(sw, 'interface Ethernet0/0/1');
+        E.execute(sw, 'port link-type access');
+        E.execute(sw, 'port default vlan 10');
+        E.execute(sw, 'quit');
+        E.execute(sw, 'interface Ethernet0/0/2');
+        E.execute(sw, 'port link-type access');
+        E.execute(sw, 'port default vlan 20');
+        E.execute(sw, 'quit');
+        E.execute(sw, 'interface GigabitEthernet0/0/1');
+        E.execute(sw, 'port link-type trunk');
+        E.execute(sw, 'port trunk allow-pass vlan 10 20');
+        E.execute(sw, 'quit');
+        E.execute(sw, 'quit');
+        E.resetCli(sw);
+        return { focus: r1 };
+      },
+      goals: [
+        'PC1 上 <code>ping 192.168.10.254</code>（网关）是<b>通</b>的 —— 别急着下结论',
+        '再 <code>ping 192.168.20.10</code>（另一个网段的 PC2）—— 这次不通，提示指向子接口',
+        'R1 上 <code>display ip interface brief</code> 确认两个子接口的地址与状态',
+        'R1 上 <code>display current-configuration interface GigabitEthernet0/0/2.10</code>，对比「配了什么、缺了什么」',
+        '补齐后两处都要通'
+      ],
+      tips: [
+        '子接口有两个硬性前提：<code>dot1q termination vid</code> 脱 VLAN 标签，<code>arp broadcast enable</code> 才能发广播 ARP。',
+        '少 <code>arp broadcast enable</code> 时，三层接口看着是 up 的、地址也在，但 ARP 发不出去 —— 这是单臂路由最经典的坑。',
+        '上联交换机的 trunk 要放行对应的所有 VLAN。'
+      ]
+    },
+    {
+      id: 'fault-acl',
+      name: '排错三 · ACL 把所有人都拦了',
+      level: '排错',
+      desc: '本来只想禁止一台 PC 访问服务器，结果全公司都访问不了。看看那条规则到底写了什么。',
+      build() {
+        const sw = mk('S3700', 120, 100, 'SW1');
+        const r1 = mk('AR6121', 380, 100, 'R1');
+        const p1 = mk('PC', 60, 320, 'PC1');
+        const p2 = mk('PC', 240, 320, 'PC2');
+        const srv = mk('Server', 520, 320, 'SRV1');
+        setPort(p1, 0, { ip: '192.168.1.10', mask: 24, gateway: '192.168.1.1' });
+        setPort(p2, 0, { ip: '192.168.1.20', mask: 24, gateway: '192.168.1.1' });
+        setPort(srv, 0, { ip: '192.168.2.100', mask: 24, gateway: '192.168.2.1' });
+        link(p1, 0, sw, 0);
+        link(p2, 0, sw, 1);
+        link(sw, 24, r1, 3);
+        link(r1, 0, srv, 0);
+        // 预置：ACL 3000 第一条写成了 deny ip（把所有人都拦了），并且已经绑在出接口
+        E.execute(r1, 'system-view');
+        E.execute(r1, 'interface GigabitEthernet0/0/2');
+        E.execute(r1, 'ip address 192.168.1.1 24');
+        E.execute(r1, 'quit');
+        E.execute(r1, 'interface GigabitEthernet0/0/0');
+        E.execute(r1, 'ip address 192.168.2.1 24');
+        E.execute(r1, 'quit');
+        E.execute(r1, 'acl number 3000');
+        E.execute(r1, 'rule 5 deny ip');
+        E.execute(r1, 'rule 10 permit ip');
+        E.execute(r1, 'quit');
+        E.execute(r1, 'interface GigabitEthernet0/0/0');
+        E.execute(r1, 'traffic-filter outbound acl 3000');
+        E.execute(r1, 'quit');
+        E.execute(r1, 'quit');
+        E.resetCli(r1);
+        return { focus: r1 };
+      },
+      goals: [
+        'PC1 上 <code>ping 192.168.2.100</code> —— 不通。PC2 也不通',
+        'R1 上 <code>display acl all</code> 看 ACL 3000 的规则和顺序',
+        '想想 <code>rule 5 deny ip</code> 到底匹配了什么（有没有 source / destination 限定）',
+        '改成只拦一台主机（例如 192.168.1.10），让其它 PC 正常访问服务器'
+      ],
+      tips: [
+        'ACL 自顶向下匹配，<b>命中第一条就停</b>；末尾还有一条隐含的 deny all。',
+        '<code>deny ip</code> 不带 source/destination 等于「拒绝所有」，写在第一条就把后面的规则全废了。',
+        '写规则前先想清楚：要拦谁、放谁，<b>越具体的规则越放前面</b>。',
+        '改完用 <code>display acl all</code> 再确认一遍顺序 —— 序列号决定一切。'
+      ]
+    },
+    {
+      id: 'fault-nat',
+      name: '排错四 · NAT 不生效',
+      level: '排错',
+      desc: '内网能 ping 通网关，就是上不了公网。NAT 命令都敲了，问题在 ACL 的地址段。',
+      build() {
+        const sw = mk('S3700', 120, 100, 'SW1');
+        const r1 = mk('AR6121', 380, 100, 'R1');
+        const pc = mk('PC', 120, 320, 'PC1');
+        const pub = mk('PC', 560, 320, 'PC2');
+        setPort(pc, 0, { ip: '192.168.10.10', mask: 24, gateway: '192.168.10.1' });
+        setPort(pub, 0, { ip: '200.1.1.10', mask: 24, gateway: '200.1.1.1' });
+        link(pc, 0, sw, 0);
+        link(sw, 24, r1, 3);
+        link(r1, 0, pub, 0);
+        // 预置：内网是 192.168.10.0/24，但 ACL 2000 写成了 192.168.1.0/24
+        E.execute(r1, 'system-view');
+        E.execute(r1, 'interface GigabitEthernet0/0/2');
+        E.execute(r1, 'ip address 192.168.10.1 24');
+        E.execute(r1, 'quit');
+        E.execute(r1, 'interface GigabitEthernet0/0/0');
+        E.execute(r1, 'ip address 200.1.1.1 24');
+        E.execute(r1, 'quit');
+        E.execute(r1, 'acl number 2000');
+        E.execute(r1, 'rule permit source 192.168.1.0 0.0.0.255');
+        E.execute(r1, 'quit');
+        E.execute(r1, 'interface GigabitEthernet0/0/0');
+        E.execute(r1, 'nat outbound 2000');
+        E.execute(r1, 'quit');
+        E.execute(r1, 'quit');
+        E.resetCli(r1);
+        return { focus: r1 };
+      },
+      goals: [
+        'PC1 上 <code>ping 200.1.1.10</code> —— 不通；但 <code>ping 192.168.10.1</code>（网关）是通的',
+        'R1 上 <code>display acl all</code> 看 ACL 2000 匹配的是哪个网段',
+        '对照 <code>display ip interface brief</code> 里的内网接口地址',
+        '改对网段后再 ping，并用 <code>display nat session all</code> 确认产生了转换表项'
+      ],
+      tips: [
+        'NAT 的 ACL 只当<b>选择器</b>：匹配上才做地址转换，不匹配就原样发出去（然后被公网丢弃）。',
+        '排查口诀：<b>地址段对不对 → 绑在哪个接口 → 方向对不对</b>（<code>nat outbound</code> 绑公网出口）。',
+        '<code>display nat session all</code> 没有表项，说明根本没匹配上 ACL。'
+      ]
+    },
+    {
+      id: 'fault-fw',
+      name: '排错五 · 防火墙接口没加区域',
+      level: '排错',
+      desc: '防火墙接口地址都配对了、策略也写了 permit，可就是不通信。问题出在最前面一步。',
+      build() {
+        const p1 = mk('PC', 110, 330, 'PC1');
+        const fw = mk('USG6000V', 360, 110, 'FW1');
+        const p2 = mk('PC', 620, 330, 'PC2');
+        setPort(p1, 0, { ip: '192.168.1.10', mask: 24, gateway: '192.168.1.254' });
+        setPort(p2, 0, { ip: '10.1.1.10', mask: 24, gateway: '10.1.1.254' });
+        link(p1, 0, fw, 1);
+        link(p2, 0, fw, 0);
+        // 预置：接口地址配了、trust 加了、策略也 permit 了，唯独 untrust 侧接口没加进区域
+        E.execute(fw, 'system-view');
+        E.execute(fw, 'interface GigabitEthernet1/0/1');
+        E.execute(fw, 'ip address 192.168.1.254 24');
+        E.execute(fw, 'quit');
+        E.execute(fw, 'interface GigabitEthernet1/0/0');
+        E.execute(fw, 'ip address 10.1.1.254 24');
+        E.execute(fw, 'quit');
+        E.execute(fw, 'firewall zone trust');
+        E.execute(fw, 'add interface GigabitEthernet1/0/1');
+        E.execute(fw, 'quit');
+        E.execute(fw, 'security-policy');
+        E.execute(fw, 'rule name allow-all');
+        E.execute(fw, 'source-zone trust');
+        E.execute(fw, 'destination-zone untrust');
+        E.execute(fw, 'service icmp');
+        E.execute(fw, 'action permit');
+        E.execute(fw, 'quit');
+        E.execute(fw, 'quit');
+        E.execute(fw, 'quit');
+        E.resetCli(fw);
+        return { focus: fw };
+      },
+      goals: [
+        'PC1 上 <code>ping 10.1.1.10</code> —— 不通，而且提示指向「安全区域」',
+        'FW1 上 <code>display firewall zone</code> 看两个接口分别属于哪个区域',
+        '<code>display security-policy rule all</code> 确认策略本身是对的',
+        '把漏掉的接口加进区域，再 ping'
+      ],
+      tips: [
+        '防火墙第一道关不是策略，是<b>接口所属区域</b>：接口不属于任何区域时，报文直接丢弃，策略压根不会被执行。',
+        '区域间缺省策略是 deny，但本次策略已经写成 permit，所以问题一定在更前面。',
+        '排查顺序：接口 IP → <b>区域成员</b> → 策略顺序 → 会话表（<code>display firewall session table</code>）。'
+      ]
+    },
+    {
+      id: 'fault-ospf',
+      name: '排错六 · OSPF 邻居起不来',
+      level: '排错',
+      desc: '两台路由器都开了 OSPF、都通告了网段，可邻居一直是 Down。差别在一个数字上。',
+      build() {
+        const r1 = mk('AR6121', 100, 100, 'R1');
+        const r2 = mk('AR6121', 500, 100, 'R2');
+        const p1 = mk('PC', 60, 320, 'PC1');
+        const p2 = mk('PC', 540, 320, 'PC2');
+        setPort(p1, 0, { ip: '192.168.1.10', mask: 24, gateway: '192.168.1.1' });
+        setPort(p2, 0, { ip: '192.168.2.10', mask: 24, gateway: '192.168.2.1' });
+        setPort(r1, 0, { ip: '10.0.0.1', mask: 24 });
+        setPort(r1, 3, { ip: '192.168.1.1', mask: 24 });
+        setPort(r2, 0, { ip: '10.0.0.2', mask: 24 });
+        setPort(r2, 3, { ip: '192.168.2.1', mask: 24 });
+        link(r1, 0, r2, 0);
+        link(p1, 0, r1, 3);
+        link(p2, 0, r2, 3);
+        // 预置：R1 在 area 0，R2 在 area 1 —— 区域不一致，邻居起不来
+        E.execute(r1, 'system-view');
+        E.execute(r1, 'ospf 1 router-id 1.1.1.1');
+        E.execute(r1, 'area 0');
+        E.execute(r1, 'network 10.0.0.0 0.0.0.255');
+        E.execute(r1, 'network 192.168.1.0 0.0.0.255');
+        E.execute(r1, 'quit');
+        E.execute(r1, 'quit');
+        E.execute(r1, 'quit');
+        E.execute(r2, 'system-view');
+        E.execute(r2, 'ospf 1 router-id 2.2.2.2');
+        E.execute(r2, 'area 1');
+        E.execute(r2, 'network 10.0.0.0 0.0.0.255');
+        E.execute(r2, 'network 192.168.2.0 0.0.0.255');
+        E.execute(r2, 'quit');
+        E.execute(r2, 'quit');
+        E.execute(r2, 'quit');
+        E.resetCli(r1);
+        E.resetCli(r2);
+        return { focus: r1 };
+      },
+      goals: [
+        'PC1 上 <code>ping 192.168.2.10</code> —— 不通',
+        'R1 上 <code>display ospf peer</code> 和 <code>display ospf interface</code>，看邻居状态和区域',
+        'R2 也看一遍，对比两边的 <b>Area</b> 值',
+        '统一区域后等邻居 Full，再 ping'
+      ],
+      tips: [
+        'OSPF 邻居要求：<b>同一网段、同一区域、Hello/Dead 计时器一致、认证一致</b>。缺一个都起不来。',
+        '本实验两边通告的网段都没问题，差异在区域号 —— <code>area 0</code> 与 <code>area 1</code> 属于不同区域，不能直接建邻居。',
+        '排查用 <code>display ospf peer</code>（邻居）+ <code>display ospf interface</code>（接口所在区域）。'
+      ]
     }
   ];
 
@@ -10356,6 +11871,8 @@
           <div class="r"><b>二层 / 三层口</b><span>交换机物理口默认二层：要配 IP 先 <code>undo portswitch</code>；路由器以太口默认三层：要当交换口用先 <code>portswitch</code>。两种命令不通用，用错会报错并提示。</span></div>
           <div class="r"><b>防火墙</b><span><code>firewall zone trust</code> → <code>add interface GigabitEthernet1/0/1</code>；<code>security-policy</code> → <code>rule name allow-icmp</code> → <code>source-zone trust</code> / <code>destination-zone untrust</code> / <code>service icmp</code> / <code>action permit</code>。接口没加区域 = 报文直接丢弃；区域间<b>缺省是 deny</b>，不写策略什么都不通。<code>display security-policy rule all</code> / <code>display firewall session table</code> 查看。</span></div>
           <div class="r"><b>服务器</b><span><code>http server enable</code> · <code>dns server enable</code> · <code>ftp server enable</code>；<code>dns add www.lab.cn 192.168.1.100</code>；<code>display server</code> 看状态。主机侧：<code>dns 192.168.1.100</code> 配 DNS，<code>http get www.lab.cn</code> 访问网页，<code>ping 域名</code> 也可以。</span></div>
+          <div class="r"><b>VRRP 网关冗余</b><span>在接口视图：<code>vrrp vrid 1 virtual-ip 192.168.1.254</code> · <code>vrrp vrid 1 priority 120</code> · <code>vrrp vrid 1 preempt-mode</code>。主机网关填<b>虚拟 IP</b>。Master 选举先比优先级（默认 100）再比接口 IP；Master 失效后 Backup 自动接管。<code>display vrrp</code> / <code>display vrrp brief</code> 看角色。两台路由器的 vrid 与虚拟 IP 必须完全一致。</span></div>
+          <div class="r"><b>IPsec VPN</b><span><code>acl number 3000</code> + <code>rule permit ip source 192.168.1.0 0.0.0.255 destination 192.168.2.0 0.0.0.255</code>（感兴趣流）→ <code>ipsec proposal prop1</code> → <code>ike peer peer1 v2</code>（<code>pre-shared-key cipher …</code> + <code>remote-address 对端公网口</code>）→ <code>ipsec policy p1 10 isakmp</code>（<code>security acl</code> / <code>ike-peer</code> / <code>proposal</code>）→ 接口上 <code>ipsec policy p1</code>。<b>两端都要配、ACL 要互为反向</b>，路由另配。<code>display ipsec sa</code> 看隧道。</span></div>
           <div class="r"><b>单臂路由</b><span><code>interface GigabitEthernet0/0/0.10</code> → <code>dot1q termination vid 10</code> → <code>ip address 192.168.10.254 24</code> → <b><code>arp broadcast enable</code></b>（少这条 ping 不通）。上联口要 <code>port link-type trunk</code> + <code>port trunk allow-pass vlan 10 20</code>。</span></div>
           <div class="r"><b>静态路由</b><span><code>ip route-static 192.168.2.0 24 10.0.0.2</code>；下一跳也可以写成出接口 <code>ip route-static 192.168.2.0 24 GigabitEthernet0/0/1</code>。下一跳当前不可达时，路由表里那条的 Flags 只有 <code>R</code> 没有 <code>D</code>，并在表下面列出来。</span></div>
           <div class="r"><b>RIP</b><span><code>rip 1</code> → <code>version 2</code> → <code>network 192.168.1.0</code>（只写网段按主类网络通告，也可写 <code>network 10.0.0.0 0.0.0.255</code>）；<code>display rip</code> / <code>display rip routing</code> / <code>display rip neighbor</code> 查看。<code>silent-interface all</code> 可抑制报文。<b>两端 version 必须一致</b>（缺省是 version 1，只配一端 version 2 会永远没邻居）。</span></div>
@@ -10446,9 +11963,9 @@
         <h4 class="sec">这个程序</h4>
         <div class="kv">
           <div class="r"><b>形态</b><span>单个 HTML 文件，双击即用。没有后端、没有账号、<b>不联网、不采集任何数据</b> —— 断网也能正常跑。</span></div>
-          <div class="r"><b>内置</b><span>16 个实训实验 · 6 种设备（S5700-28C-EI 三层交换机 / S3700-28TP-EI 二层交换机 / AR6121E 路由器 / USG6000V 防火墙 / Server / PC）· 华为 VRP 命令行</span></div>
+          <div class="r"><b>内置</b><span>25 个实训实验（16 个配置实验 + 3 个进阶实验 + 6 个排错场景）· 6 种设备（S5700-28C-EI / S3700-28TP-EI / AR6121E / USG6000V / Server / PC）· 华为 VRP 命令行</span></div>
           <div class="r"><b>端口</b><span>按真机型号还原，含<b>光电复用（Combo）口</b> —— 接网线用电口、插光模块用光口，二选一</span></div>
-          <div class="r"><b>体积</b><span>约 489 KB 的单个 HTML 文件，不需要安装任何东西</span></div>
+          <div class="r"><b>体积</b><span>约 561 KB 的单个 HTML 文件，不需要安装任何东西</span></div>
           <div class="r"><b>许可</b><span><b>MIT License</b> —— 可以自由使用、修改、商用，甚至不用告诉我</span></div>
         </div>
 

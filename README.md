@@ -3,7 +3,7 @@
 **一个 HTML 文件，双击就能练华为交换机 / 路由器命令 —— 不用装 eNSP，不用装 GNS3，不联网也能用。**
 
 [![在线试玩](https://img.shields.io/badge/%E5%9C%A8%E7%BA%BF%E8%AF%95%E7%8E%A9-GitHub%20Pages-orange)](https://liuyimr.github.io/NE_HWSIM/NE_HWSIM.html)
-![单文件](https://img.shields.io/badge/%E5%8D%95%E6%96%87%E4%BB%B6-489%20KB-brightgreen)
+![单文件](https://img.shields.io/badge/%E5%8D%95%E6%96%87%E4%BB%B6-561%20KB-brightgreen)
 ![无需安装](https://img.shields.io/badge/%E6%97%A0%E9%9C%80%E5%AE%89%E8%A3%85-%E5%8F%8C%E5%87%BB%E5%8D%B3%E7%94%A8-success)
 ![离线可用](https://img.shields.io/badge/%E7%A6%BB%E7%BA%BF%E5%8F%AF%E7%94%A8-100%25-informational)
 ![许可证](https://img.shields.io/badge/license-MIT-blue)
@@ -36,7 +36,7 @@
 
 给**网络课老师**和**备考华为认证的同学**做的一个练习工具。
 
-eNSP 要装 VirtualBox，GNS3 要配镜像，虚拟机镜像动辄几个 GB，还得看电脑配置。很多学生卡在第一步就放弃了，然后就没有然后。新易网络沙盘的判断是：**先把门槛降到零** —— 一个 489 KB 的 HTML 文件，发过去、双击、开始敲命令，整个过程不需要任何解释。
+eNSP 要装 VirtualBox，GNS3 要配镜像，虚拟机镜像动辄几个 GB，还得看电脑配置。很多学生卡在第一步就放弃了，然后就没有然后。新易网络沙盘的判断是：**先把门槛降到零** —— 一个 561 KB 的 HTML 文件，发过去、双击、开始敲命令，整个过程不需要任何解释。
 
 它**不是**真机的替代品，也跑不了复杂的园区网。它解决的是一个很具体的问题：**让学生能在自己的笔记本上、离线、零安装地，把 VLAN / Trunk / OSPF / ACL / NAT 这些命令反复敲到熟。**
 
@@ -93,7 +93,7 @@ eNSP 要装 VirtualBox，GNS3 要配镜像，虚拟机镜像动辄几个 GB，�
 
 ---
 
-## 内置 16 个实训实验
+## 内置 25 个实训实验（19 个配置实验 + 6 个排错场景）
 
 点顶部 **「实训实验」** 按钮，选一个直接加载（会自动搭好拓扑、连好线）。
 
@@ -104,7 +104,7 @@ eNSP 要装 VirtualBox，GNS3 要配镜像，虚拟机镜像动辄几个 GB，�
 | 三 | 三层交换实现 VLAN 间互通 | `interface Vlanif` · `ip address` | 基础 |
 | 三·补 | **单臂路由（子接口）** | `interface GE0/0/0.10` · `dot1q termination vid` · `arp broadcast enable` | 进阶 |
 | 四 | 静态路由实现跨网段互通 | `ip route-static` | 基础 |
-| 五 | OSPF 单区域动态路由 | `ospf 1` · `area 0` · `network` | 基础 |
+| 五 | OSPF 单区域动态路由 | `ospf 1` · `area 0` · `network` · `display ospf peer` | 基础 |
 | 五·补 | **RIP 动态路由** | `rip 1` · `version 2` · `network` · `display rip neighbor` | 进阶 |
 | 六 | DHCP 自动分配地址 | `dhcp enable` · `ip pool` · `dhcp select global` | 基础 |
 | 六·补 | **DHCP 中继** | `dhcp select relay` · `dhcp relay server-ip` | 进阶 |
@@ -113,11 +113,31 @@ eNSP 要装 VirtualBox，GNS3 要配镜像，虚拟机镜像动辄几个 GB，�
 | 八·补 | **NAT Server 端口映射** | `nat server global ... inside ...` · `display nat server` | 进阶 |
 | 九 | **设备远程管理** | `telnet server enable` · `aaa` · `local-user` · `user-interface vty` | 进阶 |
 | 十 | **IPv6 基础** | `ipv6` · `ipv6 address` · `ipv6 route-static` · `ping ipv6` | 进阶 |
+| 十一 | **服务器发布（DNS + NAT Server）** | `http/dns server enable` · `dns add` · `nat server` | 进阶 |
+| 十二 | **防火墙安全策略** | `firewall zone` · `add interface` · `security-policy` · `rule name` | 进阶 |
+| 十三 | **VRRP 网关冗余** | `vrrp vrid 1 virtual-ip` · `priority` · `display vrrp brief` | 进阶 |
+| 十四 | **Linux 服务器（DNS + Apache）** | `systemctl start named/httpd` · `echo "www IN A ..." >> zone` · `cat` | 进阶 |
+| 十五 | **IPsec VPN 站点互联** | `acl` 感兴趣流 · `ipsec proposal` · `ike peer` · `ipsec policy` · `display ipsec sa` | 进阶 |
+
+### 另外 6 个是「排错场景」
+
+拓扑里**已经埋了错误配置**，题目只给现象，你要靠 `display` 和 `ping` 找出来并修好 ——
+这正是软考案例题最常见的考法，也是从「会敲命令」到「会排障」的分水岭。
+
+| 场景 | 现象 | 考什么 |
+|---|---|---|
+| 排错一 · Trunk 没放行 VLAN | 同网段的两台 PC 跨交换机不通 | trunk 放行列表（两端都要放行） |
+| 排错二 · 单臂路由缺一条命令 | 网关能 ping 通，另一个网段不通 | `arp broadcast enable` 的作用范围 |
+| 排错三 · ACL 把所有人都拦了 | 本该只拦一台，结果全公司都不能访问 | ACL 规则顺序与匹配范围 |
+| 排错四 · NAT 不生效 | 能 ping 网关，上不了公网 | NAT 的 ACL 是「选择器」，网段要对 |
+| 排错五 · 防火墙接口没加区域 | 地址对、策略也 permit，就是不通信 | 区域成员优先于策略 |
+| 排错六 · OSPF 邻居起不来 | 两边都配了 OSPF，邻居一直 Down | 邻居建立的四个前提 |
 
 每个实验加载后都会弹出**实验目标**和**操作提示**，学生照着做即可；做完点「导出配置」把 txt 交上来。
 
 > 实验加载的是**拓扑**（设备 + 连线），**不包含配置** —— 配置要学生自己敲，这正是练习的目的。
 > 实验七预置了三个 Vlanif 网关，实验八预置了全部接口地址，让学生专注在当堂知识点上。
+> 6 个排错场景则相反：**预置的是错误配置**，学生要做的是「先复现、再定位、最后修复」。
 
 ---
 
@@ -126,7 +146,7 @@ eNSP 要装 VirtualBox，GNS3 要配镜像，虚拟机镜像动辄几个 GB，�
 | | **新易网络沙盘** | eNSP | GNS3 | Cisco Packet Tracer |
 |---|---|---|---|---|
 | 安装 | **双击 HTML，零安装** | 需装 VirtualBox + eNSP | 需装虚拟机 + 导入镜像 | 需注册 Cisco 账号 |
-| 体积 | **489 KB** | 数 GB | 数 GB | 数百 MB |
+| 体积 | **561 KB** | 数 GB | 数 GB | 数百 MB |
 | 联网 | **可完全离线** | 首次需下载镜像 | 需下载镜像 | 需登录 |
 | 命令语法 | 华为 VRP | 华为 VRP | 多厂商 | Cisco IOS |
 | 上手门槛 | **极低** | 中（装环境容易失败） | 高 | 中 |
@@ -216,7 +236,7 @@ A：能。把同一个 HTML 文件传到手机（微信 / QQ / 网盘都行）�
 长按端口看详情 —— 功能一个不少，只是手势不一样（见上面「手机 / 平板也能用」的对照表）。
 
 **Q：我怎么知道手上这个文件是哪个版本？**
-A：点顶栏 **「关于」**，里面写着版本号；用记事本打开文件，**开头的注释里也有**（比如 `版本：v1.7.0`）。下载单个 HTML 文件就能自带版本信息，不用去比对文件大小。
+A：点顶栏 **「关于」**，里面写着版本号；用记事本打开文件，**开头的注释里也有**（比如 `版本：v1.8.0`）。下载单个 HTML 文件就能自带版本信息，不用去比对文件大小。
 
 ---
 
@@ -233,6 +253,33 @@ A：点顶栏 **「关于」**，里面写着版本号；用记事本打开文�
 ---
 
 ## 最近更新
+
+**v1.8.0（面向软考网工：VRRP / IPsec / Linux 服务器 / 6 个排错场景）**
+
+这一版是**对着软考网络工程师考纲**补的：补齐了考纲里明确列出的 IPsec-VPN 配置，加了案例题最常考的
+网关冗余与服务器配置，并且新增了一整类「排错」实验。
+
+- **VRRP 网关冗余**：两台路由器共用一个虚拟 IP 当网关。`vrrp vrid 1 virtual-ip` / `priority` /
+  `preempt-mode`，Master 选举按「优先级 → 接口 IP」，Master 失效后 Backup 自动接管。
+  `display vrrp` / `display vrrp brief` 看角色。这也是案例题里「主备网关」的标准答案。
+- **IPsec VPN 站点互联**：考纲「网络设备配置」里唯二还没做的（另一个是 WiFi，本工具没有 AP）。
+  完整的六步配置：ACL 感兴趣流 → `ipsec proposal` → `ike peer`（预共享密钥 + 对端地址）→
+  `ipsec policy` → 接口应用。加密发生在 NAT 之前，两端 ACL 必须互为反向 —— 配错任何一环都会给出
+  具体提示（缺密钥、对端地址错、对端没配策略），`display ipsec sa` 能看到建立的隧道。
+- **服务器拆成 Windows / Linux 两套命令**。软考明确分别考 Windows 服务器（Web / FTP / DNS / DHCP）
+  和 Linux 服务器（DNS / DHCP / Apache / Samba / FTP）。现在服务器有 `os` 属性：
+  - Windows：`ipconfig` / `net start w3svc` / `dnscmd /recordadd` / `nslookup`，提示符 `C://>`
+  - Linux：`ifconfig` / `systemctl start named|httpd` / `echo "www IN A ..." >> zone文件` / `cat`，
+    提示符 `[root@srv ~]#`
+  
+  同一份数据配两套外壳，`os linux` / `os windows` 可以随时切过去对比。zone 文件、`httpd.conf`、
+  `vsftpd.conf` 都按真实格式输出，学生能看到「记录写到哪、配置长什么样」。
+- **6 个排错场景**：这是本版最实用的一块。以前的实验都是「从零配到通」，而软考案例题一大半是
+  **给你一个坏网络让你找原因**。现在新增 6 个排错题：Trunk 没放行 VLAN、单臂路由缺 `arp broadcast`、
+  ACL 规则顺序错、NAT 网段写错、防火墙接口没加区域、OSPF 区域不一致。**预置的是错误配置，
+  题目只给现象不给答案**，学生要靠 `display` 和 `ping` 定位。
+- **顺手补的**：ACL 规则序号可省略（自动按 5、10、15 分配，与真机一致）；
+  OSPF 支持 `undo area`（改区域号时先删再建，和真机操作一致）。
 
 **v1.7.0（服务器 / 防火墙 / 中文名）**
 
@@ -445,7 +492,7 @@ A：点顶栏 **「关于」**，里面写着版本号；用记事本打开文�
 
 做工业自动控制与楼宇智能化的，这个是给网络教学做的小工具。
 
-> 程序里点顶栏 **「关于」** 也能看到版本号、作者与许可信息。当前版本 **v1.7.0**。
+> 程序里点顶栏 **「关于」** 也能看到版本号、作者与许可信息。当前版本 **v1.8.0**。
 
 ---
 
@@ -474,7 +521,7 @@ MIT License —— 随便用，商用也行，改了也不用说。详见 [LICEN
 
 **新易网络沙盘 — a Huawei VRP network lab simulator that fits in one HTML file.**
 
-A single 489 KB HTML file. Double-click it and you get a drag-and-drop network topology builder plus a
+A single 561 KB HTML file. Double-click it and you get a drag-and-drop network topology builder plus a
 faithful Huawei VRP CLI (user view → system view → interface view → VLAN view → port-group view → ACL view
 → NAT address-pool view → OSPF area view → RIP view → sub-interface view), with authentic `^` error markers and `save` interaction.
 
