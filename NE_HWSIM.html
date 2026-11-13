@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <!--
   NE_HWSIM —— 华为 VRP 网络实训模拟器（单文件版）
-  版本：v1.8.0
+  版本：v1.9.0
 
   Copyright (c) 2026 新易科技工作室 NewE
   作者：Liuyi  <yimr@sohu.com>
@@ -1040,6 +1040,9 @@
       dnsRecords: [], // { name, ip }
       os: t.os || 'windows', // 服务器操作系统：windows | linux（决定可用命令与配置文件格式）
       dnsZone: 'lab.cn', // Linux 下 zone 文件名用（/var/named/lab.cn.zone）
+      /* 服务器的虚拟文件系统（只在 Linux 模式下用）：
+         cwd 当前目录；files 存用户改过的文件内容（覆盖内置渲染结果）；dirty 记录「改了但还没重启服务」 */
+      fs: { cwd: '/', files: {}, dirty: {}, modes: {} },
       /* 防火墙：安全区域成员（存接口名，不是 portId —— 区域里记的就是接口名，和 running-config 一致）/
          安全策略 / 会话表。只有 firewall 用，其它设备留空。 */
       zones: { local: [], trust: [], untrust: [], dmz: [] },
@@ -1096,6 +1099,11 @@
     if (!Array.isArray(dev.fwSessions)) dev.fwSessions = [];
     if (dev.os == null) dev.os = 'windows';
     if (!dev.dnsZone) dev.dnsZone = 'lab.cn';
+    if (!dev.fs || typeof dev.fs !== 'object') dev.fs = { cwd: '/', files: {}, dirty: {}, modes: {} };
+    if (!dev.fs.cwd) dev.fs.cwd = '/';
+    for (const k of ['files', 'dirty', 'modes']) {
+      if (!dev.fs[k] || typeof dev.fs[k] !== 'object') dev.fs[k] = {};
+    }
     // IPsec 结构补齐（老存档 / 早期实验里没有）
     if (!dev.ipsec || typeof dev.ipsec !== 'object') dev.ipsec = {};
     for (const k of ['proposals', 'ikePeers', 'policies', 'sas']) {
@@ -4133,9 +4141,16 @@
     const name = dev.hostname;
     switch (dev.cli.view) {
       case 'user-view':
-        // 服务器按操作系统给真实提示符：Windows 是 cmd 的 C:\>，Linux 是 bash 的 [root@host ~]#
+        // 服务器按操作系统给真实提示符：Windows 是 cmd 的 C:\>，Linux 是 bash 的 [root@host 路径]#
         if (dev.type === 'server') {
-          return dev.os === 'linux' ? `[root@${String(name).toLowerCase()} ~]#` : 'C:\\>';
+          // vi 会话里，真机底部是 : 命令行
+          if (dev.fs && dev.fs.editing) return ':';
+          if (dev.os === 'linux') {
+            const cwd = (dev.fs && dev.fs.cwd) || '/';
+            const shown = cwd === '/root' ? '~' : cwd;
+            return `[root@${String(name).toLowerCase()} ${shown}]#`;
+          }
+          return 'C:\\>';
         }
         return `<${name}>`;
       case 'system-view':
@@ -5530,7 +5545,17 @@
     if (a === 'start' || a === 'restart') {
       if (svc[key] && a === 'start') return [`// ${map[key]}.service 已经在运行`];
       svc[key] = true;
-      return [`==== AUTHENTICATING FOR org.freedesktop.systemd1.manage-units ===`, '', `Started ${map[key]}.service.`, ''];
+      // 重启才真正读配置文件 —— 这也是真机行为：改完文件不 restart 等于没改
+      const extra = [];
+      if (key === 'dns') {
+        const n = applyZoneFile(dev);
+        if (n != null) extra.push(`// 已从 /var/named/${dev.dnsZone || 'lab.cn'}.zone 重新载入 ${n} 条 A 记录`);
+      }
+      if (key === 'http') {
+        const root = applyHttpdConf(dev);
+        if (root != null) extra.push(`// 已按 httpd.conf 应用 DocumentRoot=${root}`);
+      }
+      return [`==== AUTHENTICATING FOR org.freedesktop.systemd1.manage-units ===`, '', `Started ${map[key]}.service.`, ...extra, ''];
     }
     if (a === 'stop') {
       if (!svc[key]) return [`// ${map[key]}.service 没有在运行`];
@@ -5570,47 +5595,399 @@
     return lines;
   }
 
-  function linuxCat(dev, file) {
-    const f = String(file || '').trim();
-    if (!f) return ['// 用法：cat /var/named/lab.cn.zone 或 cat /etc/httpd/conf/httpd.conf'];
-    if (/\.zone$/.test(f)) {
-      const zone = f.split('/').pop().replace('.zone', '');
-      return linuxZoneFile(dev, zone);
+  /* ---------------- Linux 虚拟文件系统 ----------------
+   * 不做 inode 与真实权限内核，只把「目录结构 + 文件内容」建出来：
+   *   · 目录树按 CentOS 7 布局（配置文件在哪，学生要能自己找）
+   *   · 文件内容由设备数据实时渲染（改了服务配置，文件跟着变）
+   *   · 用户改过的文件存在 dev.fs.files[path]，优先级高于渲染结果
+   * 这样既能让 ls/cd/cat 有东西可看，也不会为一堆假目录写几百行垃圾。
+   * ----------------------------------------------------------------- */
+
+  /** 目录树：dirs 子目录，files 文件名 */
+  function fsLayout(dev) {
+    const zone = (dev.dnsZone || 'lab.cn') + '.zone';
+    return {
+      '/': { dirs: ['bin', 'etc', 'home', 'root', 'tmp', 'usr', 'var'] },
+      '/bin': { dirs: [], files: [] },
+      '/etc': { dirs: ['dhcp', 'httpd', 'sysconfig', 'vsftpd'], files: ['hosts', 'named.conf', 'passwd', 'resolv.conf'] },
+      '/etc/dhcp': { dirs: [], files: ['dhcpd.conf'] },
+      '/etc/httpd': { dirs: ['conf'], files: [] },
+      '/etc/httpd/conf': { dirs: [], files: ['httpd.conf'] },
+      '/etc/sysconfig': { dirs: ['network-scripts'], files: [] },
+      '/etc/sysconfig/network-scripts': { dirs: [], files: ['ifcfg-eth0'] },
+      '/etc/vsftpd': { dirs: [], files: ['vsftpd.conf'] },
+      '/home': { dirs: [], files: [] },
+      '/root': { dirs: [], files: ['.bash_history'] },
+      '/tmp': { dirs: [], files: [] },
+      '/usr': { dirs: ['bin', 'sbin'], files: [] },
+      '/usr/bin': { dirs: [], files: [] },
+      '/usr/sbin': { dirs: [], files: [] },
+      '/var': { dirs: ['log', 'named', 'www'], files: [] },
+      '/var/log': { dirs: [], files: ['messages', 'secure'] },
+      '/var/named': { dirs: [], files: [zone] },
+      '/var/www': { dirs: ['html', 'lab'], files: [] },
+      '/var/www/html': { dirs: [], files: ['index.html'] },
+      '/var/www/lab': { dirs: [], files: ['index.html'] }
+    };
+  }
+
+  /** 路径归一化：相对路径按 cwd 展开，处理 . / .. / ~ */
+  function fsNormalize(dev, p) {
+    let s = String(p == null ? '' : p).trim();
+    const cwd = (dev.fs && dev.fs.cwd) || '/';
+    if (!s) return cwd;
+    if (s === '~' || s.indexOf('~/') === 0) s = '/root' + s.slice(1);
+    if (s.charAt(0) !== '/') s = (cwd === '/' ? '' : cwd) + '/' + s;
+    const out = [];
+    for (const seg of s.split('/')) {
+      if (!seg || seg === '.') continue;
+      if (seg === '..') { out.pop(); continue; }
+      out.push(seg);
     }
-    if (/named\.conf$/.test(f)) {
+    return '/' + out.join('/');
+  }
+
+  /** 内置文件内容（用户没改过时用）；返回 null 表示不存在 */
+  function fsBuiltin(dev, path) {
+    const zone = dev.dnsZone || 'lab.cn';
+    const Z = zone + '.zone';
+    const n = hostNet(dev);
+    const maskText = n.mask == null ? '255.255.255.0' : E.prefixToMask(n.mask);
+
+    if (path === '/var/named/' + Z) return linuxZoneFile(dev, zone).join('\n');
+    if (path === '/etc/named.conf') {
       return [
         'options {',
         '        listen-on port 53 { any; };',
         '        directory       "/var/named";',
         '        allow-query     { any; };',
         '};',
-        'zone "' + (dev.dnsZone || 'lab.cn') + '" IN {',
+        'zone "' + zone + '" IN {',
         '        type master;',
-        '        file "/var/named/' + (dev.dnsZone || 'lab.cn') + '.zone";',
+        '        file "/var/named/' + Z + '";',
         '};'
-      ];
+      ].join('\n');
     }
-    if (/httpd\.conf$/.test(f)) {
+    if (path === '/etc/httpd/conf/httpd.conf') {
       return [
         'ServerRoot "/etc/httpd"',
         'Listen 80',
-        'ServerName www.' + (dev.dnsZone || 'lab.cn') + ':80',
-        'DocumentRoot "/var/www/html"',
-        '<Directory "/var/www/html">',
+        'ServerName www.' + zone + ':80',
+        'DocumentRoot "' + (dev.httpRoot || '/var/www/html') + '"',
+        '<Directory "' + (dev.httpRoot || '/var/www/html') + '">',
         '    Require all granted',
         '</Directory>'
-      ];
+      ].join('\n');
     }
-    if (/vsftpd\.conf$/.test(f)) {
+    if (path === '/etc/vsftpd/vsftpd.conf') {
+      return ['anonymous_enable=NO', 'local_enable=YES', 'write_enable=YES', 'local_root=/var/ftp', 'chroot_local_user=YES'].join('\n');
+    }
+    if (path === '/etc/hosts') {
+      return ['127.0.0.1   localhost localhost.localdomain', `${n.ip || '127.0.0.1'}   ${dev.hostname.toLowerCase()}.${zone} ${dev.hostname.toLowerCase()}`, ''].join('\n');
+    }
+    if (path === '/etc/resolv.conf') {
+      return ['# Generated by NetworkManager', 'search ' + zone, 'nameserver ' + (n.dns || '192.168.1.100')].join('\n');
+    }
+    if (path === '/etc/passwd') {
       return [
-        'anonymous_enable=NO',
-        'local_enable=YES',
-        'write_enable=YES',
-        'local_root=/var/ftp',
-        'chroot_local_user=YES'
-      ];
+        'root:x:0:0:root:/root:/bin/bash',
+        'bin:x:1:1:bin:/bin:/sbin/nologin',
+        'daemon:x:2:2:daemon:/sbin:/sbin/nologin',
+        'apache:x:48:48:Apache:/usr/share/httpd:/sbin/nologin',
+        'named:x:25:25:Named:/var/named:/sbin/nologin',
+        'ftp:x:14:50:FTP User:/var/ftp:/sbin/nologin'
+      ].join('\n');
     }
-    return ['cat: ' + f + ': No such file or directory'];
+    if (path === '/etc/sysconfig/network-scripts/ifcfg-eth0') {
+      return [
+        'TYPE=Ethernet',
+        'BOOTPROTO=none',
+        'NAME=eth0',
+        'DEVICE=eth0',
+        'ONBOOT=yes',
+        'IPADDR=' + (n.ip || ''),
+        'PREFIX=' + (n.mask == null ? '' : n.mask),
+        'NETMASK=' + maskText,
+        'GATEWAY=' + (n.gw || ''),
+        'DNS1=' + (n.dns || '')
+      ].join('\n');
+    }
+    if (path === '/etc/dhcp/dhcpd.conf') {
+      const pool = (dev.dhcp && dev.dhcp.pools && dev.dhcp.pools[0]) || null;
+      if (!pool) return '# 还没有配置地址池（本模拟器用 ip pool 命令配，或在这里手写）';
+      return [
+        'default-lease-time 86400;',
+        'max-lease-time 172800;',
+        'authoritative;',
+        'subnet ' + pool.network + ' netmask ' + E.prefixToMask(pool.mask) + ' {',
+        '  range ' + (pool.start || '') + ' ' + (pool.end || '') + ';',
+        '  option routers ' + (pool.gateway || '') + ';',
+        '  option domain-name-servers ' + (pool.dns || '') + ';',
+        '}'
+      ].join('\n');
+    }
+    if (path === '/var/www/html/index.html') {
+      return [
+        '<html><head><title>' + dev.hostname + '</title></head>',
+        '<body><h1>It works!</h1>',
+        '<p>' + dev.hostname + ' 的默认主页（模拟页面）。</p></body></html>'
+      ].join('\n');
+    }
+    if (path === '/var/www/lab/index.html') {
+      return [
+        '<html><head><title>Network Lab</title></head>',
+        '<body><h1>网络实验室主页</h1>',
+        '<p>这个页面在 /var/www/lab 目录下 —— 把 httpd.conf 的 DocumentRoot 指过来就能看到它。</p>',
+        '</body></html>'
+      ].join('\n');
+    }
+    if (path === '/var/log/messages') {
+      return [
+        'Nov 13 20:00:01 ' + dev.hostname.toLowerCase() + ' systemd: Started Session 1 of user root.',
+        'Nov 13 20:00:02 ' + dev.hostname.toLowerCase() + ' NetworkManager: <info> device eth0 state change',
+        'Nov 13 20:00:05 ' + dev.hostname.toLowerCase() + ' systemd: ' + (dev.services && dev.services.dns ? 'Started Berkeley Internet Name Domain (DNS).' : 'Starting Berkeley Internet Name Domain (DNS)...')
+      ].join('\n');
+    }
+    if (path === '/var/log/secure') {
+      return [
+        'Nov 13 20:00:03 ' + dev.hostname.toLowerCase() + ' sshd[1024]: Server listening on 0.0.0.0 port 22.',
+        'Nov 13 20:01:11 ' + dev.hostname.toLowerCase() + ' sshd[1102]: Accepted password for root from ' + (n.gw || '192.168.1.1') + ' port 51234 ssh2'
+      ].join('\n');
+    }
+    if (path === '/root/.bash_history') {
+      const hist = (dev.cmdHistory || []).slice(-20);
+      if (!hist.length) return '# 还没有历史命令';
+      return hist.join('\n');
+    }
+    return null;
+  }
+
+  /** 读文件：用户改过的优先，否则用渲染结果 */
+  function fsRead(dev, path) {
+    if (dev.fs && dev.fs.files && dev.fs.files[path] != null) return dev.fs.files[path];
+    return fsBuiltin(dev, path);
+  }
+
+  /** 文件大小（字节，粗略按字符算） */
+  function fsSize(dev, path) {
+    const c = fsRead(dev, path);
+    return c == null ? 0 : c.length;
+  }
+
+  /** 权限位 → ls -l 的 9 字符（chmod 改过的用 dev.fs.modes） */
+  function fsModeStr(dev, path, isDir) {
+    const m = (dev.fs && dev.fs.modes && dev.fs.modes[path]) || (isDir ? '755' : '644');
+    const conv = (d) => {
+      const n = parseInt(d, 10) || 0;
+      return (n & 4 ? 'r' : '-') + (n & 2 ? 'w' : '-') + (n & 1 ? 'x' : '-');
+    };
+    return (isDir ? 'd' : '-') + conv(m[0]) + conv(m[1]) + conv(m[2]) + '.';
+  }
+
+  /** ls：返回行数组 */
+  function fsList(dev, dir, long, showAll) {
+    const lay = fsLayout(dev)[dir];
+    if (!lay) return null;
+    const names = [];
+    for (const d of lay.dirs || []) names.push({ name: d, dir: true });
+    for (const f of lay.files || []) names.push({ name: f, dir: false });
+    const list = showAll ? names : names.filter((x) => x.name.charAt(0) !== '.');
+    if (!long) {
+      if (!list.length) return [];
+      // 简版 ls：多个名字排成几列（终端宽度按 80 估算）
+      const cols = 4;
+      const out = [];
+      for (let i = 0; i < list.length; i += cols) {
+        out.push(list.slice(i, i + cols).map((x) => x.name).join('  '));
+      }
+      return out;
+    }
+    const lines = ['total ' + list.length * 4];
+    for (const x of list) {
+      const full = (dir === '/' ? '' : dir) + '/' + x.name;
+      const mode = fsModeStr(dev, full, x.dir);
+      const size = x.dir ? 4096 : fsSize(dev, full);
+      lines.push(
+        `${mode} ${x.dir ? '2' : '1'} root root ${String(size).padStart(6)} Nov 13 20:00 ${x.name}`
+      );
+    }
+    return lines;
+  }
+
+  function linuxCat(dev, file) {
+    const f = String(file || '').trim();
+    if (!f) return ['// 用法：cat /etc/named.conf —— 不知道有哪些文件就先 ls'];
+    const p = fsNormalize(dev, f);
+    if (fsLayout(dev)[p]) return [`cat: ${f}: Is a directory`];
+    const c = fsRead(dev, p);
+    if (c == null) return [`cat: ${f}: No such file or directory`];
+    return c.split('\n');
+  }
+
+  /** head / tail：-n N 或 -N 形式 */
+  function linuxHeadTail(dev, args, tail) {
+    let n = 10;
+    let file = null;
+    for (let i = 1; i < args.length; i++) {
+      const a = args[i];
+      if (a === '-n') { n = parseInt(args[++i], 10) || 10; continue; }
+      if (/^-\d+$/.test(a)) { n = parseInt(a.slice(1), 10) || 10; continue; }
+      if (!file) file = a;
+    }
+    if (!file) return [`// 用法：${tail ? 'tail' : 'head'} [-n N] <文件>`];
+    const p = fsNormalize(dev, file);
+    const c = fsRead(dev, p);
+    if (c == null) return [`${tail ? 'tail' : 'head'}: cannot open '${file}' for reading: No such file or directory`];
+    const lines = c.split('\n');
+    return tail ? lines.slice(-n) : lines.slice(0, n);
+  }
+
+  /** grep pattern file（暂不支持正则里的花活，用子串/简单正则） */
+  function linuxGrep(dev, args) {
+    if (!args[1] || !args[2]) return ['// 用法：grep <关键字> <文件>'];
+    const pat = args[1];
+    const file = args[2];
+    const p = fsNormalize(dev, file);
+    const c = fsRead(dev, p);
+    if (c == null) return [`grep: ${file}: No such file or directory`];
+    let re = null;
+    try { re = new RegExp(pat, 'i'); } catch (e) { re = null; }
+    const hit = c.split('\n').filter((l) => (re ? re.test(l) : l.indexOf(pat) >= 0));
+    return hit;
+  }
+
+  /* ---------------- 行模式 vi ----------------
+   * 真 vi 是全屏字符编辑器，浏览器终端里做那一套成本高、收益低（还要处理光标、翻页、模式切换）。
+   * 这里给一个 ex 行命令版本：能看、能改、能存，学生「改配置文件」这个动作是完整的。
+   * ------------------------------------------------------------------ */
+
+  function viOpen(dev, file) {
+    if (!file) return ['// 用法：vi /var/named/lab.cn.zone —— 要先知道文件在哪，用 ls 找'];
+    const p = fsNormalize(dev, file);
+    const c = fsRead(dev, p);
+    if (c == null) return [`vi: ${file}: No such file or directory（本模拟器只能编辑已存在的文件）`];
+    const lines = c.split('\n');
+    dev.fs.editing = { path: p, lines };
+    return [
+      `"${p}" ${lines.length}L`,
+      '-- 行模式编辑（模拟器简化）：:p 看全文 | :3 看第3行 | :3c 新内容 替换该行 | :3d 删该行 | :a 内容 末尾追加 --',
+      '-- :s/旧/新/ 替换一处，:%s/旧/新/g 全文替换 | :w 保存 | :q 退出 | :wq 保存并退出 --'
+    ];
+  }
+
+  function viSave(dev) {
+    const ed = dev.fs.editing;
+    if (!ed) return ['E32: No file name'];
+    dev.fs.files[ed.path] = ed.lines.join('\n');
+    dev.fs.dirty[ed.path] = true;
+    const effective = /\.zone$/.test(ed.path) || /httpd\.conf$/.test(ed.path);
+    if (!effective) {
+      return [`"${ed.path}" ${ed.lines.length}L written`, '// 已写入。这个文件在本模拟器里只用于查看，不会影响服务行为（真正生效的是 zone 文件与 httpd.conf）'];
+    }
+    return [
+      `"${ed.path}" ${ed.lines.length}L written`,
+      `// 已写入文件。要让服务用上新配置：systemctl restart ${/\.zone$/.test(ed.path) ? 'named' : 'httpd'}`
+    ];
+  }
+
+  function viCommand(dev, line) {
+    const ed = dev.fs.editing;
+    if (!ed) return [];
+    const s = String(line == null ? '' : line).trim();
+    if (!s) return [];
+    if (s.charAt(0) !== ':') {
+      return [`E492: Not an editor command: ${s}`, '// 提示：这里用 : 开头的行命令，输入 :p 看全文、:wq 保存退出。'];
+    }
+    const body = s.slice(1).trim();
+    if (!body) return [];
+
+    if (body === 'p' || body === 'n') {
+      return ed.lines.map((l, i) => `${String(i + 1).padStart(3)}  ${l}`);
+    }
+    if (/^\d+$/.test(body)) {
+      const n = parseInt(body, 10);
+      if (n < 1 || n > ed.lines.length) return ['E16: Invalid range'];
+      return [`${String(n).padStart(3)}  ${ed.lines[n - 1]}`];
+    }
+    const mDel = /^(\d+)d$/.exec(body);
+    if (mDel) {
+      const n = parseInt(mDel[1], 10);
+      if (n < 1 || n > ed.lines.length) return ['E16: Invalid range'];
+      ed.lines.splice(n - 1, 1);
+      return [`"${ed.path}" ${ed.lines.length}L`];
+    }
+    const mChg = /^(\d+)c\s+(.*)$/.exec(body);
+    if (mChg) {
+      const n = parseInt(mChg[1], 10);
+      if (n < 1 || n > ed.lines.length) return ['E16: Invalid range'];
+      ed.lines[n - 1] = mChg[2];
+      return [`"${ed.path}" ${ed.lines.length}L`];
+    }
+    if (body.charAt(0) === 'a') {
+      ed.lines.push(body.slice(1).trim());
+      return [`"${ed.path}" ${ed.lines.length}L`];
+    }
+    if (body.indexOf('s/') === 0 || body.indexOf('%s/') === 0) {
+      const all = body.charAt(0) === '%';
+      const parts = body.replace(/^%?s\//, '').split('/');
+      if (parts.length < 2) return ['E486: Pattern not found'];
+      const from = parts[0];
+      const to = parts[1];
+      let hit = 0;
+      for (let i = 0; i < ed.lines.length; i++) {
+        if (ed.lines[i].indexOf(from) < 0) continue;
+        ed.lines[i] = ed.lines[i].split(from).join(to);
+        hit++;
+        if (!all) break;
+      }
+      return hit ? [`${hit} substitution(s)`] : ['E486: Pattern not found'];
+    }
+    if (body === 'w') return viSave(dev);
+    if (body === 'wq' || body === 'x') {
+      const r = viSave(dev);
+      dev.fs.editing = null;
+      return r.concat(['-- 已退出编辑 --']);
+    }
+    if (body === 'q') {
+      dev.fs.editing = null;
+      return ['-- 已退出编辑（未保存的修改已丢弃）--'];
+    }
+    if (body === 'q!') {
+      dev.fs.editing = null;
+      return ['-- 已退出编辑（放弃修改）--'];
+    }
+    return [`E492: Not an editor command: ${body}`];
+  }
+
+  /** 把 zone 文件里改过的 A 记录同步到解析数据（restart named 时调用） */
+  function applyZoneFile(dev) {
+    const zone = dev.dnsZone || 'lab.cn';
+    const p = '/var/named/' + zone + '.zone';
+    if (!dev.fs || !dev.fs.dirty || !dev.fs.dirty[p]) return null;
+    const content = dev.fs.files[p] || '';
+    const recs = [];
+    for (const line of content.split('\n')) {
+      const t = line.trim();
+      if (!t || t.charAt(0) === ';' || t.charAt(0) === '(') continue;
+      const m = /^(\S+)\s+IN\s+A\s+(\d+\.\d+\.\d+\.\d+)\s*$/i.exec(t);
+      if (!m) continue;
+      const host = m[1];
+      recs.push({ name: host.indexOf('.') >= 0 ? host : `${host}.${zone}`, ip: m[2] });
+    }
+    dev.dnsRecords = recs;
+    dev.fs.dirty[p] = false;
+    return recs.length;
+  }
+
+  /** 把 httpd.conf 里的 DocumentRoot 同步到服务（restart httpd 时调用） */
+  function applyHttpdConf(dev) {
+    const p = '/etc/httpd/conf/httpd.conf';
+    if (!dev.fs || !dev.fs.dirty || !dev.fs.dirty[p]) return null;
+    const content = dev.fs.files[p] || '';
+    const m = /^\s*DocumentRoot\s+"?([^"\n]+)"?/mi.exec(content);
+    if (m) dev.httpRoot = m[1].trim();
+    dev.fs.dirty[p] = false;
+    return dev.httpRoot;
   }
 
   /** echo "www IN A 1.2.3.4" >> /var/named/lab.cn.zone */
@@ -5627,10 +6004,77 @@
     }
     const zone = file.split('/').pop().replace('.zone', '');
     const fqdn = m[1].indexOf('.') >= 0 ? m[1] : `${m[1]}.${zone}`;
-    if (!dev.dnsRecords) dev.dnsRecords = [];
-    dev.dnsRecords = dev.dnsRecords.filter((r) => r.name !== fqdn);
-    dev.dnsRecords.push({ name: fqdn, ip: m[2] });
-    return [];
+    // 走文件系统：追加到 zone 文件本身（与 vi 编辑同一份数据），restart named 才生效
+    const p = fsNormalize(dev, file);
+    const cur = fsRead(dev, p);
+    if (cur == null) return [`// ${file}: No such file or directory`];
+    const line = `${m[1]}${' '.repeat(Math.max(1, 8 - m[1].length))}IN      A       ${m[2]}`;
+    dev.fs.files[p] = cur.replace(/\s*$/, '') + '\n' + line;
+    dev.fs.dirty[p] = true;
+    return [`// 已写入 ${file}（记录 ${fqdn} → ${m[2]}）。执行 systemctl restart named 后生效`];
+  }
+
+  /* ---------------- 常用运维命令 ----------------
+   * 都是只读的"看一眼"命令，但内容跟服务状态联动：
+   * 服务没起来，netstat 就没有那个端口、ps 里也没有那个进程 —— 这是排查的基本功。
+   * ------------------------------------------------------------------ */
+
+  const PKG = { http: ['httpd', '2.4.6-97'], dns: ['bind', '9.11.4-26'], ftp: ['vsftpd', '3.0.2-29'], dhcp: ['dhcp', '4.2.5-82'] };
+
+  function linuxPs(dev) {
+    const lines = [
+      'USER       PID %CPU %MEM    VSZ   RSS TTY      STAT START   TIME COMMAND',
+      'root         1  0.0  0.2 128164  6824 ?        Ss   20:00   0:01 /usr/lib/systemd/systemd --switched-root',
+      'root       824  0.0  0.0  55512  1876 ?        Ss   20:00   0:00 /usr/sbin/sshd -D',
+      'root       900  0.0  0.0      0     0 ?        S    20:00   0:00 [kworker/0:1]'
+    ];
+    if (dev.services && dev.services.dns) lines.push('named     1290  0.0  0.6 158420 24812 ?        Ssl  20:05   0:00 /usr/sbin/named -u named');
+    if (dev.services && dev.services.http) lines.push('apache    1352  0.0  0.4 224680 16420 ?        S    20:06   0:00 /usr/sbin/httpd -DFOREGROUND');
+    if (dev.services && dev.services.ftp) lines.push('root      1401  0.0  0.1  53216  2048 ?        Ss   20:06   0:00 /usr/sbin/vsftpd /etc/vsftpd/vsftpd.conf');
+    return lines;
+  }
+
+  function linuxNetstat(dev) {
+    const lines = [
+      'Active Internet connections (only servers)',
+      'Proto Recv-Q Send-Q Local Address           Foreign Address         State       PID/Program name'
+    ];
+    lines.push('tcp        0      0 0.0.0.0:22              0.0.0.0:*               LISTEN      824/sshd');
+    if (dev.services && dev.services.ftp) lines.push('tcp        0      0 0.0.0.0:21              0.0.0.0:*               LISTEN      1401/vsftpd');
+    if (dev.services && dev.services.http) lines.push('tcp        0      0 0.0.0.0:80              0.0.0.0:*               LISTEN      1352/httpd');
+    if (dev.services && dev.services.dns) lines.push('udp        0      0 0.0.0.0:53              0.0.0.0:*                           1290/named');
+    if (!(dev.services && (dev.services.http || dev.services.dns || dev.services.ftp))) {
+      lines.push('// 除了 sshd 的 22 端口，没有别的服务在监听 —— 服务没启动');
+    }
+    return lines;
+  }
+
+  function linuxDf() {
+    return [
+      'Filesystem      Size  Used Avail Use% Mounted on',
+      '/dev/sda3        50G  8.2G   39G  18% /',
+      '/dev/sda1       976M  126M  783M  14% /boot',
+      'tmpfs           1.9G     0  1.9G   0% /dev/shm'
+    ];
+  }
+
+  function linuxFree() {
+    return [
+      '              total        used        free      shared  buff/cache   available',
+      'Mem:           3.8G        1.1G        1.2G         16M        1.5G        2.4G',
+      'Swap:          4.0G          0B        4.0G'
+    ];
+  }
+
+  function linuxRpm(dev) {
+    const lines = ['bash-4.2.46-34.el7.x86_64', 'kernel-3.10.0-1160.el7.x86_64', 'openssh-server-7.4p1-21.el7.x86_64'];
+    for (const k of ['http', 'dns', 'ftp', 'dhcp']) {
+      if (dev.services && dev.services[k]) {
+        lines.push(`${PKG[k][0]}-${PKG[k][1]}.x86_64`);
+      }
+    }
+    lines.push('// 提示：rpm -qa 列的是整机已安装的包；装了包 ≠ 服务在跑，还要 systemctl start');
+    return lines;
   }
 
   /** 两台系统的命令分派；未命中返回 null，交给下面的通用命令 */
@@ -5680,14 +6124,106 @@
     }
 
     // Linux
-    if (cmd === 'ifconfig' || (cmd === 'ip' && String(args[1] || '').toLowerCase() === 'addr')) {
+    if (cmd === 'ip') {
+      const sub = String(args[1] || '').toLowerCase();
+      if (!sub || sub === 'addr' || sub === 'a' || sub === 'address') return { lines: linuxIfconfig(dev) };
+      if (sub === 'route' || sub === 'r') {
+        return {
+          lines: [
+            'default via ' + (hostNet(dev).gw || '192.168.1.1') + ' dev eth0 proto static metric 100',
+            '192.168.1.0/24 dev eth0 proto kernel scope link src ' + (hostNet(dev).ip || '-')
+          ]
+        };
+      }
+      if (E.isValidIp(args[1])) {
+        return [
+          '// Linux 下没有 `ip 地址 掩码 网关` 这种写法 —— 那是本模拟器给 PC 用的快捷命令。',
+          '// 真机是改 /etc/sysconfig/network-scripts/ifcfg-eth0，然后 systemctl restart network。'
+        ];
+      }
+      return { lines: ['bash: ip: 本模拟器支持的子命令有 addr / route'] };
+    }
+    if (cmd === 'ifconfig') {
       return { lines: linuxIfconfig(dev) };
     }
+    if (cmd === 'ls' || cmd === 'll' || cmd === 'dir') {
+      const long = cmd === 'll' || args.some((a) => /^-[a-zA-Z]*l/.test(a));
+      const all = args.some((a) => /^-[a-zA-Z]*a/.test(a));
+      const target = args.slice(1).find((a) => a && a.charAt(0) !== '-') || dev.fs.cwd;
+      const p = fsNormalize(dev, target);
+      if (fsLayout(dev)[p]) {
+        return { lines: fsList(dev, p, long, all) || [] };
+      }
+      // 目标是个文件：ls 只回显文件名
+      if (fsRead(dev, p) != null) {
+        const nm = target.split('/').pop();
+        return { lines: [long ? `${fsModeStr(dev, p, false)} 1 root root ${String(fsSize(dev, p)).padStart(6)} Nov 13 20:00 ${nm}` : nm] };
+      }
+      return { lines: [`ls: cannot access '${target}': No such file or directory`] };
+    }
+    if (cmd === 'cd') {
+      const p = fsNormalize(dev, args[1] || '/root');
+      if (!fsLayout(dev)[p]) {
+        const why = fsRead(dev, p) != null ? 'Not a directory' : 'No such file or directory';
+        return { lines: [`cd: ${args[1] || ''}: ${why}`] };
+      }
+      dev.fs.cwd = p;
+      return { lines: [] };
+    }
+    if (cmd === 'pwd') return { lines: [dev.fs.cwd] };
+    if (cmd === 'head' || cmd === 'tail') return { lines: linuxHeadTail(dev, args, cmd === 'tail') };
+    if (cmd === 'grep') return { lines: linuxGrep(dev, args) };
     if (cmd === 'systemctl') {
       return { lines: linuxSystemctl(dev, args[1], args[2]) };
     }
     if (cmd === 'cat') return { lines: linuxCat(dev, args[1]) };
+    if (cmd === 'vi' || cmd === 'vim') return { lines: viOpen(dev, args[1]) };
     if (cmd === 'echo') return { lines: linuxEchoAppend(dev, args) };
+    if (cmd === 'ps') return { lines: linuxPs(dev) };
+    if (cmd === 'top') {
+      return {
+        lines: [
+          'top - 20:10:01 up  1:20,  1 user,  load average: 0.00, 0.01, 0.05',
+          'Tasks: 128 total,   1 running, 127 sleeping,   0 stopped,   0 zombie',
+          '%Cpu(s):  0.3 us,  0.2 sy,  0.0 ni, 99.5 id',
+          'MiB Mem :   3891.4 total,   1228.6 free,   1126.4 used,   1536.4 buff/cache',
+          '',
+          '  PID USER      PR  NI    VIRT    RES  %CPU  %MEM     TIME+ COMMAND',
+          '    1 root      20   0  128164   6824   0.0   0.2   0:01.12 systemd',
+          ...(dev.services && dev.services.dns ? [' 1290 named     20   0  158420  24812   0.0   0.6   0:00.21 named'] : []),
+          ...(dev.services && dev.services.http ? [' 1352 apache    20   0  224680  16420   0.0   0.4   0:00.08 httpd'] : [])
+        ]
+      };
+    }
+    if (cmd === 'df') return { lines: linuxDf() };
+    if (cmd === 'free') return { lines: linuxFree() };
+    if (cmd === 'netstat' || cmd === 'ss') return { lines: linuxNetstat(dev) };
+    if (cmd === 'rpm') return { lines: linuxRpm(dev) };
+    if (cmd === 'uname') {
+      return { lines: [`Linux ${String(dev.hostname).toLowerCase()} 3.10.0-1160.el7.x86_64 #1 SMP x86_64 x86_64 x86_64 GNU/Linux`] };
+    }
+    if (cmd === 'whoami') return { lines: ['root'] };
+    if (cmd === 'id') return { lines: ['uid=0(root) gid=0(root) groups=0(root) context=unconfined_u:unconfined_r:unconfined_t:s0-s0:c0.c1023'] };
+    if (cmd === 'hostname') return { lines: [`${String(dev.hostname).toLowerCase()}.${dev.dnsZone || 'lab.cn'}`] };
+    if (cmd === 'date') return { lines: [new Date().toLocaleString('zh-CN', { hour12: false }).replace(/\//g, '-') + ' CST'] };
+    if (cmd === 'uptime') return { lines: [' 20:10:01 up  1:20,  1 user,  load average: 0.00, 0.01, 0.05'] };
+    if (cmd === 'history') {
+      const h = dev.cmdHistory || [];
+      if (!h.length) return { lines: ['// 还没有历史命令'] };
+      return { lines: h.map((c, i) => `${String(i + 1).padStart(4)}  ${c}`) };
+    }
+    if (cmd === 'chmod') {
+      const mode = String(args[1] || '');
+      const file = args[2];
+      if (!/^[0-7]{3,4}$/.test(mode) || !file) {
+        return ['// 用法：chmod 644 /etc/named.conf —— 三位八进制（u/g/o 各一位）'];
+      }
+      const p = fsNormalize(dev, file);
+      if (fsRead(dev, p) == null) return [`chmod: cannot access '${file}': No such file or directory`];
+      if (!dev.fs.modes) dev.fs.modes = {};
+      dev.fs.modes[p] = mode.slice(-3);
+      return [`// 权限改为 ${mode.slice(-3)}（ls -l 能看到变化）。你现在是 root，权限位不影响自己读写。`];
+    }
     if (cmd === 'nslookup') {
       if (!args[1]) return { lines: ['// 用法：nslookup www.lab.cn'] };
       const r = E.resolveName(dev, args[1]);
@@ -5794,13 +6330,18 @@
     if (!owner || owner.type !== 'server' || !owner.services || !owner.services.http) {
       return [`// ${ip} 上没有开启 HTTP 服务（在服务器上敲：http server enable）`];
     }
-    return [
-      `Connecting to ${name || ip} ...`,
-      '',
-      `<html><head><title>${name || ip}</title></head>`,
-      '<body><h1>It works!</h1>',
-      `<p>${owner.hostname} 的主页（模拟页面）。</p></body></html>`
-    ];
+    // 按服务器的 DocumentRoot 取首页 —— 改了 httpd.conf 就访问到不同目录的页面
+    const root = owner.httpRoot || '/var/www/html';
+    const page = fsRead(owner, root.replace(/\/$/, '') + '/index.html');
+    if (page == null) {
+      return [
+        `Connecting to ${name || ip} ...`,
+        '',
+        '// 404 Not Found',
+        `// ${owner.hostname} 的 DocumentRoot 是 ${root}，但那个目录下没有 index.html`
+      ];
+    }
+    return [`Connecting to ${name || ip} ...`, '', ...page.split('\n')];
   }
 
   /* ======================= 防火墙（USG6000V） ======================= */
@@ -6714,6 +7255,10 @@
   function execute(dev, rawLine) {
     // 出错时的 ^ 要对齐"敲命令那一刻"显示的提示符，所以先进场先记下来
     const prompt = promptOf(dev);
+    // vi 会话中：后续每行都当编辑器命令，不走正常命令解析
+    if (dev && dev.fs && dev.fs.editing) {
+      return { lines: viCommand(dev, rawLine) };
+    }
     const r = executeInner(dev, rawLine);
     let out;
     if (Array.isArray(r)) out = { lines: r };
@@ -6721,6 +7266,13 @@
     else out = r;
     if (!out.lines) out.lines = [];
     out.lines = expandErrors(prompt, rawLine, out.lines);
+    // Linux 服务器记一份命令历史，供 cat /root/.bash_history 查看（真机也是这么来的）
+    const line = String(rawLine == null ? '' : rawLine).trim();
+    if (dev && dev.type === 'server' && dev.os === 'linux' && line) {
+      if (!Array.isArray(dev.cmdHistory)) dev.cmdHistory = [];
+      if (dev.cmdHistory[dev.cmdHistory.length - 1] !== line) dev.cmdHistory.push(line);
+      if (dev.cmdHistory.length > 50) dev.cmdHistory = dev.cmdHistory.slice(-50);
+    }
     return out;
   }
 
@@ -6968,6 +7520,11 @@
     }
 
     if (isHost(dev) && view === 'user-view') {
+      // 服务器的系统命令要排在 PC 的 ip/ipconfig 之前 —— 否则 Linux 的 `ip addr` 会被当成 PC 的配地址命令
+      if (dev.type === 'server') {
+        const osR = osCommands(dev, cmd, args);
+        if (osR) return osR;
+      }
       if (cmd === 'ipconfig') return cmdIpconfig(dev, args);
       if (cmd === 'ip') {
         // ip 192.168.10.2 255.255.255.0 192.168.10.1
@@ -7016,8 +7573,6 @@
       }
 
       if (dev.type === 'server') {
-        const osR = osCommands(dev, cmd, args);
-        if (osR) return osR;
         const sr = serverCommands(dev, cmd, args);
         if (sr) return sr;
       }
@@ -7029,6 +7584,10 @@
         if (!args[1]) return errIncomplete('sysname');
         dev.hostname = args.slice(1).join(' ');
         return { lines: [] };
+      }
+      // Linux 服务器：未实现的命令用 bash 口吻报错，别套 VRP 的 ^ 格式
+      if (dev.type === 'server' && dev.os === 'linux') {
+        return { lines: [`bash: ${cmd}: command not found`, '// 输入 help 看这台服务器支持哪些命令'] };
       }
       return errUnrecognized(cmd);
     }
@@ -8325,6 +8884,10 @@
       return errUnrecognized(cmd);
     }
 
+    // Linux 服务器上的未实现命令：用 bash 的口吻报错，别套 VRP 的 ^ 格式
+    if (dev && dev.type === 'server' && dev.os === 'linux') {
+      return { lines: [`bash: ${cmd}: command not found`, '// 输入 help 看这台服务器支持哪些命令'] };
+    }
     return errUnrecognized(cmd);
   }
 
@@ -9197,7 +9760,7 @@
   /* ------------------------------ 版本信息 ------------------------------ */
   /* 版本号的唯一来源：改这一处即可。
      build.mjs 会把它读出来写进产物开头的注释，所以交付文件本身也能看出是哪个版本。 */
-  const APP_VERSION = '1.8.0';
+  const APP_VERSION = '1.9.0';
   const APP_INFO = {
     name: '新易网络沙盘',
     tagline: '华为 VRP 命令实训 · 单文件离线版',
@@ -10228,8 +10791,8 @@
       d.logs.push({ t: `--- 已进入 ${d.hostname} 的命令行（${d.model}）---`, c: 'dim' });
       if (d.type === 'server') {
         if (d.os === 'linux') {
-          d.logs.push({ t: '提示：这是 Linux 服务器（CentOS 风格）。systemctl start httpd / named / vsftpd 启服务，cat /var/named/lab.cn.zone 看区域文件。', c: 'dim' });
-          d.logs.push({ t: '      echo "www IN A 192.168.1.100" >> /var/named/lab.cn.zone 追加记录；nslookup 域名 验证解析。', c: 'dim' });
+          d.logs.push({ t: '提示：这是 Linux 服务器（CentOS 风格）。先用 ls / cd / cat 摸清文件在哪，vi 改配置，systemctl 启服务。', c: 'dim' });
+          d.logs.push({ t: '      systemctl start named / httpd；vi /var/named/lab.cn.zone 改完要 systemctl restart named 才生效；ps / netstat 看服务与端口。', c: 'dim' });
         } else {
           d.logs.push({ t: '提示：这是 Windows Server。net start w3svc / dns / msftpsvc 启服务，dnscmd /recordadd lab.cn www A 192.168.1.100 加记录。', c: 'dim' });
           d.logs.push({ t: '      ipconfig 看网络配置，nslookup 域名 验证解析。想切到 Linux 用 os linux。', c: 'dim' });
@@ -10411,9 +10974,14 @@
         'ping ', 'tracert ', 'telnet ', 'nslookup ', 'display server', 'help'];
       if (d.os === 'linux') {
         list = list.concat([
+          'ls', 'ls -l', 'cd ', 'cd /etc', 'cd /var/named', 'cd ..', 'pwd', 'cat ', 'head -5 ', 'tail -5 ', 'grep ',
+          'vi ', 'ps aux', 'top', 'df -h', 'free -h', 'netstat -tunlp', 'uname -a', 'whoami', 'id', 'hostname',
+          'date', 'history', 'uptime', 'chmod 644 ', 'ip', 'ip route', 'rpm -qa',
           'ifconfig', 'ip addr', 'systemctl start httpd', 'systemctl stop httpd', 'systemctl status httpd',
           'systemctl start named', 'systemctl restart named', 'systemctl start vsftpd',
-          'cat /var/named/lab.cn.zone', 'cat /etc/named.conf', 'cat /etc/httpd/conf/httpd.conf',
+          'cat /etc/named.conf', 'cat /etc/httpd/conf/httpd.conf', 'cat /etc/passwd',
+          'cat /var/named/lab.cn.zone', 'vi /var/named/lab.cn.zone', 'vi /etc/httpd/conf/httpd.conf',
+          'ls /etc', 'ls /var/named', 'ls /var/www/html',
           'echo "www IN A 192.168.1.100" >> /var/named/lab.cn.zone'
         ]);
       } else {
@@ -11381,12 +11949,13 @@
         return { focus: srv };
       },
       goals: [
-        'SRV1 上 <code>ifconfig</code> 确认地址；<code>systemctl start named</code> 启动 DNS、<code>systemctl start httpd</code> 启动 Web',
-        '写区域记录：<code>echo "www IN A 192.168.1.100" &gt;&gt; /var/named/lab.cn.zone</code>',
-        '<code>cat /var/named/lab.cn.zone</code> 看 SOA / NS / A 记录长什么样',
+        '先在 SRV1 上摸清文件：<code>ls /etc</code> → <code>cd /etc/httpd/conf</code> → <code>cat httpd.conf</code>（真机也是先找文件）',
+        '<code>systemctl start named</code> 启动 DNS、<code>systemctl start httpd</code> 启动 Web',
+        '改区域文件：<code>vi /var/named/lab.cn.zone</code>，用 <code>:a www IN A 192.168.1.100</code> 加记录（或用 <code>:%s/旧IP/新IP/</code> 改），然后 <code>:wq</code>',
+        '<code>systemctl restart named</code> 让新记录生效 —— <b>改完不重启等于没改</b>',
         'PC1：<code>dns 192.168.1.100</code> 配置 DNS，然后 <code>ping www.lab.cn</code>',
-        '<code>http get www.lab.cn</code> 访问网页；SRV1 上 <code>cat /etc/httpd/conf/httpd.conf</code> 对照 DocumentRoot',
-        '<code>systemctl status httpd</code> 看服务状态，再 <code>systemctl stop httpd</code> 观察访问失败'
+        '<code>http get www.lab.cn</code> 访问网页；SRV1 上 <code>ps aux</code> / <code>netstat -tunlp</code> 确认进程与 53/80 端口',
+        '进阶：<code>vi /etc/httpd/conf/httpd.conf</code> 把 DocumentRoot 改成 <code>/var/www/lab</code>，restart 后再访问，看页面变了'
       ],
       tips: [
         'Linux 下的服务用 <b>systemctl</b> 管：start / stop / restart / status / enable（enable 是开机自启，不等于立刻启动）。',
@@ -11870,7 +12439,8 @@
           <div class="r"><b>三层</b><span><code>interface Vlanif10</code> · <code>ip address 192.168.10.1 24</code></span></div>
           <div class="r"><b>二层 / 三层口</b><span>交换机物理口默认二层：要配 IP 先 <code>undo portswitch</code>；路由器以太口默认三层：要当交换口用先 <code>portswitch</code>。两种命令不通用，用错会报错并提示。</span></div>
           <div class="r"><b>防火墙</b><span><code>firewall zone trust</code> → <code>add interface GigabitEthernet1/0/1</code>；<code>security-policy</code> → <code>rule name allow-icmp</code> → <code>source-zone trust</code> / <code>destination-zone untrust</code> / <code>service icmp</code> / <code>action permit</code>。接口没加区域 = 报文直接丢弃；区域间<b>缺省是 deny</b>，不写策略什么都不通。<code>display security-policy rule all</code> / <code>display firewall session table</code> 查看。</span></div>
-          <div class="r"><b>服务器</b><span><code>http server enable</code> · <code>dns server enable</code> · <code>ftp server enable</code>；<code>dns add www.lab.cn 192.168.1.100</code>；<code>display server</code> 看状态。主机侧：<code>dns 192.168.1.100</code> 配 DNS，<code>http get www.lab.cn</code> 访问网页，<code>ping 域名</code> 也可以。</span></div>
+          <div class="r"><b>服务器</b><span><code>http server enable</code> · <code>dns server enable</code> · <code>ftp server enable</code>；<code>dns add www.lab.cn 192.168.1.100</code>；<code>display server</code> 看状态。主机侧：<code>dns 192.168.1.100</code> 配 DNS，<code>http get www.lab.cn</code> 访问网页，<code>ping 域名</code> 也可以。Windows 服务器用 <code>net start w3svc</code> / <code>dnscmd /recordadd</code>。</span></div>
+          <div class="r"><b>Linux 服务器</b><span>有完整的目录树与配置文件：<code>ls</code> · <code>cd</code> · <code>pwd</code> · <code>cat</code> · <code>head</code> · <code>tail</code> · <code>grep</code> 都能用；<code>vi 文件</code> 进入行模式编辑（<code>:p</code> 看全文 · <code>:3c 内容</code> 改第3行 · <code>:a 内容</code> 追加 · <code>:%s/旧/新/</code> 替换 · <code>:wq</code> 存盘）。<b>改完要 <code>systemctl restart named/httpd</code> 才生效</b>。运维命令：<code>ps aux</code> · <code>top</code> · <code>df -h</code> · <code>free -h</code> · <code>netstat -tunlp</code> · <code>uname -a</code> · <code>chmod</code> · <code>rpm -qa</code> · <code>history</code>。</span></div>
           <div class="r"><b>VRRP 网关冗余</b><span>在接口视图：<code>vrrp vrid 1 virtual-ip 192.168.1.254</code> · <code>vrrp vrid 1 priority 120</code> · <code>vrrp vrid 1 preempt-mode</code>。主机网关填<b>虚拟 IP</b>。Master 选举先比优先级（默认 100）再比接口 IP；Master 失效后 Backup 自动接管。<code>display vrrp</code> / <code>display vrrp brief</code> 看角色。两台路由器的 vrid 与虚拟 IP 必须完全一致。</span></div>
           <div class="r"><b>IPsec VPN</b><span><code>acl number 3000</code> + <code>rule permit ip source 192.168.1.0 0.0.0.255 destination 192.168.2.0 0.0.0.255</code>（感兴趣流）→ <code>ipsec proposal prop1</code> → <code>ike peer peer1 v2</code>（<code>pre-shared-key cipher …</code> + <code>remote-address 对端公网口</code>）→ <code>ipsec policy p1 10 isakmp</code>（<code>security acl</code> / <code>ike-peer</code> / <code>proposal</code>）→ 接口上 <code>ipsec policy p1</code>。<b>两端都要配、ACL 要互为反向</b>，路由另配。<code>display ipsec sa</code> 看隧道。</span></div>
           <div class="r"><b>单臂路由</b><span><code>interface GigabitEthernet0/0/0.10</code> → <code>dot1q termination vid 10</code> → <code>ip address 192.168.10.254 24</code> → <b><code>arp broadcast enable</code></b>（少这条 ping 不通）。上联口要 <code>port link-type trunk</code> + <code>port trunk allow-pass vlan 10 20</code>。</span></div>
@@ -11965,7 +12535,7 @@
           <div class="r"><b>形态</b><span>单个 HTML 文件，双击即用。没有后端、没有账号、<b>不联网、不采集任何数据</b> —— 断网也能正常跑。</span></div>
           <div class="r"><b>内置</b><span>25 个实训实验（16 个配置实验 + 3 个进阶实验 + 6 个排错场景）· 6 种设备（S5700-28C-EI / S3700-28TP-EI / AR6121E / USG6000V / Server / PC）· 华为 VRP 命令行</span></div>
           <div class="r"><b>端口</b><span>按真机型号还原，含<b>光电复用（Combo）口</b> —— 接网线用电口、插光模块用光口，二选一</span></div>
-          <div class="r"><b>体积</b><span>约 561 KB 的单个 HTML 文件，不需要安装任何东西</span></div>
+          <div class="r"><b>体积</b><span>约 590 KB 的单个 HTML 文件，不需要安装任何东西</span></div>
           <div class="r"><b>许可</b><span><b>MIT License</b> —— 可以自由使用、修改、商用，甚至不用告诉我</span></div>
         </div>
 

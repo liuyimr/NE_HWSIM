@@ -3,7 +3,7 @@
 **一个 HTML 文件，双击就能练华为交换机 / 路由器命令 —— 不用装 eNSP，不用装 GNS3，不联网也能用。**
 
 [![在线试玩](https://img.shields.io/badge/%E5%9C%A8%E7%BA%BF%E8%AF%95%E7%8E%A9-GitHub%20Pages-orange)](https://liuyimr.github.io/NE_HWSIM/NE_HWSIM.html)
-![单文件](https://img.shields.io/badge/%E5%8D%95%E6%96%87%E4%BB%B6-561%20KB-brightgreen)
+![单文件](https://img.shields.io/badge/%E5%8D%95%E6%96%87%E4%BB%B6-590%20KB-brightgreen)
 ![无需安装](https://img.shields.io/badge/%E6%97%A0%E9%9C%80%E5%AE%89%E8%A3%85-%E5%8F%8C%E5%87%BB%E5%8D%B3%E7%94%A8-success)
 ![离线可用](https://img.shields.io/badge/%E7%A6%BB%E7%BA%BF%E5%8F%AF%E7%94%A8-100%25-informational)
 ![许可证](https://img.shields.io/badge/license-MIT-blue)
@@ -36,7 +36,7 @@
 
 给**网络课老师**和**备考华为认证的同学**做的一个练习工具。
 
-eNSP 要装 VirtualBox，GNS3 要配镜像，虚拟机镜像动辄几个 GB，还得看电脑配置。很多学生卡在第一步就放弃了，然后就没有然后。新易网络沙盘的判断是：**先把门槛降到零** —— 一个 561 KB 的 HTML 文件，发过去、双击、开始敲命令，整个过程不需要任何解释。
+eNSP 要装 VirtualBox，GNS3 要配镜像，虚拟机镜像动辄几个 GB，还得看电脑配置。很多学生卡在第一步就放弃了，然后就没有然后。新易网络沙盘的判断是：**先把门槛降到零** —— 一个 590 KB 的 HTML 文件，发过去、双击、开始敲命令，整个过程不需要任何解释。
 
 它**不是**真机的替代品，也跑不了复杂的园区网。它解决的是一个很具体的问题：**让学生能在自己的笔记本上、离线、零安装地，把 VLAN / Trunk / OSPF / ACL / NAT 这些命令反复敲到熟。**
 
@@ -146,7 +146,7 @@ eNSP 要装 VirtualBox，GNS3 要配镜像，虚拟机镜像动辄几个 GB，�
 | | **新易网络沙盘** | eNSP | GNS3 | Cisco Packet Tracer |
 |---|---|---|---|---|
 | 安装 | **双击 HTML，零安装** | 需装 VirtualBox + eNSP | 需装虚拟机 + 导入镜像 | 需注册 Cisco 账号 |
-| 体积 | **561 KB** | 数 GB | 数 GB | 数百 MB |
+| 体积 | **590 KB** | 数 GB | 数 GB | 数百 MB |
 | 联网 | **可完全离线** | 首次需下载镜像 | 需下载镜像 | 需登录 |
 | 命令语法 | 华为 VRP | 华为 VRP | 多厂商 | Cisco IOS |
 | 上手门槛 | **极低** | 中（装环境容易失败） | 高 | 中 |
@@ -236,7 +236,7 @@ A：能。把同一个 HTML 文件传到手机（微信 / QQ / 网盘都行）�
 长按端口看详情 —— 功能一个不少，只是手势不一样（见上面「手机 / 平板也能用」的对照表）。
 
 **Q：我怎么知道手上这个文件是哪个版本？**
-A：点顶栏 **「关于」**，里面写着版本号；用记事本打开文件，**开头的注释里也有**（比如 `版本：v1.8.0`）。下载单个 HTML 文件就能自带版本信息，不用去比对文件大小。
+A：点顶栏 **「关于」**，里面写着版本号；用记事本打开文件，**开头的注释里也有**（比如 `版本：v1.9.0`）。下载单个 HTML 文件就能自带版本信息，不用去比对文件大小。
 
 ---
 
@@ -253,6 +253,30 @@ A：点顶栏 **「关于」**，里面写着版本号；用记事本打开文�
 ---
 
 ## 最近更新
+
+**v1.9.0（Linux 服务器：文件系统 + vi 编辑 + 运维命令）**
+
+上一版给服务器做了两套命令外壳，但 `cat` 只认 4 个写死的路径，学生连「配置文件在哪」都找不到。
+这一版把 Linux 服务器做成**能逛、能改、改完真生效**：
+
+- **完整目录树**：按 CentOS 7 布局建了 `/etc`、`/var/named`、`/var/www/html`、`/var/log`、`/root` 等，
+  `ls` / `ls -l` / `cd` / `pwd` / `cat` / `head` / `tail` / `grep` 全都能用。
+  文件内容跟着设备数据实时渲染（改了服务配置，文件立刻不一样），改过的文件保存在设备里，不会被覆盖。
+- **`vi` 行模式编辑**：`vi /var/named/lab.cn.zone` 进去后：
+  `:p` 看全文（带行号）· `:3` 看第 3 行 · `:3c 新内容` 改这一行 · `:3d` 删 · `:a 内容` 追加 ·
+  `:s/旧/新/` 替换一处、`:%s/旧/新/` 全文替换 · `:w` 存 · `:q` 退 · `:wq` 存盘退出。
+  进去后提示符会变成 `:`，跟真机一样。
+- **配置改完真生效**（这是这一版的重点）：
+  - 改 `zone` 文件里的 A 记录 → `systemctl restart named` → 域名解析跟着变
+  - 改 `httpd.conf` 的 `DocumentRoot` → `restart httpd` → `http get` 访问到**另一个目录**的页面
+  - 没重启之前不生效 —— 这正是「改完配置忘了重启」这个经典坑
+- **运维命令**：`ps aux` / `top` / `df -h` / `free -h` / `netstat -tunlp` / `uname -a` / `whoami` / `id` /
+  `hostname` / `date` / `history` / `chmod` / `rpm -qa`。
+  其中 `ps` / `top` / `netstat` 的输出**跟着服务状态变**：服务没起来，就没有那个进程、也没有那个端口。
+- **顺手修的**：
+  - Linux 下 `ip` 不再被当成「配地址」的快捷命令（`ip addr` / `ip route` 正常，写 `ip 地址 掩码 网关` 会提示去改 ifcfg 文件）
+  - 未实现的命令改成 bash 口吻：`bash: xxx: command not found`，不再是 VRP 的 `^` 报错
+  - 敲过的命令会进 `/root/.bash_history`，`cat` 能看到
 
 **v1.8.0（面向软考网工：VRRP / IPsec / Linux 服务器 / 6 个排错场景）**
 
@@ -492,7 +516,7 @@ A：点顶栏 **「关于」**，里面写着版本号；用记事本打开文�
 
 做工业自动控制与楼宇智能化的，这个是给网络教学做的小工具。
 
-> 程序里点顶栏 **「关于」** 也能看到版本号、作者与许可信息。当前版本 **v1.8.0**。
+> 程序里点顶栏 **「关于」** 也能看到版本号、作者与许可信息。当前版本 **v1.9.0**。
 
 ---
 
@@ -521,7 +545,7 @@ MIT License —— 随便用，商用也行，改了也不用说。详见 [LICEN
 
 **新易网络沙盘 — a Huawei VRP network lab simulator that fits in one HTML file.**
 
-A single 561 KB HTML file. Double-click it and you get a drag-and-drop network topology builder plus a
+A single 590 KB HTML file. Double-click it and you get a drag-and-drop network topology builder plus a
 faithful Huawei VRP CLI (user view → system view → interface view → VLAN view → port-group view → ACL view
 → NAT address-pool view → OSPF area view → RIP view → sub-interface view), with authentic `^` error markers and `save` interaction.
 
