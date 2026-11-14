@@ -3,7 +3,7 @@
 **一个 HTML 文件，双击就能练华为交换机 / 路由器命令 —— 不用装 eNSP，不用装 GNS3，不联网也能用。**
 
 [![在线试玩](https://img.shields.io/badge/%E5%9C%A8%E7%BA%BF%E8%AF%95%E7%8E%A9-GitHub%20Pages-orange)](https://liuyimr.github.io/NE_HWSIM/NE_HWSIM.html)
-![单文件](https://img.shields.io/badge/%E5%8D%95%E6%96%87%E4%BB%B6-596%20KB-brightgreen)
+![单文件](https://img.shields.io/badge/%E5%8D%95%E6%96%87%E4%BB%B6-612%20KB-brightgreen)
 ![无需安装](https://img.shields.io/badge/%E6%97%A0%E9%9C%80%E5%AE%89%E8%A3%85-%E5%8F%8C%E5%87%BB%E5%8D%B3%E7%94%A8-success)
 ![离线可用](https://img.shields.io/badge/%E7%A6%BB%E7%BA%BF%E5%8F%AF%E7%94%A8-100%25-informational)
 ![许可证](https://img.shields.io/badge/license-MIT-blue)
@@ -36,7 +36,7 @@
 
 给**网络课老师**和**备考华为认证的同学**做的一个练习工具。
 
-eNSP 要装 VirtualBox，GNS3 要配镜像，虚拟机镜像动辄几个 GB，还得看电脑配置。很多学生卡在第一步就放弃了，然后就没有然后。新易网络沙盘的判断是：**先把门槛降到零** —— 一个 596 KB 的 HTML 文件，发过去、双击、开始敲命令，整个过程不需要任何解释。
+eNSP 要装 VirtualBox，GNS3 要配镜像，虚拟机镜像动辄几个 GB，还得看电脑配置。很多学生卡在第一步就放弃了，然后就没有然后。新易网络沙盘的判断是：**先把门槛降到零** —— 一个 612 KB 的 HTML 文件，发过去、双击、开始敲命令，整个过程不需要任何解释。
 
 它**不是**真机的替代品，也跑不了复杂的园区网。它解决的是一个很具体的问题：**让学生能在自己的笔记本上、离线、零安装地，把 VLAN / Trunk / OSPF / ACL / NAT 这些命令反复敲到熟。**
 
@@ -93,50 +93,83 @@ eNSP 要装 VirtualBox，GNS3 要配镜像，虚拟机镜像动辄几个 GB，�
 
 ---
 
-## 内置 25 个实训实验（19 个配置实验 + 6 个排错场景）
+## 内置 25 个实训实验（按知识域分 6 组）
 
-点顶部 **「实训实验」** 按钮，选一个直接加载（会自动搭好拓扑、连好线）。
+点顶部 **「实训实验」**，实验按知识域分组，顺序和教材 / 考纲的章节一致：
+
+| 组 | 数 | 解决什么问题 |
+|---|---|---|
+| ① 交换与局域网 | 4 | 一台交换机内部怎么隔离、怎么互通 |
+| ② 路由与互连 | 4 | 跨网段怎么走、动态路由怎么收敛 |
+| ③ 网络服务 | 4 | 地址怎么发、域名怎么解析、网页怎么发布 |
+| ④ 安全与访问控制 | 5 | 谁能过、谁能看、跨公网怎么加密 |
+| ⑤ 运维与高可用 | 2 | 远程管设备、网关不中断 |
+| ⑥ 排错实训 | 6 | 拓扑里埋了错，只给现象不给答案 |
+
+顶部四个按钮 **全部 / 基础 / 进阶 / 排错** 切难度，右边搜索框按关键词过滤（`vlan`、`acl`、`ospf`…），两个条件叠加。
+组标题可折叠（手机上默认只展开第一组）；卡片左侧竖条表示难度：**绿 = 基础、蓝 = 进阶、橙 = 排错**。
+
+### ① 交换与局域网
 
 | # | 实验 | 主要练什么 | 难度 |
 |---|---|---|---|
-| 一 | VLAN 基础与端口划分 | `vlan` · `port link-type access` · `port default vlan` | 基础 |
-| 二 | Trunk 跨交换机 VLAN | `port link-type trunk` · `port trunk allow-pass vlan` | 基础 |
-| 三 | 三层交换实现 VLAN 间互通 | `interface Vlanif` · `ip address` | 基础 |
-| 三·补 | **单臂路由（子接口）** | `interface GE0/0/0.10` · `dot1q termination vid` · `arp broadcast enable` | 进阶 |
-| 四 | 静态路由实现跨网段互通 | `ip route-static` | 基础 |
-| 五 | OSPF 单区域动态路由 | `ospf 1` · `area 0` · `network` · `display ospf peer` | 基础 |
-| 五·补 | **RIP 动态路由** | `rip 1` · `version 2` · `network` · `display rip neighbor` | 进阶 |
-| 六 | DHCP 自动分配地址 | `dhcp enable` · `ip pool` · `dhcp select global` | 基础 |
-| 六·补 | **DHCP 中继** | `dhcp select relay` · `dhcp relay server-ip` | 进阶 |
-| 七 | **ACL 访问控制** | `acl number 3000` · `rule deny ip source ... destination ...` · `traffic-filter inbound` | 进阶 |
-| 八 | **NAT 网络地址转换** | `acl number 2000` · `nat outbound` · `nat address-group` | 进阶 |
-| 八·补 | **NAT Server 端口映射** | `nat server global ... inside ...` · `display nat server` | 进阶 |
-| 九 | **设备远程管理** | `telnet server enable` · `aaa` · `local-user` · `user-interface vty` | 进阶 |
-| 十 | **IPv6 基础** | `ipv6` · `ipv6 address` · `ipv6 route-static` · `ping ipv6` | 进阶 |
-| 十一 | **服务器发布（DNS + NAT Server）** | `http/dns server enable` · `dns add` · `nat server` | 进阶 |
-| 十二 | **防火墙安全策略** | `firewall zone` · `add interface` · `security-policy` · `rule name` | 进阶 |
-| 十三 | **VRRP 网关冗余** | `vrrp vrid 1 virtual-ip` · `priority` · `display vrrp brief` | 进阶 |
-| 十四 | **Linux 服务器（DNS + Apache）** | `systemctl start named/httpd` · `echo "www IN A ..." >> zone` · `cat` | 进阶 |
-| 十五 | **IPsec VPN 站点互联** | `acl` 感兴趣流 · `ipsec proposal` · `ike peer` · `ipsec policy` · `display ipsec sa` | 进阶 |
+| 01 | VLAN 基础与端口划分 | `vlan batch` · `port link-type access` · `port default vlan` | 基础 |
+| 02 | Trunk 跨交换机 VLAN | `port link-type trunk` · `port trunk allow-pass vlan` | 基础 |
+| 03 | 三层交换实现 VLAN 间互通 | `interface Vlanif` · `ip address` | 进阶 |
+| 04 | 单臂路由（Router-on-a-Stick） | `interface GE0/0/0.10` · `dot1q termination vid` · `arp broadcast enable` | 进阶 |
 
-### 另外 6 个是「排错场景」
+### ② 路由与互连
 
-拓扑里**已经埋了错误配置**，题目只给现象，你要靠 `display` 和 `ping` 找出来并修好 ——
-这正是软考案例题最常见的考法，也是从「会敲命令」到「会排障」的分水岭。
+| # | 实验 | 主要练什么 | 难度 |
+|---|---|---|---|
+| 05 | 静态路由实现跨网段互通 | `ip route-static` | 进阶 |
+| 06 | OSPF 单区域动态路由 | `ospf 1` · `area 0` · `network` · `display ospf peer` | 进阶 |
+| 07 | RIP 动态路由 | `rip 1` · `version 2` · `network` · `display rip neighbor` | 进阶 |
+| 08 | IPv6 基础 | `ipv6` · `ipv6 address` · `ipv6 route-static` · `ping ipv6` | 进阶 |
 
-| 场景 | 现象 | 考什么 |
-|---|---|---|
-| 排错一 · Trunk 没放行 VLAN | 同网段的两台 PC 跨交换机不通 | trunk 放行列表（两端都要放行） |
-| 排错二 · 单臂路由缺一条命令 | 网关能 ping 通，另一个网段不通 | `arp broadcast enable` 的作用范围 |
-| 排错三 · ACL 把所有人都拦了 | 本该只拦一台，结果全公司都不能访问 | ACL 规则顺序与匹配范围 |
-| 排错四 · NAT 不生效 | 能 ping 网关，上不了公网 | NAT 的 ACL 是「选择器」，网段要对 |
-| 排错五 · 防火墙接口没加区域 | 地址对、策略也 permit，就是不通信 | 区域成员优先于策略 |
-| 排错六 · OSPF 邻居起不来 | 两边都配了 OSPF，邻居一直 Down | 邻居建立的四个前提 |
+### ③ 网络服务
+
+| # | 实验 | 主要练什么 | 难度 |
+|---|---|---|---|
+| 09 | DHCP 自动分配地址 | `dhcp enable` · `ip pool` · `dhcp select global` | 进阶 |
+| 10 | DHCP 中继（跨网段分配） | `dhcp select relay` · `dhcp relay server-ip` | 进阶 |
+| 11 | 服务器发布（DNS + NAT Server） | `http/dns server enable` · `dns add` · `nat server` | 进阶 |
+| 12 | Linux 服务器（DNS + Apache） | `systemctl start named\|httpd` · `vi` · `cat` · `ifconfig` | 进阶 |
+
+### ④ 安全与访问控制
+
+| # | 实验 | 主要练什么 | 难度 |
+|---|---|---|---|
+| 13 | ACL 访问控制 | `acl number 3000` · `rule deny ip source … destination …` · `traffic-filter inbound` | 进阶 |
+| 14 | NAT 网络地址转换 | `acl number 2000` · `nat outbound` · `nat address-group` | 进阶 |
+| 15 | NAT Server（内网服务器对外发布） | `nat server global … inside …` · `display nat server` | 进阶 |
+| 16 | 防火墙安全策略 | `firewall zone` · `add interface` · `security-policy` · `rule name` | 进阶 |
+| 17 | IPsec VPN 站点互联 | 感兴趣流 ACL · `ipsec proposal` · `ike peer` · `ipsec policy` · `display ipsec sa` | 进阶 |
+
+### ⑤ 运维与高可用
+
+| # | 实验 | 主要练什么 | 难度 |
+|---|---|---|---|
+| 18 | 设备远程管理（Telnet + AAA） | `telnet server enable` · `aaa` · `local-user` · `user-interface vty` | 进阶 |
+| 19 | VRRP 网关冗余 | `vrrp vrid 1 virtual-ip` · `priority` · `display vrrp brief` | 进阶 |
+
+### ⑥ 排错实训
+
+拓扑里**已经埋了错误配置**，只给现象不给答案 —— 这正是软考案例题最常见的考法，也是从「会敲命令」到「会排障」的分水岭。
+
+| # | 场景 | 现象 | 考什么 |
+|---|---|---|---|
+| 20 | Trunk 没放行 VLAN | 同网段的两台 PC 跨交换机不通 | trunk 放行列表（两端都要放行） |
+| 21 | 单臂路由缺一条命令 | 网关能 ping 通，另一个网段不通 | `arp broadcast enable` 的作用范围 |
+| 22 | ACL 把所有人都拦了 | 本该只拦一台，结果全公司都不能访问 | ACL 规则顺序与匹配范围 |
+| 23 | NAT 不生效 | 能 ping 网关，上不了公网 | NAT 的 ACL 是「选择器」，网段要对 |
+| 24 | 防火墙接口没加区域 | 地址对、策略也 permit，就是不通信 | 区域成员优先于策略 |
+| 25 | OSPF 邻居起不来 | 两边都配了 OSPF，邻居一直 Down | 邻居建立的四个前提 |
 
 每个实验加载后都会弹出**实验目标**和**操作提示**，学生照着做即可；做完点「导出配置」把 txt 交上来。
 
 > 实验加载的是**拓扑**（设备 + 连线），**不包含配置** —— 配置要学生自己敲，这正是练习的目的。
-> 实验七预置了三个 Vlanif 网关，实验八预置了全部接口地址，让学生专注在当堂知识点上。
+> 「ACL 访问控制」预置了三个 Vlanif 网关，「NAT 网络地址转换」预置了全部接口地址，让学生专注在当堂知识点上。
 > 6 个排错场景则相反：**预置的是错误配置**，学生要做的是「先复现、再定位、最后修复」。
 
 ---
@@ -146,7 +179,7 @@ eNSP 要装 VirtualBox，GNS3 要配镜像，虚拟机镜像动辄几个 GB，�
 | | **新易网络沙盘** | eNSP | GNS3 | Cisco Packet Tracer |
 |---|---|---|---|---|
 | 安装 | **双击 HTML，零安装** | 需装 VirtualBox + eNSP | 需装虚拟机 + 导入镜像 | 需注册 Cisco 账号 |
-| 体积 | **596 KB** | 数 GB | 数 GB | 数百 MB |
+| 体积 | **612 KB** | 数 GB | 数 GB | 数百 MB |
 | 联网 | **可完全离线** | 首次需下载镜像 | 需下载镜像 | 需登录 |
 | 命令语法 | 华为 VRP | 华为 VRP | 多厂商 | Cisco IOS |
 | 上手门槛 | **极低** | 中（装环境容易失败） | 高 | 中 |
@@ -236,7 +269,7 @@ A：能。把同一个 HTML 文件传到手机（微信 / QQ / 网盘都行）�
 长按端口看详情 —— 功能一个不少，只是手势不一样（见上面「手机 / 平板也能用」的对照表）。
 
 **Q：我怎么知道手上这个文件是哪个版本？**
-A：点顶栏 **「关于」**，里面写着版本号；用记事本打开文件，**开头的注释里也有**（比如 `版本：v1.9.1`）。下载单个 HTML 文件就能自带版本信息，不用去比对文件大小。
+A：点顶栏 **「关于」**，里面写着版本号；用记事本打开文件，**开头的注释里也有**（比如 `版本：v2.0.0`）。下载单个 HTML 文件就能自带版本信息，不用去比对文件大小。
 
 ---
 
@@ -253,6 +286,32 @@ A：点顶栏 **「关于」**，里面写着版本号；用记事本打开文�
 ---
 
 ## 最近更新
+
+**v2.0.0（实训实验按知识域分组 + 筛选搜索）**
+
+25 个实验原来是按流水号平铺的（实验一 … 实验二十五），唯一的分类维度是难度。想在 25 张卡片里找「练 ACL」，
+只能一个个扫。这一版按知识域重新组织：
+
+- **分成 6 组**：交换与局域网（4）· 路由与互连（4）· 网络服务（4）· 安全与访问控制（5）· 运维与高可用（2）·
+  排错实训（6）。顺序和教材 / 考纲的章节一致，组内仍然由易到难。
+- **每组一行导语**：比如「交换与局域网 —— 一台交换机内部怎么隔离、怎么互通」。列表从「目录」变成「教材目录」。
+- **难度改成色条**：卡片左侧的竖条 —— 绿 = 基础、蓝 = 进阶、橙 = 排错，比一块小标签更快扫出来。
+- **筛选 + 搜索**：顶部「全部 / 基础 / 进阶 / 排错」，右边输入 `vlan`、`acl`、`ospf` 直接过滤，两个条件叠加。
+- **分组可折叠**：点组标题收起；手机上默认只展开第一组，不用一路滚到底。
+- **去掉中文流水号**：`实验七 · ACL 访问控制` → `ACL 访问控制`，编号退到标题前的小灰字（01~25，按分组重排）。
+
+> 兼容性提醒：如果你在讲义里写过「做实验七」，编号**已经变了**，按实验名字找更稳。实验的功能和拓扑一个没动。
+
+**v1.9.2（网页能改了、访问日志会涨、标签页图标）**
+
+- **网页文件改完就生效**：`vi /var/www/html/index.html` 改完 `:wq`，主机上再 `http get` 一次就是新页面，
+  **不用重启 httpd** —— 静态文件是 httpd 直接读盘的。这跟「改 zone / httpd.conf 必须 `systemctl restart`」
+  正好是一对，差别本身就是考点，界面上会分别给出提示。
+- **访问日志真的会增长**：每访问一次首页，`/var/log/httpd/access_log` 多一行 NCSA 格式记录
+  （客户端地址、时间、`"GET /index.html HTTP/1.1"`、状态码、字节数）。服务器上
+  `tail -n 5 /var/log/httpd/access_log` 就能看到刚才那一次访问。新增 `/var/log/httpd/` 目录（含 `error_log`）。
+- **标签页图标**：从 NewE 字标的第一个字形抽出字母 **N**（保留原本的蓝→橙渐变），
+  内联成 data URI 塞进 HTML —— 依然是单文件、0 外部资源。
 
 **v1.9.1（设备库加服务器时可选系统）**
 
@@ -528,7 +587,7 @@ A：点顶栏 **「关于」**，里面写着版本号；用记事本打开文�
 
 做工业自动控制与楼宇智能化的，这个是给网络教学做的小工具。
 
-> 程序里点顶栏 **「关于」** 也能看到版本号、作者与许可信息。当前版本 **v1.9.1**。
+> 程序里点顶栏 **「关于」** 也能看到版本号、作者与许可信息。当前版本 **v2.0.0**。
 
 ---
 
@@ -557,7 +616,7 @@ MIT License —— 随便用，商用也行，改了也不用说。详见 [LICEN
 
 **新易网络沙盘 — a Huawei VRP network lab simulator that fits in one HTML file.**
 
-A single 596 KB HTML file. Double-click it and you get a drag-and-drop network topology builder plus a
+A single 612 KB HTML file. Double-click it and you get a drag-and-drop network topology builder plus a
 faithful Huawei VRP CLI (user view → system view → interface view → VLAN view → port-group view → ACL view
 → NAT address-pool view → OSPF area view → RIP view → sub-interface view), with authentic `^` error markers and `save` interaction.
 

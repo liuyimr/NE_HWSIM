@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <!--
   NE_HWSIM —— 华为 VRP 网络实训模拟器（单文件版）
-  版本：v1.9.1
+  版本：v2.0.0
 
   Copyright (c) 2026 新易科技工作室 NewE
   作者：Liuyi  <yimr@sohu.com>
@@ -17,6 +17,9 @@
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
 <title>新易网络沙盘 · 华为 VRP 命令实训（单文件离线版）</title>
+<!-- 站点图标：src/favicon.svg 里的字母 N（从 NewE 字标第一个字形抽出），构建时内联成 data URI。
+     下面这个 href 是占位符，由 build.mjs 替换；直接打开 index.html（开发态）时它是坏链接，不影响功能。 -->
+<link rel="icon" type="image/svg+xml" href="data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9Ii03LjQxIC0xNi4yMiAyNjEuOTcgMjYxLjk3Ij4KICA8ZGVmcz4KICAgIDxsaW5lYXJHcmFkaWVudCBpZD0ibGcwIiBncmFkaWVudFVuaXRzPSJ1c2VyU3BhY2VPblVzZSIgeDE9IjE1NC4wIiB5MT0iMC42IiB4Mj0iMTU0LjAiIHkyPSIyMjYuOCI+PHN0b3Agb2Zmc2V0PSIwLjAwMCIgc3RvcC1jb2xvcj0iIzAyNDhBMSIvPjxzdG9wIG9mZnNldD0iMC4xNDMiIHN0b3AtY29sb3I9IiMwMTRCQTUiLz48c3RvcCBvZmZzZXQ9IjAuMjg2IiBzdG9wLWNvbG9yPSIjMDE0QUEzIi8+PHN0b3Agb2Zmc2V0PSIwLjQyOSIgc3RvcC1jb2xvcj0iIzA3NDg5QyIvPjxzdG9wIG9mZnNldD0iMC41NzEiIHN0b3AtY29sb3I9IiM3NjVFNkQiLz48c3RvcCBvZmZzZXQ9IjAuNzE0IiBzdG9wLWNvbG9yPSIjRTc2RDIxIi8+PHN0b3Agb2Zmc2V0PSIwLjg1NyIgc3RvcC1jb2xvcj0iI0Y4NzEwRiIvPjxzdG9wIG9mZnNldD0iMS4wMDAiIHN0b3AtY29sb3I9IiNGNzZFMEQiLz48L2xpbmVhckdyYWRpZW50PgogICAgPGxpbmVhckdyYWRpZW50IGlkPSJsZzQiIGdyYWRpZW50VW5pdHM9InVzZXJTcGFjZU9uVXNlIiB4MT0iMzEuMCIgeTE9IjY1LjEiIHgyPSI1My42IiB5Mj0iMjI2LjIiPjxzdG9wIG9mZnNldD0iMC4wMDAiIHN0b3AtY29sb3I9IiMwMTNFOTciLz48c3RvcCBvZmZzZXQ9IjAuMTQzIiBzdG9wLWNvbG9yPSIjMDE0MTk4Ii8+PHN0b3Agb2Zmc2V0PSIwLjI4NiIgc3RvcC1jb2xvcj0iIzAxNDE5NyIvPjxzdG9wIG9mZnNldD0iMC40MjkiIHN0b3AtY29sb3I9IiMwMjNEOTIiLz48c3RvcCBvZmZzZXQ9IjAuNTcxIiBzdG9wLWNvbG9yPSIjMDEzNzhBIi8+PHN0b3Agb2Zmc2V0PSIwLjcxNCIgc3RvcC1jb2xvcj0iIzAxMzQ4NiIvPjxzdG9wIG9mZnNldD0iMC44NTciIHN0b3AtY29sb3I9IiMwMTMzODMiLz48c3RvcCBvZmZzZXQ9IjEuMDAwIiBzdG9wLWNvbG9yPSIjMDEyQjc2Ii8+PC9saW5lYXJHcmFkaWVudD4KICA8L2RlZnM+CiAgPHBhdGggZD0iTTAgMCBDMC42IC0wIDAuNiAtMCAzLjQgLTAuMSBDMTMuNyAtMC4xIDIwLjcgMi40IDI4LjMgOS41IEMzMS4yIDEyLjcgMzIuOSAxNi4yIDM0LjYgMjAuMSBDMzQuOCAyMC42IDM0LjggMjAuNiAzNS44IDIyLjggQzUwLjQgNTUuMiA2My4yIDg4LjUgNzYuMSAxMjEuNyBDNzYuMyAxMjIuMyA3Ni42IDEyMyA3Ni44IDEyMy43IEM3OC42IDEyOC4zIDgwLjMgMTMyLjggODIuMSAxMzcuNCBDODIuMiAxMzYuOCA4Mi4zIDEzNi4yIDgyLjUgMTM1LjYgQzgyLjkgMTMzLjcgODMuMyAxMzEuOCA4My43IDEyOS45IEM4NC4yIDEyNy42IDg0LjcgMTI1LjQgODUuMiAxMjMuMSBDODYuNiAxMTYuOCA4Ny45IDExMC41IDg5LjMgMTA0LjMgQzk0LjEgODIuMyA5NC4xIDgyLjMgOTYgNzMuMyBDOTkuMiA1OC40IDEwMi42IDQzLjYgMTA2LjEgMjguOSBDMTA2LjYgMjYuOCAxMDcuMSAyNC43IDEwNy42IDIyLjYgQzEwOC4zIDE5LjYgMTA5IDE2LjcgMTA5LjcgMTMuOCBDMTA5LjkgMTIuOSAxMTAuMSAxMiAxMTAuMyAxMS4xIEMxMTAuNCAxMC43IDExMC40IDEwLjcgMTEwLjkgOC42IEMxMTEuMSA3LjkgMTExLjMgNy4yIDExMS41IDYuNCBDMTEyLjEgNC40IDExMi4xIDQuNCAxMTQuMSAwLjQgQzEzMS4yIDAuNCAxNDguNCAwLjQgMTY2LjEgMC40IEMxNjcuMiA0LjkgMTY2LjUgNy45IDE2NS40IDEyLjIgQzE2NS4yIDEzIDE2NSAxMy44IDE2NC44IDE0LjUgQzE2NC4yIDE3LjEgMTYzLjYgMTkuNiAxNjMgMjIuMSBDMTYyLjYgMjMuOCAxNjIuMSAyNS42IDE2MS43IDI3LjMgQzE2MC45IDMwLjggMTYwIDM0LjMgMTU5LjIgMzcuOCBDMTU3LjggNDMuNCAxNTYuNSA0OSAxNTUuMiA1NC42IEMxNTIuMiA2Ny44IDE0OS4xIDgwLjkgMTQ2LjEgOTQgQzE0NS44IDk1LjEgMTQ1LjYgOTYuMSAxNDUuMyA5Ny4yIEMxNDIuMyAxMTAuMSAxMzkuMiAxMjMgMTM2LjEgMTM1LjkgQzEzNC41IDE0Mi40IDEzMyAxNDkgMTMxLjYgMTU1LjYgQzEzMS41IDE1Ni4xIDEzMS41IDE1Ni4xIDEzMSAxNTguNyBDMTMwLjggMTU5LjUgMTMwLjYgMTYwLjMgMTMwLjQgMTYxLjIgQzEyOSAxNjggMTI3LjUgMTc0LjcgMTI2IDE4MS41IEMxMjUuNSAxODMuNCAxMjUuMSAxODUuNCAxMjQuNiAxODcuNCBDMTE3LjkgMjE3LjQgMTE3LjkgMjE3LjQgMTA3LjEgMjI1LjIgQzk4LjMgMjMwLjUgODUuNCAyMzAuNSA3NS41IDIyOC4zIEM2Ni4yIDIyNS4xIDYxLjQgMjE4LjggNTYuOSAyMTAuMyBDNTUuOSAyMDguMiA1NC45IDIwNiA1NCAyMDMuOCBDNTMuNiAyMDMgNTMuMyAyMDIuMiA1Mi45IDIwMS4zIEM0OS4zIDE5My4xIDQ1LjggMTg0LjggNDIuMyAxNzYuNSBDNDIgMTc1LjggNDEuOCAxNzUuMiA0MS41IDE3NC41IEMzNy45IDE2NS45IDM0LjQgMTU3LjIgMzEuMSAxNDguNCBDLTEuMiA2NC40IC0xLjIgNjQuNCAtMjAuNSA1NS42IEMtMjYuOCA1My40IC0zMy4zIDUyLjQgLTM5LjkgNTEuNCBDLTM5LjIgNDcuNSAtMzguNCA0My42IC0zNy42IDM5LjcgQy0zNy4zIDM3LjcgLTM2LjkgMzUuOCAtMzYuNSAzMy44IEMtMzQuMyAyMi45IC0zMi4xIDEyLjIgLTIzLjMgNC44IEMtMTUuNiAwLjMgLTguOCAtMC4xIDAgMCBaIiB0cmFuc2Zvcm09InRyYW5zbGF0ZSg3OS45Mzc1LC0wLjQzNzUpIiBmaWxsPSJ1cmwoI2xnMCkiLz4KICA8cGF0aCBkPSJNMCAwIEMxMC45IC0wLjcgMjAuNSAzLjIgMjkgMTAgQzI5IDEwLjcgMjkgMTEuMyAyOSAxMiBDMjkuNiAxMi4yIDMwLjIgMTIuNSAzMC44IDEyLjcgQzM3LjkgMTYuOCA0MS42IDI4LjcgNDMuNiAzNi4zIEM0NC41IDQyLjYgNDMuOSA0OC4yIDQyLjUgNTQuNCBDNDIuNCA1NS4xIDQyLjIgNTUuOCA0Mi4xIDU2LjUgQzQxLjUgNTguOCA0MSA2MS4xIDQwLjUgNjMuMyBDNDAuMSA2NC45IDM5LjggNjYuNSAzOS40IDY4LjEgQzM4LjUgNzIuMyAzNy41IDc2LjQgMzYuNiA4MC42IEMzNS43IDg0LjMgMzQuOCA4OC4xIDM0IDkxLjkgQzMzIDk2LjIgMzIgMTAwLjUgMzEgMTA0LjggQzI5LjMgMTEyLjUgMjcuNSAxMjAuMSAyNS44IDEyNy44IEMyNS42IDEyOC42IDI1LjUgMTI5LjQgMjUuMyAxMzAuMyBDMjQuNCAxMzQuMiAyMy42IDEzOC4xIDIyLjcgMTQyIEMyMi40IDE0My40IDIyLjEgMTQ0LjkgMjEuOCAxNDYuMyBDMjEuNSAxNDcuNSAyMS4yIDE0OC43IDIwLjkgMTUwIEMxOS44IDE1NSAxOC40IDE2MCAxNyAxNjUgQy0wLjggMTY1IC0xOC42IDE2NSAtMzcgMTY1IEMtMzYuNCAxNjAuNyAtMzUuOCAxNTYuOCAtMzQuOCAxNTIuNiBDLTM0LjYgMTUxLjYgLTM0LjQgMTUwLjYgLTM0LjEgMTQ5LjUgQy0zMy45IDE0OC41IC0zMy42IDE0Ny40IC0zMy40IDE0Ni4zIEMtMzMuMSAxNDUuMSAtMzIuOCAxNDQgLTMyLjYgMTQyLjggQy0zMiAxNDAuMyAtMzEuNSAxMzcuOSAtMzAuOSAxMzUuNCBDLTMwIDEzMS41IC0yOS4xIDEyNy42IC0yOC4yIDEyMy43IEMtMjguMSAxMjMuMSAtMjcuOSAxMjIuNCAtMjcuOCAxMjEuOCBDLTI3LjUgMTIwLjUgLTI3LjIgMTE5LjEgLTI2LjkgMTE3LjggQy0yNi40IDExNS45IC0yNiAxMTMuOSAtMjUuNSAxMTIgQy0yMy4xIDEwMS43IC0yMC44IDkxLjQgLTE4LjUgODEuMSBDLTE4LjMgODAuMyAtMTguMiA3OS42IC0xOCA3OC44IEMtMTYgNjkuOCAtMTMuOSA2MC44IC0xMS45IDUxLjggQy0xMC43IDQ2LjQgLTkuNSA0MS4xIC04LjMgMzUuNyBDLTcuNiAzMi40IC02LjkgMjkgLTYuMSAyNS43IEMtNS4zIDIyIC00LjUgMTguMyAtMy42IDE0LjYgQy0zLjQgMTMuNCAtMy4xIDEyLjMgLTIuOSAxMS4yIEMtMi43IDEwLjYgLTIuNyAxMC42IC0yLjIgOCBDLTIuMSA3LjYgLTIuMSA3LjYgLTEuNiA1LjMgQy0xIDMgLTEgMyAwIDAgWiIgdHJhbnNmb3JtPSJ0cmFuc2xhdGUoMzcuMCw2My4wKSIgZmlsbD0idXJsKCNsZzQpIi8+Cjwvc3ZnPg==" />
 <style>
   :root{
     --bg:#0d1117; --bg2:#161b22; --bg3:#1c2128; --line:#30363d;
@@ -339,15 +342,59 @@
   .modal .mh h2{font-size:15px;font-weight:600}
   .modal .mh .btn{margin-left:auto}
   .modal .mb{padding:16px 18px;overflow-y:auto}
+  /* ---------- 实训实验：按知识域分组 ---------- */
+  /* 筛选条：全部 / 基础 / 进阶 / 排错 + 搜索。25 个条目已经超过"一眼扫完"的量 */
+  .labfilter{display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin-bottom:16px}
+  .chip{
+    font-size:11px;padding:4px 11px;border-radius:999px;border:1px solid var(--line);
+    background:var(--bg3);color:var(--tx2);transition:.12s;
+  }
+  .chip:hover{border-color:var(--cy);color:var(--tx)}
+  .chip.on{background:#1b2a41;border-color:#28518f;color:#79b8ff}
+  .labsearch{
+    margin-left:auto;width:186px;background:#0d1117;border:1px solid var(--line);border-radius:8px;
+    padding:5px 10px;font-size:12px;color:var(--tx);outline:none;transition:.12s;
+  }
+  .labsearch:focus{border-color:var(--cy)}
+  .labsearch::placeholder{color:var(--tx3)}
+  /* 组：标题一行（序号 + 名称 + 个数 + 折叠箭头），下面一行导语 */
+  .labgroup{margin-bottom:18px}
+  .labgroup-h{
+    display:flex;align-items:center;gap:7px;padding:0 0 7px;
+    border-bottom:1px solid var(--line);cursor:pointer;user-select:none;
+  }
+  .labgroup-h .gi{
+    flex:0 0 18px;height:18px;border-radius:5px;background:var(--bg3);border:1px solid var(--line);
+    font-size:10px;font-style:normal;color:var(--tx3);
+    display:flex;align-items:center;justify-content:center;
+  }
+  .labgroup-h b{font-size:12.5px;font-weight:600;transition:.12s}
+  .labgroup-h:hover b{color:var(--cy)}
+  .labgroup-h .gc{font-size:11px;color:var(--tx3)}
+  .labgroup-h .chev{
+    margin-left:auto;width:7px;height:7px;margin-right:3px;
+    border-right:1.5px solid var(--tx3);border-bottom:1.5px solid var(--tx3);
+    transform:rotate(45deg);transition:.12s;
+  }
+  .labgroup.collapsed .chev{transform:rotate(-45deg)}
+  .labgroup-i{font-size:11px;color:var(--tx3);margin:8px 0 10px;line-height:1.5}
+  .labgroup.collapsed .labgroup-i,.labgroup.collapsed .labbod{display:none}
+  .labempty{font-size:12px;color:var(--tx3);padding:14px 2px}
+
   .labgrid{display:grid;grid-template-columns:1fr 1fr;gap:10px}
   .labcard{
-    border:1px solid var(--line);border-radius:8px;padding:12px;background:var(--bg3);
-    cursor:pointer;transition:.12s;
+    border:1px solid var(--line);border-radius:8px;padding:12px 12px 11px 15px;background:var(--bg3);
+    cursor:pointer;transition:.12s;position:relative;overflow:hidden;
   }
   .labcard:hover{border-color:var(--cy);background:#1f2733;transform:translateY(-1px)}
   .labcard b{display:block;font-size:13px;margin-bottom:5px}
   .labcard span{font-size:11px;color:var(--tx2);line-height:1.65;display:block}
-  .labcard .lv{display:inline-block;font-size:11px;padding:1px 7px;border-radius:8px;margin-top:7px;border:1px solid var(--line);color:var(--tx3)}
+  /* 难度用左侧色条表示（绿=基础 / 蓝=进阶 / 橙=排错），比一个小标签更快被看到 */
+  .labcard::before{content:'';position:absolute;left:0;top:0;bottom:0;width:3px;background:var(--line)}
+  .labcard[data-lv="基础"]::before{background:var(--gr)}
+  .labcard[data-lv="进阶"]::before{background:var(--cy)}
+  .labcard[data-lv="排错"]::before{background:var(--or)}
+  .labcard .no{font-style:normal;font-size:10px;color:var(--tx3);margin-right:6px;font-variant-numeric:tabular-nums}
   .steps{list-style:none;display:flex;flex-direction:column;gap:9px}
   .steps li{
     display:flex;gap:10px;padding:10px 12px;border:1px solid var(--line);
@@ -532,6 +579,9 @@
     .modal .mh{padding:13px 14px;position:sticky;top:0;background:var(--bg2);z-index:2}
     .modal .mb{padding:14px}
     .labgrid{grid-template-columns:1fr}
+    /* 手机上搜索框单独占一行，四个 chip 排在它上面 */
+    .labsearch{width:100%;margin-left:0;font-size:16px}
+    .labgroup{margin-bottom:14px}
     .kv .r{flex-direction:column;gap:2px}
     .kv .r b{flex:none}
     .card .head .x{font-size:16px;padding:4px 6px}
@@ -1063,6 +1113,8 @@
       /* 服务器：对外提供哪些应用层服务 + 本机 DNS 记录（只有 Server 用，其它设备留空即可） */
       services: { http: false, dns: false, ftp: false },
       dnsRecords: [], // { name, ip }
+      /* Web 访问日志：每次 http get 成功/404 都记一条，Linux 下可从 /var/log/httpd/access_log 看 */
+      httpLogs: [],
       os: wantOs || t.os || 'windows', // 服务器操作系统：windows | linux（决定可用命令与配置文件格式）
       dnsZone: 'lab.cn', // Linux 下 zone 文件名用（/var/named/lab.cn.zone）
       /* 服务器的虚拟文件系统（只在 Linux 模式下用）：
@@ -1112,7 +1164,7 @@
     if (!dev.vlanMeta) dev.vlanMeta = {};
     if (!Array.isArray(dev.vlans)) dev.vlans = [1];
     if (!dev.vlans.includes(1)) dev.vlans.unshift(1);
-    for (const k of ['vlanifs', 'subifs', 'routes', 'acl', 'aclBindings', 'staticMac', 'logs', 'portGroups', 'natAddrGroups', 'natSessions']) {
+    for (const k of ['vlanifs', 'subifs', 'routes', 'acl', 'aclBindings', 'staticMac', 'logs', 'portGroups', 'natAddrGroups', 'natSessions', 'httpLogs']) {
       if (!Array.isArray(dev[k])) dev[k] = [];
     }
     /* 服务器 / 防火墙的新字段：老存档和手写导入里没有，补齐后再往下走 */
@@ -5653,7 +5705,8 @@
       '/usr/bin': { dirs: [], files: [] },
       '/usr/sbin': { dirs: [], files: [] },
       '/var': { dirs: ['log', 'named', 'www'], files: [] },
-      '/var/log': { dirs: [], files: ['messages', 'secure'] },
+      '/var/log': { dirs: ['httpd'], files: ['messages', 'secure'] },
+      '/var/log/httpd': { dirs: [], files: ['access_log', 'error_log'] },
       '/var/named': { dirs: [], files: [zone] },
       '/var/www': { dirs: ['html', 'lab'], files: [] },
       '/var/www/html': { dirs: [], files: ['index.html'] },
@@ -5769,6 +5822,23 @@
         '<body><h1>网络实验室主页</h1>',
         '<p>这个页面在 /var/www/lab 目录下 —— 把 httpd.conf 的 DocumentRoot 指过来就能看到它。</p>',
         '</body></html>'
+      ].join('\n');
+    }
+    if (path === '/var/log/httpd/access_log') {
+      // 真的会增长：主机上每 http get 一次就多一行（NCSA 通用日志格式，跟真机 access_log 一个样子）
+      const logs = dev.httpLogs || [];
+      if (!logs.length) {
+        return '# 还没有访问记录 —— 在主机上 http get 一次，再回来看这个文件';
+      }
+      return logs.join('\n');
+    }
+    if (path === '/var/log/httpd/error_log') {
+      if (!(dev.services && dev.services.http)) {
+        return '[notice] httpd 没有运行（systemctl start httpd 之后才会有启动记录）';
+      }
+      return [
+        '[Sun Nov 13 20:00:00.123456 2026] [mpm_prefork:notice] [pid 1288] AH00163: Apache/2.4.6 (CentOS) configured -- resuming normal operations',
+        '[Sun Nov 13 20:00:00.123470 2026] [core:notice] [pid 1288] AH00094: Command line: \'/usr/sbin/httpd -D FOREGROUND\''
       ].join('\n');
     }
     if (path === '/var/log/messages') {
@@ -5909,14 +5979,26 @@
     const ed = dev.fs.editing;
     if (!ed) return ['E32: No file name'];
     dev.fs.files[ed.path] = ed.lines.join('\n');
-    dev.fs.dirty[ed.path] = true;
-    const effective = /\.zone$/.test(ed.path) || /httpd\.conf$/.test(ed.path);
-    if (!effective) {
-      return [`"${ed.path}" ${ed.lines.length}L written`, '// 已写入。这个文件在本模拟器里只用于查看，不会影响服务行为（真正生效的是 zone 文件与 httpd.conf）'];
+    const isZone = /\.zone$/.test(ed.path);
+    const isHttpd = /httpd\.conf$/.test(ed.path);
+    // 只有「需要 restart 才生效」的两类文件才记 dirty（dirty = 改了但服务还没重新载入）
+    if (isZone || isHttpd) dev.fs.dirty[ed.path] = true;
+    // 站点目录里的文件（/var/www/...）是 httpd 直接读盘的静态文件 —— 改完不用重启，
+    // 这跟「改配置文件必须 restart」正好是一对，值得让学生自己对比一次。
+    const isWeb = /^\/var\/www\//.test(ed.path) && !isHttpd;
+    if (isWeb) {
+      return [
+        `"${ed.path}" ${ed.lines.length}L written`,
+        '// 已写入。这是站点里的静态文件，httpd 直接从磁盘读 —— 不用重启服务，',
+        '// 在主机上再 http get 一次就能看到新内容（对比：改 httpd.conf 才要 systemctl restart httpd）'
+      ];
+    }
+    if (!isZone && !isHttpd) {
+      return [`"${ed.path}" ${ed.lines.length}L written`, '// 已写入。这个文件在本模拟器里只用于查看，不会影响服务行为（真正生效的是 zone 文件、httpd.conf 与 /var/www 下的页面）'];
     }
     return [
       `"${ed.path}" ${ed.lines.length}L written`,
-      `// 已写入文件。要让服务用上新配置：systemctl restart ${/\.zone$/.test(ed.path) ? 'named' : 'httpd'}`
+      `// 已写入文件。要让服务用上新配置：systemctl restart ${isZone ? 'named' : 'httpd'}`
     ];
   }
 
@@ -6364,6 +6446,7 @@
     const root = owner.httpRoot || '/var/www/html';
     const page = fsRead(owner, root.replace(/\/$/, '') + '/index.html');
     if (page == null) {
+      logHttpAccess(owner, dev, '/index.html', 404, 0);
       return [
         `Connecting to ${name || ip} ...`,
         '',
@@ -6371,7 +6454,27 @@
         `// ${owner.hostname} 的 DocumentRoot 是 ${root}，但那个目录下没有 index.html`
       ];
     }
+    logHttpAccess(owner, dev, '/index.html', 200, page.length);
     return [`Connecting to ${name || ip} ...`, '', ...page.split('\n')];
+  }
+
+  /**
+   * 往服务器的访问日志记一条（NCSA 通用日志格式）。
+   * 只影响 display —— 但学生 tail 一下就能看到「我刚才这次访问」，比讲十遍日志格式有用。
+   */
+  function logHttpAccess(srv, client, url, code, bytes) {
+    if (!Array.isArray(srv.httpLogs)) srv.httpLogs = [];
+    const p0 = client && client.ports && client.ports[0];
+    const ip = (p0 && p0.ip) || '127.0.0.1';
+    const d = new Date();
+    const MON = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+    const two = (n) => (n < 10 ? '0' + n : String(n));
+    const stamp =
+      `${two(d.getDate())}/${MON[d.getMonth()]}/${d.getFullYear()}:` +
+      `${two(d.getHours())}:${two(d.getMinutes())}:${two(d.getSeconds())} +0800`;
+    // 日志里记的是 URL 路径（/index.html），不是服务器上的绝对路径 —— 跟真机 access_log 一致
+    srv.httpLogs.push(`${ip} - - [${stamp}] "GET ${url} HTTP/1.1" ${code} ${bytes}`);
+    if (srv.httpLogs.length > 50) srv.httpLogs.shift();
   }
 
   /* ======================= 防火墙（USG6000V） ======================= */
@@ -9805,7 +9908,7 @@
   /* ------------------------------ 版本信息 ------------------------------ */
   /* 版本号的唯一来源：改这一处即可。
      build.mjs 会把它读出来写进产物开头的注释，所以交付文件本身也能看出是哪个版本。 */
-  const APP_VERSION = '1.9.1';
+  const APP_VERSION = '2.0.0';
   const APP_INFO = {
     name: '新易网络沙盘',
     tagline: '华为 VRP 命令实训 · 单文件离线版',
@@ -11099,7 +11202,9 @@
           'systemctl start named', 'systemctl restart named', 'systemctl start vsftpd',
           'cat /etc/named.conf', 'cat /etc/httpd/conf/httpd.conf', 'cat /etc/passwd',
           'cat /var/named/lab.cn.zone', 'vi /var/named/lab.cn.zone', 'vi /etc/httpd/conf/httpd.conf',
-          'ls /etc', 'ls /var/named', 'ls /var/www/html',
+          'ls /etc', 'ls /var/named', 'ls /var/www/html', 'ls /var/log',
+          'vi /var/www/html/index.html', 'cat /var/www/html/index.html',
+          'cat /var/log/httpd/access_log', 'tail -n 5 /var/log/httpd/access_log',
           'echo "www IN A 192.168.1.100" >> /var/named/lab.cn.zone'
         ]);
       } else {
@@ -11458,10 +11563,22 @@
     setTermOpen(false);
   }
 
+  /* 实验分组：顺序即界面顺序，和软考考纲的章节顺序对齐。
+     组内仍按难度（基础 → 进阶）排，所以「先易后难」和「按考点找」两个需求同时满足。 */
+  const LAB_GROUPS = [
+    { key: 'lan', name: '交换与局域网', intro: '一台交换机内部怎么隔离、怎么互通' },
+    { key: 'route', name: '路由与互连', intro: '跨网段怎么走、动态路由怎么收敛' },
+    { key: 'svc', name: '网络服务', intro: '地址怎么发、域名怎么解析、网页怎么发布' },
+    { key: 'sec', name: '安全与访问控制', intro: '谁能过、谁能看、跨公网怎么加密' },
+    { key: 'ops', name: '运维与高可用', intro: '远程管设备、网关不中断' },
+    { key: 'fault', name: '排错实训', intro: '拓扑里埋了错，只给现象不给答案' }
+  ];
+
   const LABS = [
     {
       id: 'vlan-basic',
-      name: '实验一 · VLAN 基础与端口划分',
+      group: 'lan',
+      name: 'VLAN 基础与端口划分',
       level: '基础',
       desc: '1 台交换机 + 2 台 PC。把 PC 划入同一个 VLAN，验证二层互通；再隔离到不同 VLAN，观察现象。',
       build() {
@@ -11488,7 +11605,8 @@
     },
     {
       id: 'trunk',
-      name: '实验二 · Trunk 跨交换机 VLAN',
+      group: 'lan',
+      name: 'Trunk 跨交换机 VLAN',
       level: '基础',
       desc: '2 台交换机通过 Trunk 互联，两台 PC 同属 VLAN 10，验证跨交换机的 VLAN 内互通。',
       build() {
@@ -11522,7 +11640,8 @@
     },
     {
       id: 'intervlan',
-      name: '实验三 · 三层交换实现 VLAN 间互通',
+      group: 'lan',
+      name: '三层交换实现 VLAN 间互通',
       level: '进阶',
       desc: '1 台三层交换机 + 2 台 PC，分别属于 VLAN 10 / VLAN 20，用 Vlanif 做网关实现互通。',
       build() {
@@ -11553,9 +11672,10 @@
     },
     {
       id: 'one-arm',
-      name: '实验三·补 · 单臂路由（Router-on-a-Stick）',
+      group: 'lan',
+      name: '单臂路由（Router-on-a-Stick）',
       level: '进阶',
-      desc: '1 台路由器 + 1 台二层交换机：只用一条链路，在路由器侧给 VLAN 10 / VLAN 20 各建一个子接口当网关。和实验三对比 —— 网关从交换机搬到了路由器。',
+      desc: '1 台路由器 + 1 台二层交换机：只用一条链路，在路由器侧给 VLAN 10 / VLAN 20 各建一个子接口当网关。和「三层交换」那个实验对比 —— 网关从交换机搬到了路由器。',
       build() {
         const r = mk('AR6121', 340, 70, 'R1');
         const sw = mk('S3700', 340, 250, 'SW1');
@@ -11584,12 +11704,13 @@
         '⚠️ <b>少配 <code>arp broadcast enable</code> 就 ping 不通</b>：子接口默认不发广播 ARP，路由器找不到目的 MAC。这是单臂路由最常踩的坑，模拟器会如实报出原因。',
         '子接口编号（.10 / .20）只是名字，真正决定属于哪个 VLAN 的是 <code>dot1q termination vid</code>；习惯上让两者一致。',
         '上联口必须是 trunk 且放行这两个 VLAN；配成 access 就只通一个 VLAN。',
-        '和实验三对比着看：三层交换机把网关放在 Vlanif 上，路由器只能靠子接口 —— 这就是「单臂路由」和「三层交换」的区别。'
+        '和「三层交换」对比着看：三层交换机把网关放在 Vlanif 上，路由器只能靠子接口 —— 这就是「单臂路由」和「三层交换」的区别。'
       ]
     },
     {
       id: 'static',
-      name: '实验四 · 静态路由实现跨网段互通',
+      group: 'route',
+      name: '静态路由实现跨网段互通',
       level: '进阶',
       desc: '2 台路由器 + 2 台 PC。配置物理接口 IP 与静态路由，实现两个网段互通。',
       build() {
@@ -11625,7 +11746,8 @@
     },
     {
       id: 'ospf',
-      name: '实验五 · OSPF 单区域动态路由',
+      group: 'route',
+      name: 'OSPF 单区域动态路由',
       level: '进阶',
       desc: '3 台路由器组成三角拓扑，配置 OSPF 单区域，观察邻居建立与动态学习路由。',
       build() {
@@ -11661,7 +11783,8 @@
     },
     {
       id: 'rip',
-      name: '实验五·补 · RIP 动态路由',
+      group: 'route',
+      name: 'RIP 动态路由',
       level: '进阶',
       desc: '沿用「两台路由器 + 两台 PC」的拓扑，把静态路由换成一个 RIP 进程，让路由器自己学路由。',
       build() {
@@ -11695,7 +11818,8 @@
     },
     {
       id: 'dhcp',
-      name: '实验六 · DHCP 自动分配地址',
+      group: 'svc',
+      name: 'DHCP 自动分配地址',
       level: '进阶',
       desc: '路由器作为 DHCP 服务器，PC 通过 DHCP 自动获取地址，体验 ipconfig /renew。',
       build() {
@@ -11724,7 +11848,8 @@
     },
     {
       id: 'dhcp-relay',
-      name: '实验六·补 · DHCP 中继（跨网段分配地址）',
+      group: 'svc',
+      name: 'DHCP 中继（跨网段分配）',
       level: '进阶',
       desc: 'DHCP 服务器在另一个网段：由网关设备做中继，把请求转给服务器。PC 一台都还没地址。',
       build() {
@@ -11762,7 +11887,8 @@
     },
     {
       id: 'acl',
-      name: '实验七 · ACL 访问控制',
+      group: 'sec',
+      name: 'ACL 访问控制',
       level: '进阶',
       desc: '1 台三层交换机 + 3 台 PC（VLAN 10 / 20 / 30）。用高级 ACL 禁止 VLAN 10 访问 VLAN 20，但仍允许访问 VLAN 30。',
       build() {
@@ -11806,7 +11932,8 @@
     },
     {
       id: 'nat',
-      name: '实验八 · NAT 网络地址转换',
+      group: 'sec',
+      name: 'NAT 网络地址转换',
       level: '进阶',
       desc: '内网 PC + 出口路由器 + 模拟 ISP。用 Easy IP 让私网主机借用出口公网地址访问 Internet。',
       build() {
@@ -11843,9 +11970,10 @@
     },
     {
       id: 'nat-server',
-      name: '实验八·补 · NAT Server（内网服务器对外发布）',
+      group: 'sec',
+      name: 'NAT Server（内网服务器对外发布）',
       level: '进阶',
-      desc: '公网用户访问一个公网地址，被 NAT 设备转到内网服务器 —— 和实验八的 NAT outbound 方向正好相反。',
+      desc: '公网用户访问一个公网地址，被 NAT 设备转到内网服务器 —— 和 NAT outbound 的方向正好相反。',
       build() {
         const pub = mk('PC', 90, 90, 'PubPC');
         const r2 = mk('AR6121', 330, 90, 'R2');
@@ -11884,7 +12012,8 @@
     },
     {
       id: 'mgmt',
-      name: '实验九 · 设备远程管理（Telnet + AAA）',
+      group: 'ops',
+      name: '设备远程管理（Telnet + AAA）',
       level: '进阶',
       desc: '开 Telnet 服务、建本地用户、VTY 认证，然后从另一台设备远程登进来。',
       build() {
@@ -11912,7 +12041,8 @@
     },
     {
       id: 'ipv6',
-      name: '实验十 · IPv6 基础',
+      group: 'route',
+      name: 'IPv6 基础',
       level: '进阶',
       desc: '两台路由器 + 两台 PC，配 IPv6 地址和静态路由，让 IPv6 网段互通。',
       build() {
@@ -11945,7 +12075,8 @@
     },
     {
       id: 'srv-dns',
-      name: '实验十一 · 服务器发布（DNS + NAT Server）',
+      group: 'svc',
+      name: '服务器发布（DNS + NAT Server）',
       level: '进阶',
       desc: '内网服务器开 DNS 与 HTTP：内网 PC 用域名访问，外网通过 NAT Server 从公网访问同一个网站。',
       build() {
@@ -11981,7 +12112,8 @@
     },
     {
       id: 'fw-policy',
-      name: '实验十二 · 防火墙安全策略',
+      group: 'sec',
+      name: '防火墙安全策略',
       level: '进阶',
       desc: '一台 USG6000V 夹在两台 PC 之间：先配接口和区域，观察「默认全部拒绝」，再加策略放行。',
       build() {
@@ -12013,7 +12145,8 @@
     },
     {
       id: 'vrrp',
-      name: '实验十三 · VRRP 网关冗余',
+      group: 'ops',
+      name: 'VRRP 网关冗余',
       level: '进阶',
       desc: '两台路由器共用一个虚拟网关 192.168.1.254：Master 承载流量，Master 失效后 Backup 自动接管。',
       build() {
@@ -12051,7 +12184,8 @@
     },
     {
       id: 'linux-srv',
-      name: '实验十四 · Linux 服务器（DNS + Apache）',
+      group: 'svc',
+      name: 'Linux 服务器（DNS + Apache）',
       level: '进阶',
       desc: '用 Linux 的真实命令发布网站：systemctl 启服务、改 zone 文件加记录、cat 看配置文件，再用域名访问。',
       build() {
@@ -12086,7 +12220,8 @@
     },
     {
       id: 'ipsec',
-      name: '实验十五 · IPsec VPN 站点互联',
+      group: 'sec',
+      name: 'IPsec VPN 站点互联',
       level: '进阶',
       desc: '两个私网隔着公网互连：用 IPsec 隧道把 192.168.1.0/24 和 192.168.2.0/24 打通，报文在公网上是加密的。',
       build() {
@@ -12128,7 +12263,8 @@
     },
     {
       id: 'fault-trunk',
-      name: '排错一 · Trunk 没放行 VLAN',
+      group: 'fault',
+      name: 'Trunk 没放行 VLAN',
       level: '排错',
       desc: '两台交换机之间的 trunk 只放行了 VLAN 10 —— 新部门在 VLAN 20，同一个网段跨交换机就是不通。',
       build() {
@@ -12173,7 +12309,8 @@
     },
     {
       id: 'fault-arp',
-      name: '排错二 · 单臂路由缺一条命令',
+      group: 'fault',
+      name: '单臂路由缺一条命令',
       level: '排错',
       desc: '路由器单臂路由配好了子接口和地址，但两台 PC 都 ping 不通网关。差的那条命令很容易漏。',
       build() {
@@ -12231,7 +12368,8 @@
     },
     {
       id: 'fault-acl',
-      name: '排错三 · ACL 把所有人都拦了',
+      group: 'fault',
+      name: 'ACL 把所有人都拦了',
       level: '排错',
       desc: '本来只想禁止一台 PC 访问服务器，结果全公司都访问不了。看看那条规则到底写了什么。',
       build() {
@@ -12281,7 +12419,8 @@
     },
     {
       id: 'fault-nat',
-      name: '排错四 · NAT 不生效',
+      group: 'fault',
+      name: 'NAT 不生效',
       level: '排错',
       desc: '内网能 ping 通网关，就是上不了公网。NAT 命令都敲了，问题在 ACL 的地址段。',
       build() {
@@ -12326,7 +12465,8 @@
     },
     {
       id: 'fault-fw',
-      name: '排错五 · 防火墙接口没加区域',
+      group: 'fault',
+      name: '防火墙接口没加区域',
       level: '排错',
       desc: '防火墙接口地址都配对了、策略也写了 permit，可就是不通信。问题出在最前面一步。',
       build() {
@@ -12374,7 +12514,8 @@
     },
     {
       id: 'fault-ospf',
-      name: '排错六 · OSPF 邻居起不来',
+      group: 'fault',
+      name: 'OSPF 邻居起不来',
       level: '排错',
       desc: '两台路由器都开了 OSPF、都通告了网段，可邻居一直是 Down。差别在一个数字上。',
       build() {
@@ -12439,27 +12580,102 @@
   }
 
   function showLabs() {
+    // 按 LAB_GROUPS 分桶，组内维持 LABS 里的原始顺序（每组的实验本来就是由易到难排的）
+    const groups = LAB_GROUPS.map((g) => ({ ...g, labs: LABS.filter((l) => l.group === g.key) })).filter(
+      (g) => g.labs.length
+    );
+    let seq = 0;
+    const sections = groups
+      .map((g, gi) => {
+        const cards = g.labs
+          .map((l) => {
+            seq += 1;
+            return `<div class="labcard" data-lab="${l.id}" data-lv="${l.level}" title="${l.level}">
+                <b><i class="no">${String(seq).padStart(2, '0')}</i>${l.name}</b>
+                <span>${l.desc}</span>
+              </div>`;
+          })
+          .join('');
+        return `<div class="labgroup" data-group="${g.key}">
+            <div class="labgroup-h">
+              <i class="gi">${gi + 1}</i><b>${g.name}</b><span class="gc">${g.labs.length} 个</span><i class="chev"></i>
+            </div>
+            <div class="labgroup-i">${g.intro}</div>
+            <div class="labbod"><div class="labgrid">${cards}</div></div>
+          </div>`;
+      })
+      .join('');
+
     const html = `
       <div class="mh">${LOGO_TAG}
         <h2>实训实验</h2>
         <button class="btn" id="mClose">关闭</button>
       </div>
       <div class="mb">
-        <p style="color:var(--tx2);line-height:1.8;margin-bottom:14px">
+        <p style="color:var(--tx2);line-height:1.8;margin-bottom:12px">
           选择一个实验，会自动搭建好拓扑（含线缆，部分实验预置了 PC 地址），你只需要完成交换机 / 路由器的配置。
+          <span style="color:var(--tx3)">共 ${LABS.length} 个，按知识域分成 ${groups.length} 组。</span>
         </p>
-        <div class="labgrid">
-          ${LABS.map(
-            (l) => `<div class="labcard" data-lab="${l.id}">
-              <b>${l.name}</b>
-              <span>${l.desc}</span>
-              <span class="lv">${l.level}</span>
-            </div>`
-          ).join('')}
+        <div class="labfilter">
+          <button class="chip on" data-lv="">全部</button>
+          <button class="chip" data-lv="基础">基础</button>
+          <button class="chip" data-lv="进阶">进阶</button>
+          <button class="chip" data-lv="排错">排错</button>
+          <input class="labsearch" id="labSearch" placeholder="搜索 vlan / acl / ospf …" />
         </div>
+        ${sections}
+        <p class="labempty" id="labEmpty" style="display:none">没有匹配的实验 —— 换个关键词，或者把难度切回「全部」（两个条件会叠加）。</p>
       </div>`;
     openModal(html);
     $('mClose').onclick = closeModal;
+
+    // 组标题可折叠：手机上默认只展开第一组，否则 25 张卡片要滚很久
+    $('modal').querySelectorAll('.labgroup-h').forEach((h) => {
+      h.onclick = () => h.parentNode.classList.toggle('collapsed');
+    });
+    if (narrow()) {
+      $('modal').querySelectorAll('.labgroup').forEach((g, i) => {
+        if (i > 0) g.classList.add('collapsed');
+      });
+    }
+
+    const applyFilter = () => {
+      const on = $('modal').querySelector('.chip.on');
+      const lv = on ? on.dataset.lv : '';
+      const q = ($('labSearch').value || '').trim().toLowerCase();
+      let total = 0;
+      $('modal').querySelectorAll('.labgroup').forEach((g) => {
+        let hit = 0;
+        g.querySelectorAll('.labcard').forEach((c) => {
+          const lab = LABS.find((l) => l.id === c.dataset.lab) || {};
+          const okLv = !lv || c.dataset.lv === lv;
+          const okQ = !q || (lab.name + ' ' + lab.desc).toLowerCase().indexOf(q) >= 0;
+          const show = okLv && okQ;
+          c.style.display = show ? '' : 'none';
+          if (show) hit += 1;
+        });
+        g.style.display = hit ? '' : 'none';
+        g.querySelector('.gc').textContent = hit + ' 个';
+        // 筛选时把组展开，否则命中了还藏在折叠里，等于没筛
+        if (lv || q) g.classList.remove('collapsed');
+        total += hit;
+      });
+      $('labEmpty').style.display = total ? 'none' : '';
+    };
+
+    $('modal').querySelectorAll('.chip').forEach((c) => {
+      c.onclick = () => {
+        $('modal').querySelectorAll('.chip').forEach((x) => x.classList.remove('on'));
+        c.classList.add('on');
+        applyFilter();
+      };
+    });
+    $('labSearch').oninput = applyFilter;
+    $('labSearch').onkeydown = (ev) => {
+      // 输入框里按回车别把弹窗里第一个实验给点了
+      if (ev.key === 'Enter') ev.preventDefault();
+    };
+
     $('modal').querySelectorAll('.labcard').forEach((c) => {
       c.onclick = () => loadLab(c.dataset.lab);
     });
@@ -12558,7 +12774,7 @@
           <div class="r"><b>二层 / 三层口</b><span>交换机物理口默认二层：要配 IP 先 <code>undo portswitch</code>；路由器以太口默认三层：要当交换口用先 <code>portswitch</code>。两种命令不通用，用错会报错并提示。</span></div>
           <div class="r"><b>防火墙</b><span><code>firewall zone trust</code> → <code>add interface GigabitEthernet1/0/1</code>；<code>security-policy</code> → <code>rule name allow-icmp</code> → <code>source-zone trust</code> / <code>destination-zone untrust</code> / <code>service icmp</code> / <code>action permit</code>。接口没加区域 = 报文直接丢弃；区域间<b>缺省是 deny</b>，不写策略什么都不通。<code>display security-policy rule all</code> / <code>display firewall session table</code> 查看。</span></div>
           <div class="r"><b>服务器</b><span><b>在设备库点「服务器」会先问装哪个系统</b>：Windows 用 <code>http server enable</code> · <code>dns server enable</code> · <code>ftp server enable</code>；<code>dns add www.lab.cn 192.168.1.100</code>；<code>display server</code> 看状态。主机侧：<code>dns 192.168.1.100</code> 配 DNS，<code>http get www.lab.cn</code> 访问网页，<code>ping 域名</code> 也可以。Windows 服务器用 <code>net start w3svc</code> / <code>dnscmd /recordadd</code>。</span></div>
-          <div class="r"><b>Linux 服务器</b><span><b>设备库里点「服务器」→ 选 Linux（CentOS 7）</b>，加出来的就是 Linux 服务器（卡片角标写着 Linux）；已经在用的 Windows 服务器也可以在终端里 <code>os linux</code> 切换。有完整的目录树与配置文件：<code>ls</code> · <code>cd</code> · <code>pwd</code> · <code>cat</code> · <code>head</code> · <code>tail</code> · <code>grep</code> 都能用；<code>vi 文件</code> 进入行模式编辑（<code>:p</code> 看全文 · <code>:3c 内容</code> 改第3行 · <code>:a 内容</code> 追加 · <code>:%s/旧/新/</code> 替换 · <code>:wq</code> 存盘）。<b>改完要 <code>systemctl restart named/httpd</code> 才生效</b>。运维命令：<code>ps aux</code> · <code>top</code> · <code>df -h</code> · <code>free -h</code> · <code>netstat -tunlp</code> · <code>uname -a</code> · <code>chmod</code> · <code>rpm -qa</code> · <code>history</code>。</span></div>
+          <div class="r"><b>Linux 服务器</b><span><b>设备库里点「服务器」→ 选 Linux（CentOS 7）</b>，加出来的就是 Linux 服务器（卡片角标写着 Linux）；已经在用的 Windows 服务器也可以在终端里 <code>os linux</code> 切换。有完整的目录树与配置文件：<code>ls</code> · <code>cd</code> · <code>pwd</code> · <code>cat</code> · <code>head</code> · <code>tail</code> · <code>grep</code> 都能用；<code>vi 文件</code> 进入行模式编辑（<code>:p</code> 看全文 · <code>:3c 内容</code> 改第3行 · <code>:a 内容</code> 追加 · <code>:%s/旧/新/</code> 替换 · <code>:wq</code> 存盘）。<b>改配置文件（zone / httpd.conf）要 <code>systemctl restart named|httpd</code> 才生效；改 <code>/var/www/...</code> 下的网页文件不用重启</b>，主机上再 <code>http get</code> 一次就看到新内容。每次访问都会记进 <code>/var/log/httpd/access_log</code>（<code>tail -n 5</code> 看得到刚才那一次）。运维命令：<code>ps aux</code> · <code>top</code> · <code>df -h</code> · <code>free -h</code> · <code>netstat -tunlp</code> · <code>uname -a</code> · <code>chmod</code> · <code>rpm -qa</code> · <code>history</code>。</span></div>
           <div class="r"><b>VRRP 网关冗余</b><span>在接口视图：<code>vrrp vrid 1 virtual-ip 192.168.1.254</code> · <code>vrrp vrid 1 priority 120</code> · <code>vrrp vrid 1 preempt-mode</code>。主机网关填<b>虚拟 IP</b>。Master 选举先比优先级（默认 100）再比接口 IP；Master 失效后 Backup 自动接管。<code>display vrrp</code> / <code>display vrrp brief</code> 看角色。两台路由器的 vrid 与虚拟 IP 必须完全一致。</span></div>
           <div class="r"><b>IPsec VPN</b><span><code>acl number 3000</code> + <code>rule permit ip source 192.168.1.0 0.0.0.255 destination 192.168.2.0 0.0.0.255</code>（感兴趣流）→ <code>ipsec proposal prop1</code> → <code>ike peer peer1 v2</code>（<code>pre-shared-key cipher …</code> + <code>remote-address 对端公网口</code>）→ <code>ipsec policy p1 10 isakmp</code>（<code>security acl</code> / <code>ike-peer</code> / <code>proposal</code>）→ 接口上 <code>ipsec policy p1</code>。<b>两端都要配、ACL 要互为反向</b>，路由另配。<code>display ipsec sa</code> 看隧道。</span></div>
           <div class="r"><b>单臂路由</b><span><code>interface GigabitEthernet0/0/0.10</code> → <code>dot1q termination vid 10</code> → <code>ip address 192.168.10.254 24</code> → <b><code>arp broadcast enable</code></b>（少这条 ping 不通）。上联口要 <code>port link-type trunk</code> + <code>port trunk allow-pass vlan 10 20</code>。</span></div>
@@ -12651,9 +12867,9 @@
         <h4 class="sec">这个程序</h4>
         <div class="kv">
           <div class="r"><b>形态</b><span>单个 HTML 文件，双击即用。没有后端、没有账号、<b>不联网、不采集任何数据</b> —— 断网也能正常跑。</span></div>
-          <div class="r"><b>内置</b><span>25 个实训实验（16 个配置实验 + 3 个进阶实验 + 6 个排错场景）· 6 种设备（S5700-28C-EI / S3700-28TP-EI / AR6121E / USG6000V / Server（Windows·Linux）/ PC）· 华为 VRP 命令行</span></div>
+          <div class="r"><b>内置</b><span>25 个实训实验，按知识域分 6 组（交换与局域网 / 路由与互连 / 网络服务 / 安全与访问控制 / 运维与高可用 / 排错实训）· 6 种设备（S5700-28C-EI / S3700-28TP-EI / AR6121E / USG6000V / Server（Windows·Linux）/ PC）· 华为 VRP 命令行</span></div>
           <div class="r"><b>端口</b><span>按真机型号还原，含<b>光电复用（Combo）口</b> —— 接网线用电口、插光模块用光口，二选一</span></div>
-          <div class="r"><b>体积</b><span>约 596 KB 的单个 HTML 文件，不需要安装任何东西</span></div>
+          <div class="r"><b>体积</b><span>约 612 KB 的单个 HTML 文件，不需要安装任何东西</span></div>
           <div class="r"><b>许可</b><span><b>MIT License</b> —— 可以自由使用、修改、商用，甚至不用告诉我</span></div>
         </div>
 
@@ -12939,9 +13155,10 @@
       openConsole(first);
       toast('已恢复上次的拓扑');
     } else {
-      // 首次打开：直接加载实验一，让学生立刻有东西可玩
+      // 首次打开：直接加载第一个实验，让学生立刻有东西可玩
       loadLab('vlan-basic');
-      toast('已加载「实验一 · VLAN 基础」，点击「开始配置」即可');
+      const firstLab = LABS.find((l) => l.id === 'vlan-basic');
+      toast(`已加载「${firstLab ? firstLab.name : '第一个实验'}」，点击「开始配置」即可`);
     }
     syncTermBtn();
   }
