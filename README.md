@@ -3,7 +3,7 @@
 **一个 HTML 文件，双击就能练华为交换机 / 路由器命令 —— 不用装 eNSP，不用装 GNS3，不联网也能用。**
 
 [![在线试玩](https://img.shields.io/badge/%E5%9C%A8%E7%BA%BF%E8%AF%95%E7%8E%A9-GitHub%20Pages-orange)](https://liuyimr.github.io/NE_HWSIM/NE_HWSIM.html)
-![单文件](https://img.shields.io/badge/%E5%8D%95%E6%96%87%E4%BB%B6-650%20KB-brightgreen)
+![单文件](https://img.shields.io/badge/%E5%8D%95%E6%96%87%E4%BB%B6-653%20KB-brightgreen)
 ![无需安装](https://img.shields.io/badge/%E6%97%A0%E9%9C%80%E5%AE%89%E8%A3%85-%E5%8F%8C%E5%87%BB%E5%8D%B3%E7%94%A8-success)
 ![离线可用](https://img.shields.io/badge/%E7%A6%BB%E7%BA%BF%E5%8F%AF%E7%94%A8-100%25-informational)
 ![许可证](https://img.shields.io/badge/license-MIT-blue)
@@ -36,7 +36,7 @@
 
 给**网络课老师**和**备考华为认证的同学**做的一个练习工具。
 
-eNSP 要装 VirtualBox，GNS3 要配镜像，虚拟机镜像动辄几个 GB，还得看电脑配置。很多学生卡在第一步就放弃了，然后就没有然后。新易网络沙盘的判断是：**先把门槛降到零** —— 一个 650 KB 的 HTML 文件，发过去、双击、开始敲命令，整个过程不需要任何解释。
+eNSP 要装 VirtualBox，GNS3 要配镜像，虚拟机镜像动辄几个 GB，还得看电脑配置。很多学生卡在第一步就放弃了，然后就没有然后。新易网络沙盘的判断是：**先把门槛降到零** —— 一个 653 KB 的 HTML 文件，发过去、双击、开始敲命令，整个过程不需要任何解释。
 
 它**不是**真机的替代品，也跑不了复杂的园区网。它解决的是一个很具体的问题：**让学生能在自己的笔记本上、离线、零安装地，把 VLAN / Trunk / OSPF / ACL / NAT 这些命令反复敲到熟。**
 
@@ -180,7 +180,7 @@ eNSP 要装 VirtualBox，GNS3 要配镜像，虚拟机镜像动辄几个 GB，�
 | | **新易网络沙盘** | eNSP | GNS3 | Cisco Packet Tracer |
 |---|---|---|---|---|
 | 安装 | **双击 HTML，零安装** | 需装 VirtualBox + eNSP | 需装虚拟机 + 导入镜像 | 需注册 Cisco 账号 |
-| 体积 | **650 KB** | 数 GB | 数 GB | 数百 MB |
+| 体积 | **653 KB** | 数 GB | 数 GB | 数百 MB |
 | 联网 | **可完全离线** | 首次需下载镜像 | 需下载镜像 | 需登录 |
 | 命令语法 | 华为 VRP | 华为 VRP | 多厂商 | Cisco IOS |
 | 上手门槛 | **极低** | 中（装环境容易失败） | 高 | 中 |
@@ -270,7 +270,7 @@ A：能。把同一个 HTML 文件传到手机（微信 / QQ / 网盘都行）�
 长按端口看详情 —— 功能一个不少，只是手势不一样（见上面「手机 / 平板也能用」的对照表）。
 
 **Q：我怎么知道手上这个文件是哪个版本？**
-A：点顶栏 **「关于」**，里面写着版本号；用记事本打开文件，**开头的注释里也有**（比如 `版本：v2.3.0`）。下载单个 HTML 文件就能自带版本信息，不用去比对文件大小。
+A：点顶栏 **「关于」**，里面写着版本号；用记事本打开文件，**开头的注释里也有**（比如 `版本：v2.3.1`）。下载单个 HTML 文件就能自带版本信息，不用去比对文件大小。
 
 ---
 
@@ -287,6 +287,21 @@ A：点顶栏 **「关于」**，里面写着版本号；用记事本打开文�
 ---
 
 ## 最近更新
+
+**v2.3.1（修：连线的拖动改接一直不生效）**
+
+> 上一版其实就坏着，只是一直没人拖动改接过。三处问题叠在一起：
+
+- **落点判定漏了子元素**：判断"松手处是不是端口"用的是 `elementFromPoint` 直接比对 `.port`，
+  可端口里还套着 `<span class="lab">GE0/0/1</span>` —— 指针落在端口上几乎总是先命中那个 span，
+  于是判成"不是端口"，改接被静默丢弃（拖半天松手什么都没发生）。
+- **拖动中重建了整个连线图层**：第一次 `pointermove` 就 `renderWires()`，正在 `setPointerCapture` 的
+  `.wire-hit` 被换掉，capture 随之失效，后续的 `pointerup` 派不到它身上 —— 改接永远走不到"落点判定"那一步。
+  现在拖动期间只更新一条常驻的示意线，不碰 DOM 结构。
+- **并排时按不到线**：两台设备在同一高度时，连线正好贴着端口那一行，整条线都被端口方块盖住。
+  新增一条入口：**直接按住已连线的端口往外拖**，也能改接这一端。
+
+> 顺带补了 `pointercancel`（切窗口、来电）的收尾，不会再留下半透明示意线或把线藏起来不恢复。
 
 **v2.3.0（浅色主题 + 画布角标 + 手机顶栏补回品牌名）**
 
@@ -643,7 +658,7 @@ v2.1.0 在输入框右边加过一个「补全」按钮。实际用下来它是�
 
 做工业自动控制与楼宇智能化的，这个是给网络教学做的小工具。
 
-> 程序里点顶栏 **「关于」** 也能看到版本号、作者与许可信息。当前版本 **v2.3.0**。
+> 程序里点顶栏 **「关于」** 也能看到版本号、作者与许可信息。当前版本 **v2.3.1**。
 
 ---
 
@@ -672,7 +687,7 @@ MIT License —— 随便用，商用也行，改了也不用说。详见 [LICEN
 
 **新易网络沙盘 — a Huawei VRP network lab simulator that fits in one HTML file.**
 
-A single 650 KB HTML file. Double-click it and you get a drag-and-drop network topology builder plus a
+A single 653 KB HTML file. Double-click it and you get a drag-and-drop network topology builder plus a
 faithful Huawei VRP CLI (user view → system view → interface view → VLAN view → port-group view → ACL view
 → NAT address-pool view → OSPF area view → RIP view → sub-interface view), with authentic `^` error markers and `save` interaction.
 

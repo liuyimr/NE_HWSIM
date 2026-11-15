@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <!--
   NE_HWSIM —— 华为 VRP 网络实训模拟器（单文件版）
-  版本：v2.3.0
+  版本：v2.3.1
 
   Copyright (c) 2026 新易科技工作室 NewE
   作者：Liuyi  <yimr@sohu.com>
@@ -10444,7 +10444,7 @@
   /* ------------------------------ 版本信息 ------------------------------ */
   /* 版本号的唯一来源：改这一处即可。
      build.mjs 会把它读出来写进产物开头的注释，所以交付文件本身也能看出是哪个版本。 */
-  const APP_VERSION = '2.3.0';
+  const APP_VERSION = '2.3.1';
   const APP_INFO = {
     name: '新易网络沙盘',
     tagline: '华为 VRP 命令实训 · 单文件离线版',
@@ -10807,6 +10807,36 @@
         pe.addEventListener('pointerdown', (ev) => ev.stopPropagation());
         bindGestures(pe, {
           slop: 6,
+          /* 从「已连线的端口」按下并拖动 = 把这一端改接到别处。
+             为什么要有这条入口：两台设备并排、端口在同一水平线上时，连线正好贴着端口行，
+             整条线都被端口方块盖住，`.wire-hit` 根本按不到 —— 只能从端口抓起。
+             没拖动的单击仍然走 onTap（接线 / 选中），行为不变。 */
+          onDown: (ev, ctx) => {
+            if (!p.cableId || UI.pend) return;
+            const c = E.Net.getCable(p.cableId);
+            if (!c) return;
+            ctx.cable = c;
+            ctx.end = c.aPortId === p.id ? 'a' : 'b';
+            ctx.lastX = ev.clientX;
+            ctx.lastY = ev.clientY;
+          },
+          onMove: (ev, ctx) => {
+            if (!ctx.cable || !ctx.moved) return;
+            ctx.lastX = ev.clientX;
+            ctx.lastY = ev.clientY;
+            moveCableDrag(ctx);
+          },
+          onUp: (ev, ctx) => {
+            if (!ctx.cable || !ctx.moved) return;
+            ctx.lastX = ev.clientX;
+            ctx.lastY = ev.clientY;
+            endCableDrag(ctx);
+          },
+          onCancel: (ev, ctx) => {
+            if (!ctx.cable) return;
+            UI.replug = null;
+            render();
+          },
           onTap: (ev) => {
             ev.stopPropagation();
             onPortClick(d, p);
@@ -10985,6 +11015,11 @@
           ctx.lastY = ev.clientY;
           endCableDrag(ctx);
         },
+        onCancel: () => {
+          UI.replug = null;
+          paintReplug();
+          render();
+        },
         onTap: () => selectCable(id),
         onLongPress: () => removeCable(id),
         onContextMenu: () => removeCable(id)
@@ -11111,6 +11146,7 @@
       if (ev.pointerId !== pid) return;
       ctx.moved = true; // 当作「拖动被取消」，不做单击判定
       release(ev);
+      if (opt.onCancel) opt.onCancel(ev, ctx);
     });
     // 触摸长按会弹出系统的「复制 / 搜索」菜单，一律禁掉。
     // 鼠标右键则交给 onContextMenu（触摸端已经用 longPress 覆盖，不重复触发）。
@@ -11345,8 +11381,12 @@
 
   /** 鼠标位置下面是哪个端口（拖拽改接时用来找落点） */
   function portUnderPoint(x, y) {
-    const el = document.elementFromPoint(x, y);
-    if (!el || !el.classList || !el.classList.contains('port')) return null;
+    /* ❗必须用 closest 往上找，不能直接判断 elementFromPoint 是不是 .port：
+       端口里还套着 <span class="lab">GE0/0/1</span>，指针落在端口上几乎总是先命中那个 span，
+       于是「落点不算端口」→ 改接被静默丢弃（拖了半天松手什么都没发生）。 */
+    const hit = document.elementFromPoint(x, y);
+    const el = hit && hit.closest ? hit.closest('.port') : null;
+    if (!el) return null;
     const card = el.closest('.card');
     if (!card) return null;
     const dev = E.Net.getDevice(card.dataset.id);
@@ -11424,12 +11464,57 @@
     return true;
   }
 
+  /**
+   * 拖动改接时画那条跟着指针走的示意线。
+   * ❗**绝对不能在这里重建 #wires**：拖拽的 pointer capture 挂在 .wire-hit 上，
+   * innerHTML 一重建元素就被换掉，capture 跟着失效 —— 之后的 pointermove / pointerup
+   * 全派不到它身上，表现就是「拖了半天松手什么都没发生」（改接一直失效的真凶）。
+   * 所以这里只做两件事：把原线隐藏、更新一条常驻示意线的坐标。
+   */
+  function paintReplug() {
+    const svg = $('wires');
+    if (!svg) return;
+    if (!UI.replug) {
+      // 没有在拖了：把所有线恢复显示（render() 之外的第二道保险）
+      svg.querySelectorAll('.wire-g').forEach((g) => { g.style.display = ''; });
+      const old = svg.querySelector('.wire-rubber');
+      if (old) old.remove();
+      return;
+    }
+    const c = E.Net.getCable(UI.replug.id);
+    if (!c) return;
+    const a = E.Net.getDevice(c.aDeviceId);
+    const b = E.Net.getDevice(c.bDeviceId);
+    if (!a || !b) return;
+    const fixedDev = UI.replug.end === 'a' ? b : a;
+    const fixedPortId = UI.replug.end === 'a' ? c.bPortId : c.aPortId;
+    const fi = fixedDev.ports.findIndex((p) => p.id === fixedPortId);
+    if (fi < 0) return;
+    const fp = portCenter(fixedDev, fi);
+
+    let rubber = svg.querySelector('.wire-rubber');
+    if (!rubber) {
+      rubber = document.createElementNS('http://www.w3.org/2000/svg', 'line');
+      rubber.setAttribute('class', 'wire-rubber');
+      rubber.setAttribute('vector-effect', 'non-scaling-stroke');
+      svg.appendChild(rubber);
+    }
+    rubber.setAttribute('x1', fp.x);
+    rubber.setAttribute('y1', fp.y);
+    rubber.setAttribute('x2', UI.replug.x);
+    rubber.setAttribute('y2', UI.replug.y);
+
+    // 原线先藏起来（这一条正在被改接，不该同时显示）
+    const g = svg.querySelector(`.wire-g[data-cable="${c.id}"]`);
+    if (g) g.style.display = 'none';
+  }
+
   function moveCableDrag(ctx) {
     if (!ctx.cable) return;
     UI.selCable = null;
     const w = screenToWorld(ctx.lastX, ctx.lastY);
     UI.replug = { id: ctx.cable.id, end: ctx.end, x: w.x, y: w.y };
-    renderWires();
+    paintReplug();
   }
 
   function endCableDrag(ctx) {
@@ -13549,7 +13634,7 @@
           <div class="r"><b>形态</b><span>单个 HTML 文件，双击即用。没有后端、没有账号、<b>不联网、不采集任何数据</b> —— 断网也能正常跑。</span></div>
           <div class="r"><b>内置</b><span>26 个实训实验，按知识域分 6 组（交换与局域网 / 路由与互连 / 网络服务 / 安全与访问控制 / 运维与高可用 / 排错实训）· 6 种设备（S5700-28C-EI / S3700-28TP-EI / AR6121E / USG6000V / Server（Windows·Linux）/ PC）· 华为 VRP 命令行</span></div>
           <div class="r"><b>端口</b><span>按真机型号还原，含<b>光电复用（Combo）口</b> —— 接网线用电口、插光模块用光口，二选一</span></div>
-          <div class="r"><b>体积</b><span>约 650 KB 的单个 HTML 文件，不需要安装任何东西</span></div>
+          <div class="r"><b>体积</b><span>约 653 KB 的单个 HTML 文件，不需要安装任何东西</span></div>
           <div class="r"><b>许可</b><span><b>MIT License</b> —— 可以自由使用、修改、商用，甚至不用告诉我</span></div>
         </div>
 
