@@ -3,7 +3,7 @@
 **一个 HTML 文件，双击就能练华为交换机 / 路由器命令 —— 不用装 eNSP，不用装 GNS3，不联网也能用。**
 
 [![在线试玩](https://img.shields.io/badge/%E5%9C%A8%E7%BA%BF%E8%AF%95%E7%8E%A9-GitHub%20Pages-orange)](https://liuyimr.github.io/NE_HWSIM/NE_HWSIM.html)
-![单文件](https://img.shields.io/badge/%E5%8D%95%E6%96%87%E4%BB%B6-622%20KB-brightgreen)
+![单文件](https://img.shields.io/badge/%E5%8D%95%E6%96%87%E4%BB%B6-621%20KB-brightgreen)
 ![无需安装](https://img.shields.io/badge/%E6%97%A0%E9%9C%80%E5%AE%89%E8%A3%85-%E5%8F%8C%E5%87%BB%E5%8D%B3%E7%94%A8-success)
 ![离线可用](https://img.shields.io/badge/%E7%A6%BB%E7%BA%BF%E5%8F%AF%E7%94%A8-100%25-informational)
 ![许可证](https://img.shields.io/badge/license-MIT-blue)
@@ -36,7 +36,7 @@
 
 给**网络课老师**和**备考华为认证的同学**做的一个练习工具。
 
-eNSP 要装 VirtualBox，GNS3 要配镜像，虚拟机镜像动辄几个 GB，还得看电脑配置。很多学生卡在第一步就放弃了，然后就没有然后。新易网络沙盘的判断是：**先把门槛降到零** —— 一个 622 KB 的 HTML 文件，发过去、双击、开始敲命令，整个过程不需要任何解释。
+eNSP 要装 VirtualBox，GNS3 要配镜像，虚拟机镜像动辄几个 GB，还得看电脑配置。很多学生卡在第一步就放弃了，然后就没有然后。新易网络沙盘的判断是：**先把门槛降到零** —— 一个 621 KB 的 HTML 文件，发过去、双击、开始敲命令，整个过程不需要任何解释。
 
 它**不是**真机的替代品，也跑不了复杂的园区网。它解决的是一个很具体的问题：**让学生能在自己的笔记本上、离线、零安装地，把 VLAN / Trunk / OSPF / ACL / NAT 这些命令反复敲到熟。**
 
@@ -180,7 +180,7 @@ eNSP 要装 VirtualBox，GNS3 要配镜像，虚拟机镜像动辄几个 GB，�
 | | **新易网络沙盘** | eNSP | GNS3 | Cisco Packet Tracer |
 |---|---|---|---|---|
 | 安装 | **双击 HTML，零安装** | 需装 VirtualBox + eNSP | 需装虚拟机 + 导入镜像 | 需注册 Cisco 账号 |
-| 体积 | **622 KB** | 数 GB | 数 GB | 数百 MB |
+| 体积 | **621 KB** | 数 GB | 数 GB | 数百 MB |
 | 联网 | **可完全离线** | 首次需下载镜像 | 需下载镜像 | 需登录 |
 | 命令语法 | 华为 VRP | 华为 VRP | 多厂商 | Cisco IOS |
 | 上手门槛 | **极低** | 中（装环境容易失败） | 高 | 中 |
@@ -270,7 +270,7 @@ A：能。把同一个 HTML 文件传到手机（微信 / QQ / 网盘都行）�
 长按端口看详情 —— 功能一个不少，只是手势不一样（见上面「手机 / 平板也能用」的对照表）。
 
 **Q：我怎么知道手上这个文件是哪个版本？**
-A：点顶栏 **「关于」**，里面写着版本号；用记事本打开文件，**开头的注释里也有**（比如 `版本：v2.1.0`）。下载单个 HTML 文件就能自带版本信息，不用去比对文件大小。
+A：点顶栏 **「关于」**，里面写着版本号；用记事本打开文件，**开头的注释里也有**（比如 `版本：v2.1.1`）。下载单个 HTML 文件就能自带版本信息，不用去比对文件大小。
 
 ---
 
@@ -288,6 +288,12 @@ A：点顶栏 **「关于」**，里面写着版本号；用记事本打开文�
 
 ## 最近更新
 
+**v2.1.1（去掉多余的「补全」按钮）**
+
+v2.1.0 在输入框右边加过一个「补全」按钮。实际用下来它是多余的：输入框里只要有内容，候选条本来就已经在下面列着了，
+点按钮没有任何新东西；只有全空时才有用，而那时候输 `?` 一样能看全部命令。所以直接删掉，只留候选条 ——
+命令行右下角少一个不会生效的控件。
+
 **v2.1.0（OSPF 多区域 + 手机上的命令补全）**
 
 - **新增实验「OSPF 多区域（ABR 与骨干区域）」**：3 台路由器，R1 在区域 1、R3 在区域 0、R2 两脚跨区做 ABR。
@@ -295,9 +301,8 @@ A：点顶栏 **「关于」**，里面写着版本号；用记事本打开文�
   实验最后一步就是让你把 R2 的 area 0 改成 area 2，看跨区域 ping 怎么断掉。
 - **引擎补了 ABR 语义**：BFS 的节点从「设备」改成「设备 × 区域」，跨区域必须在骨干区域上转折；
   `display ospf peer` 会直说「本机是 ABR，区域间路由由本机注入」或者「跨了区域但没有接口在 area 0，路由传不过去」。
-- **手机上能补全命令了**：输入框右边新增「补全」按钮 —— 点一下把当前视图的命令列成**一行可横滑的候选条**，
-  点哪个就填哪个；打字时也会自动冒出候选。用的是 `pointerdown`，点候选不会让输入框失焦、软键盘不会收起来。
-  电脑上 `Tab` 的行为完全没变。
+- **手机上能补全命令了**：打字时输入框上方自动冒出一行**可横滑的候选条**，点哪个就填哪个。
+  用的是 `pointerdown`，点候选不会让输入框失焦、软键盘不会收起来。电脑上 `Tab` 的行为完全没变。
 - **难度调整**：静态路由、DHCP、OSPF 单区域从「进阶」改成「基础」（现在「基础」筛选里有 5 个，不再只有 VLAN 和 Trunk）。
 
 **v2.0.0（实训实验按知识域分组 + 筛选搜索）**
@@ -600,7 +605,7 @@ A：点顶栏 **「关于」**，里面写着版本号；用记事本打开文�
 
 做工业自动控制与楼宇智能化的，这个是给网络教学做的小工具。
 
-> 程序里点顶栏 **「关于」** 也能看到版本号、作者与许可信息。当前版本 **v2.1.0**。
+> 程序里点顶栏 **「关于」** 也能看到版本号、作者与许可信息。当前版本 **v2.1.1**。
 
 ---
 
@@ -629,7 +634,7 @@ MIT License —— 随便用，商用也行，改了也不用说。详见 [LICEN
 
 **新易网络沙盘 — a Huawei VRP network lab simulator that fits in one HTML file.**
 
-A single 622 KB HTML file. Double-click it and you get a drag-and-drop network topology builder plus a
+A single 621 KB HTML file. Double-click it and you get a drag-and-drop network topology builder plus a
 faithful Huawei VRP CLI (user view → system view → interface view → VLAN view → port-group view → ACL view
 → NAT address-pool view → OSPF area view → RIP view → sub-interface view), with authentic `^` error markers and `save` interaction.
 

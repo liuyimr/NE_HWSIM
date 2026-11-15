@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <!--
   NE_HWSIM —— 华为 VRP 网络实训模拟器（单文件版）
-  版本：v2.1.0
+  版本：v2.1.1
 
   Copyright (c) 2026 新易科技工作室 NewE
   作者：Liuyi  <yimr@sohu.com>
@@ -328,11 +328,6 @@
     font-family:var(--mono);font-size:13px;padding:3px 0;
   }
   .inrow input::placeholder{color:#484f58}
-  .inrow .cand-btn{
-    flex:0 0 auto;height:26px;padding:0 10px;border-radius:6px;font-size:11px;
-    border:1px solid var(--line);background:var(--bg3);color:var(--tx2);transition:.12s;
-  }
-  .inrow .cand-btn:hover,.inrow .cand-btn:active{border-color:var(--cy);color:var(--tx)}
   /* 候选条：一行横滚，不占竖向空间；点一下把命令填进输入框 */
   .cands{
     display:none;gap:6px;padding:7px 14px;background:#0f141a;
@@ -592,7 +587,6 @@
     .inrow{padding:7px 10px}
     .inrow .pr{font-size:14px}
     .inrow input{font-size:16px;padding:5px 0}
-    .inrow .cand-btn{height:32px;padding:0 12px;font-size:12px}
     .cands{padding:7px 10px}
     .cand{font-size:12px;padding:6px 10px}
 
@@ -840,7 +834,6 @@
     <div class="inrow" id="inrow">
       <span class="pr" id="prompt">&lt;Huawei&gt;</span>
       <input id="cmd" autocomplete="off" spellcheck="false" placeholder="输入命令，? 查看帮助" />
-      <button class="cand-btn" id="candBtn" title="显示 / 收起命令候选">补全</button>
     </div>
   </div>
 </div>
@@ -9988,7 +9981,7 @@
   /* ------------------------------ 版本信息 ------------------------------ */
   /* 版本号的唯一来源：改这一处即可。
      build.mjs 会把它读出来写进产物开头的注释，所以交付文件本身也能看出是哪个版本。 */
-  const APP_VERSION = '2.1.0';
+  const APP_VERSION = '2.1.1';
   const APP_INFO = {
     name: '新易网络沙盘',
     tagline: '华为 VRP 命令实训 · 单文件离线版',
@@ -11198,18 +11191,7 @@
         sc.scrollTop = sc.scrollHeight;
       }, 260);
     });
-    inp.addEventListener('input', () => {
-      candAll = false;
-      refreshCands();
-    });
-    const candBtn = $('candBtn');
-    if (candBtn) {
-      candBtn.onclick = () => {
-        candAll = !candAll;
-        refreshCands();
-        inp.focus();
-      };
-    }
+    inp.addEventListener('input', refreshCands);
     inp.addEventListener('keydown', (ev) => {
       const d = activeDev();
       if (!d) return;
@@ -11231,11 +11213,13 @@
         if (!h.length) return;
         UI.histIdx = Math.max(0, (UI.histIdx == null ? h.length : UI.histIdx) - 1);
         inp.value = h[UI.histIdx] || '';
+        refreshCands();
       } else if (key === 'ArrowDown') {
         ev.preventDefault();
         const h = UI.hist[d.id] || [];
         UI.histIdx = Math.min(h.length, (UI.histIdx == null ? 0 : UI.histIdx) + 1);
         inp.value = h[UI.histIdx] || '';
+        refreshCands();
       } else if (key === 'Tab') {
         ev.preventDefault();
         autocomplete(d, inp);
@@ -11343,8 +11327,8 @@
   }
 
   /* ---------------- 输入框上方的命令候选条（手机上多半没有 Tab 键） ---------------- */
-  let candAll = false; // 「补全」按钮是否展开成全部命令
-
+  /* 只在有输入时出现：把当前视图里以它开头的命令列成一行，点一下填进输入框。
+     要「看全部命令」用 ?（和真机一样），不再单独放一个按钮 —— 有内容时候选条已经在了，按钮等于没用。 */
   function refreshCands() {
     const box = $('cands');
     const inp = $('cmd');
@@ -11353,9 +11337,9 @@
     const hide = () => { box.classList.remove('on'); box.innerHTML = ''; };
     if (!d) return hide();
     const kw = String(inp.value || '').trim().toLowerCase();
-    if (!kw && !candAll) return hide();
+    if (!kw) return hide();
     const list = candidatesFor(d);
-    const hits = (kw ? list.filter((c) => c.toLowerCase().indexOf(kw) === 0) : list).slice(0, 40);
+    const hits = list.filter((c) => c.toLowerCase().indexOf(kw) === 0).slice(0, 40);
     // 只剩一条且已经填进输入框了 —— 再显示一个同样的按钮只是噪音
     if (!hits.length || (hits.length === 1 && hits[0].toLowerCase() === kw)) return hide();
     box.innerHTML = hits.map((c) => `<button class="cand" data-c="${esc(c)}">${esc(c.trim())}</button>`).join('');
@@ -11366,7 +11350,6 @@
         ev.preventDefault();
         ev.stopPropagation();
         inp.value = b.dataset.c;
-        candAll = /\s$/.test(b.dataset.c);
         inp.focus();
         try { inp.setSelectionRange(inp.value.length, inp.value.length); } catch (e) { /* 老内核忽略 */ }
         refreshCands();
@@ -12914,7 +12897,7 @@
           <li><span class="n">2</span><span>先点一个灰色端口，再点另一个灰色端口，即完成连线。按 Esc 取消当前选择。</span></li>
           <li><span class="n">3</span><span>双击设备打开命令行，输入华为 VRP 命令，例如 <code>system-view</code>。</span></li>
           <li><span class="n">4</span><span>双击 PC 输入 <code>ip 192.168.10.1 24</code> 配地址，再 <code>ping</code> 目标地址验证。</span></li>
-          <li><span class="n">?</span><span>打不全命令？电脑上按 <code>Tab</code>；<b>手机上点输入框右边的「补全」按钮</b>，会把当前视图的命令列成一行，点哪个就填哪个。打字时也会自动冒出候选。</span></li>
+          <li><span class="n">?</span><span>打不全命令？电脑上按 <code>Tab</code>；<b>手机上没有 Tab，打字时输入框上方会自动冒出一行候选</b>，点哪个就把哪条填进去（点完键盘不会收起）。什么都不记得时，先输 <code>?</code> 看当前视图有哪些命令。</span></li>
         </ul>
         <h4 class="sec">视图是一级一级进入的</h4>
         <p class="hint">和真机一样，命令要先进到对应视图才能敲。提示符会告诉你现在在哪一层：</p>
@@ -13046,7 +13029,7 @@
           <div class="r"><b>形态</b><span>单个 HTML 文件，双击即用。没有后端、没有账号、<b>不联网、不采集任何数据</b> —— 断网也能正常跑。</span></div>
           <div class="r"><b>内置</b><span>26 个实训实验，按知识域分 6 组（交换与局域网 / 路由与互连 / 网络服务 / 安全与访问控制 / 运维与高可用 / 排错实训）· 6 种设备（S5700-28C-EI / S3700-28TP-EI / AR6121E / USG6000V / Server（Windows·Linux）/ PC）· 华为 VRP 命令行</span></div>
           <div class="r"><b>端口</b><span>按真机型号还原，含<b>光电复用（Combo）口</b> —— 接网线用电口、插光模块用光口，二选一</span></div>
-          <div class="r"><b>体积</b><span>约 622 KB 的单个 HTML 文件，不需要安装任何东西</span></div>
+          <div class="r"><b>体积</b><span>约 621 KB 的单个 HTML 文件，不需要安装任何东西</span></div>
           <div class="r"><b>许可</b><span><b>MIT License</b> —— 可以自由使用、修改、商用，甚至不用告诉我</span></div>
         </div>
 
