@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <!--
   NE_HWSIM —— 华为 VRP 网络实训模拟器（单文件版）
-  版本：v2.1.1
+  版本：v2.3.0
 
   Copyright (c) 2026 新易科技工作室 NewE
   作者：Liuyi  <yimr@sohu.com>
@@ -20,6 +20,11 @@
 <!-- 站点图标：src/favicon.svg 里的字母 N（从 NewE 字标第一个字形抽出），构建时内联成 data URI。
      下面这个 href 是占位符，由 build.mjs 替换；直接打开 index.html（开发态）时它是坏链接，不影响功能。 -->
 <link rel="icon" type="image/svg+xml" href="data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9Ii03LjQxIC0xNi4yMiAyNjEuOTcgMjYxLjk3Ij4KICA8ZGVmcz4KICAgIDxsaW5lYXJHcmFkaWVudCBpZD0ibGcwIiBncmFkaWVudFVuaXRzPSJ1c2VyU3BhY2VPblVzZSIgeDE9IjE1NC4wIiB5MT0iMC42IiB4Mj0iMTU0LjAiIHkyPSIyMjYuOCI+PHN0b3Agb2Zmc2V0PSIwLjAwMCIgc3RvcC1jb2xvcj0iIzAyNDhBMSIvPjxzdG9wIG9mZnNldD0iMC4xNDMiIHN0b3AtY29sb3I9IiMwMTRCQTUiLz48c3RvcCBvZmZzZXQ9IjAuMjg2IiBzdG9wLWNvbG9yPSIjMDE0QUEzIi8+PHN0b3Agb2Zmc2V0PSIwLjQyOSIgc3RvcC1jb2xvcj0iIzA3NDg5QyIvPjxzdG9wIG9mZnNldD0iMC41NzEiIHN0b3AtY29sb3I9IiM3NjVFNkQiLz48c3RvcCBvZmZzZXQ9IjAuNzE0IiBzdG9wLWNvbG9yPSIjRTc2RDIxIi8+PHN0b3Agb2Zmc2V0PSIwLjg1NyIgc3RvcC1jb2xvcj0iI0Y4NzEwRiIvPjxzdG9wIG9mZnNldD0iMS4wMDAiIHN0b3AtY29sb3I9IiNGNzZFMEQiLz48L2xpbmVhckdyYWRpZW50PgogICAgPGxpbmVhckdyYWRpZW50IGlkPSJsZzQiIGdyYWRpZW50VW5pdHM9InVzZXJTcGFjZU9uVXNlIiB4MT0iMzEuMCIgeTE9IjY1LjEiIHgyPSI1My42IiB5Mj0iMjI2LjIiPjxzdG9wIG9mZnNldD0iMC4wMDAiIHN0b3AtY29sb3I9IiMwMTNFOTciLz48c3RvcCBvZmZzZXQ9IjAuMTQzIiBzdG9wLWNvbG9yPSIjMDE0MTk4Ii8+PHN0b3Agb2Zmc2V0PSIwLjI4NiIgc3RvcC1jb2xvcj0iIzAxNDE5NyIvPjxzdG9wIG9mZnNldD0iMC40MjkiIHN0b3AtY29sb3I9IiMwMjNEOTIiLz48c3RvcCBvZmZzZXQ9IjAuNTcxIiBzdG9wLWNvbG9yPSIjMDEzNzhBIi8+PHN0b3Agb2Zmc2V0PSIwLjcxNCIgc3RvcC1jb2xvcj0iIzAxMzQ4NiIvPjxzdG9wIG9mZnNldD0iMC44NTciIHN0b3AtY29sb3I9IiMwMTMzODMiLz48c3RvcCBvZmZzZXQ9IjEuMDAwIiBzdG9wLWNvbG9yPSIjMDEyQjc2Ii8+PC9saW5lYXJHcmFkaWVudD4KICA8L2RlZnM+CiAgPHBhdGggZD0iTTAgMCBDMC42IC0wIDAuNiAtMCAzLjQgLTAuMSBDMTMuNyAtMC4xIDIwLjcgMi40IDI4LjMgOS41IEMzMS4yIDEyLjcgMzIuOSAxNi4yIDM0LjYgMjAuMSBDMzQuOCAyMC42IDM0LjggMjAuNiAzNS44IDIyLjggQzUwLjQgNTUuMiA2My4yIDg4LjUgNzYuMSAxMjEuNyBDNzYuMyAxMjIuMyA3Ni42IDEyMyA3Ni44IDEyMy43IEM3OC42IDEyOC4zIDgwLjMgMTMyLjggODIuMSAxMzcuNCBDODIuMiAxMzYuOCA4Mi4zIDEzNi4yIDgyLjUgMTM1LjYgQzgyLjkgMTMzLjcgODMuMyAxMzEuOCA4My43IDEyOS45IEM4NC4yIDEyNy42IDg0LjcgMTI1LjQgODUuMiAxMjMuMSBDODYuNiAxMTYuOCA4Ny45IDExMC41IDg5LjMgMTA0LjMgQzk0LjEgODIuMyA5NC4xIDgyLjMgOTYgNzMuMyBDOTkuMiA1OC40IDEwMi42IDQzLjYgMTA2LjEgMjguOSBDMTA2LjYgMjYuOCAxMDcuMSAyNC43IDEwNy42IDIyLjYgQzEwOC4zIDE5LjYgMTA5IDE2LjcgMTA5LjcgMTMuOCBDMTA5LjkgMTIuOSAxMTAuMSAxMiAxMTAuMyAxMS4xIEMxMTAuNCAxMC43IDExMC40IDEwLjcgMTEwLjkgOC42IEMxMTEuMSA3LjkgMTExLjMgNy4yIDExMS41IDYuNCBDMTEyLjEgNC40IDExMi4xIDQuNCAxMTQuMSAwLjQgQzEzMS4yIDAuNCAxNDguNCAwLjQgMTY2LjEgMC40IEMxNjcuMiA0LjkgMTY2LjUgNy45IDE2NS40IDEyLjIgQzE2NS4yIDEzIDE2NSAxMy44IDE2NC44IDE0LjUgQzE2NC4yIDE3LjEgMTYzLjYgMTkuNiAxNjMgMjIuMSBDMTYyLjYgMjMuOCAxNjIuMSAyNS42IDE2MS43IDI3LjMgQzE2MC45IDMwLjggMTYwIDM0LjMgMTU5LjIgMzcuOCBDMTU3LjggNDMuNCAxNTYuNSA0OSAxNTUuMiA1NC42IEMxNTIuMiA2Ny44IDE0OS4xIDgwLjkgMTQ2LjEgOTQgQzE0NS44IDk1LjEgMTQ1LjYgOTYuMSAxNDUuMyA5Ny4yIEMxNDIuMyAxMTAuMSAxMzkuMiAxMjMgMTM2LjEgMTM1LjkgQzEzNC41IDE0Mi40IDEzMyAxNDkgMTMxLjYgMTU1LjYgQzEzMS41IDE1Ni4xIDEzMS41IDE1Ni4xIDEzMSAxNTguNyBDMTMwLjggMTU5LjUgMTMwLjYgMTYwLjMgMTMwLjQgMTYxLjIgQzEyOSAxNjggMTI3LjUgMTc0LjcgMTI2IDE4MS41IEMxMjUuNSAxODMuNCAxMjUuMSAxODUuNCAxMjQuNiAxODcuNCBDMTE3LjkgMjE3LjQgMTE3LjkgMjE3LjQgMTA3LjEgMjI1LjIgQzk4LjMgMjMwLjUgODUuNCAyMzAuNSA3NS41IDIyOC4zIEM2Ni4yIDIyNS4xIDYxLjQgMjE4LjggNTYuOSAyMTAuMyBDNTUuOSAyMDguMiA1NC45IDIwNiA1NCAyMDMuOCBDNTMuNiAyMDMgNTMuMyAyMDIuMiA1Mi45IDIwMS4zIEM0OS4zIDE5My4xIDQ1LjggMTg0LjggNDIuMyAxNzYuNSBDNDIgMTc1LjggNDEuOCAxNzUuMiA0MS41IDE3NC41IEMzNy45IDE2NS45IDM0LjQgMTU3LjIgMzEuMSAxNDguNCBDLTEuMiA2NC40IC0xLjIgNjQuNCAtMjAuNSA1NS42IEMtMjYuOCA1My40IC0zMy4zIDUyLjQgLTM5LjkgNTEuNCBDLTM5LjIgNDcuNSAtMzguNCA0My42IC0zNy42IDM5LjcgQy0zNy4zIDM3LjcgLTM2LjkgMzUuOCAtMzYuNSAzMy44IEMtMzQuMyAyMi45IC0zMi4xIDEyLjIgLTIzLjMgNC44IEMtMTUuNiAwLjMgLTguOCAtMC4xIDAgMCBaIiB0cmFuc2Zvcm09InRyYW5zbGF0ZSg3OS45Mzc1LC0wLjQzNzUpIiBmaWxsPSJ1cmwoI2xnMCkiLz4KICA8cGF0aCBkPSJNMCAwIEMxMC45IC0wLjcgMjAuNSAzLjIgMjkgMTAgQzI5IDEwLjcgMjkgMTEuMyAyOSAxMiBDMjkuNiAxMi4yIDMwLjIgMTIuNSAzMC44IDEyLjcgQzM3LjkgMTYuOCA0MS42IDI4LjcgNDMuNiAzNi4zIEM0NC41IDQyLjYgNDMuOSA0OC4yIDQyLjUgNTQuNCBDNDIuNCA1NS4xIDQyLjIgNTUuOCA0Mi4xIDU2LjUgQzQxLjUgNTguOCA0MSA2MS4xIDQwLjUgNjMuMyBDNDAuMSA2NC45IDM5LjggNjYuNSAzOS40IDY4LjEgQzM4LjUgNzIuMyAzNy41IDc2LjQgMzYuNiA4MC42IEMzNS43IDg0LjMgMzQuOCA4OC4xIDM0IDkxLjkgQzMzIDk2LjIgMzIgMTAwLjUgMzEgMTA0LjggQzI5LjMgMTEyLjUgMjcuNSAxMjAuMSAyNS44IDEyNy44IEMyNS42IDEyOC42IDI1LjUgMTI5LjQgMjUuMyAxMzAuMyBDMjQuNCAxMzQuMiAyMy42IDEzOC4xIDIyLjcgMTQyIEMyMi40IDE0My40IDIyLjEgMTQ0LjkgMjEuOCAxNDYuMyBDMjEuNSAxNDcuNSAyMS4yIDE0OC43IDIwLjkgMTUwIEMxOS44IDE1NSAxOC40IDE2MCAxNyAxNjUgQy0wLjggMTY1IC0xOC42IDE2NSAtMzcgMTY1IEMtMzYuNCAxNjAuNyAtMzUuOCAxNTYuOCAtMzQuOCAxNTIuNiBDLTM0LjYgMTUxLjYgLTM0LjQgMTUwLjYgLTM0LjEgMTQ5LjUgQy0zMy45IDE0OC41IC0zMy42IDE0Ny40IC0zMy40IDE0Ni4zIEMtMzMuMSAxNDUuMSAtMzIuOCAxNDQgLTMyLjYgMTQyLjggQy0zMiAxNDAuMyAtMzEuNSAxMzcuOSAtMzAuOSAxMzUuNCBDLTMwIDEzMS41IC0yOS4xIDEyNy42IC0yOC4yIDEyMy43IEMtMjguMSAxMjMuMSAtMjcuOSAxMjIuNCAtMjcuOCAxMjEuOCBDLTI3LjUgMTIwLjUgLTI3LjIgMTE5LjEgLTI2LjkgMTE3LjggQy0yNi40IDExNS45IC0yNiAxMTMuOSAtMjUuNSAxMTIgQy0yMy4xIDEwMS43IC0yMC44IDkxLjQgLTE4LjUgODEuMSBDLTE4LjMgODAuMyAtMTguMiA3OS42IC0xOCA3OC44IEMtMTYgNjkuOCAtMTMuOSA2MC44IC0xMS45IDUxLjggQy0xMC43IDQ2LjQgLTkuNSA0MS4xIC04LjMgMzUuNyBDLTcuNiAzMi40IC02LjkgMjkgLTYuMSAyNS43IEMtNS4zIDIyIC00LjUgMTguMyAtMy42IDE0LjYgQy0zLjQgMTMuNCAtMy4xIDEyLjMgLTIuOSAxMS4yIEMtMi43IDEwLjYgLTIuNyAxMC42IC0yLjIgOCBDLTIuMSA3LjYgLTIuMSA3LjYgLTEuNiA1LjMgQy0xIDMgLTEgMyAwIDAgWiIgdHJhbnNmb3JtPSJ0cmFuc2xhdGUoMzcuMCw2My4wKSIgZmlsbD0idXJsKCNsZzQpIi8+Cjwvc3ZnPg==" />
+<!-- 主题要在第一次绘制前定下来，否则浅色用户每次打开都会先闪一下深色。
+     这段必须是独立的内联 ES5，且放在 <style> 之前。 -->
+<script>
+  try { if (localStorage.getItem('ne-hwsim-theme') === 'light') document.documentElement.setAttribute('data-theme', 'light'); } catch (e) {}
+</script>
 <style>
   :root{
     --bg:#0d1117; --bg2:#161b22; --bg3:#1c2128; --line:#30363d;
@@ -284,7 +289,7 @@
     position:absolute;top:0;right:0;bottom:0;left:0;display:flex;flex-direction:column;
     align-items:center;justify-content:center;gap:10px;color:var(--tx3);pointer-events:none;
   }
-  .empty b{font-size:15px;color:var(--tx2);font-weight:600}
+  .empty b{font-size:15px;color:#b7c4d4;font-weight:600;letter-spacing:.2px}
   .empty p{font-size:12px;line-height:1.9}
   .empty .empty-tip{color:var(--tx3);opacity:.85}
   .empty .empty-logo{width:172px;height:auto;opacity:.92;margin-bottom:2px}
@@ -542,13 +547,14 @@
     /* 顶栏：品牌只留标识（NewE 图形本身已经是品牌），其余按钮收进「更多」。
        这里必须保证内容 <= 屏宽：一旦撑宽，手机浏览器会把整个视口放大来"装下"，
        表现就是所有东西都变小、位置全乱。 */
-    .topbar{height:46px;flex-basis:46px;gap:8px;padding:0 10px;overflow:hidden}
-    .brand{gap:7px}
-    .brand .brand-logo{height:20px}
-    .brand .brand-name{display:none}
+    .topbar{height:46px;flex-basis:46px;gap:7px;padding:0 9px;overflow:hidden}
+    .brand{gap:6px;min-width:0}
+    .brand .brand-logo{height:19px}
+    /* 五个字（12px × 5 = 60px）在 390 宽的机器上放得下；按钮同步收一点内边距让位 */
+    .brand .brand-name{display:block;font-size:12px;line-height:1;letter-spacing:0;flex:0 0 auto}
     .brand small{display:none}
-    .tb-actions{gap:6px}
-    .tb-actions .btn{padding:8px 10px;font-size:13px}
+    .tb-actions{gap:5px}
+    .tb-actions .btn{padding:7px 8px;font-size:12.5px}
     .only-wide{display:none}
     .only-narrow{display:inline-flex}
 
@@ -657,6 +663,444 @@
   .compat-tip .cx{
     margin-left:auto;flex:0 0 auto;padding:0 4px;cursor:pointer;color:#c9a35a;
   }
+  /* =======================================================================
+     视觉主题层（v2.2）：立体 + 冷色科技感
+     ----------------------------------------------------------------------
+     设计口径：所谓"3D"只做三件事 —— 顶部 1px 高光、分层落影、悬停抬升/按下内陷。
+     不做斜面浮雕和高光扫过（那套在暗色界面里显脏，也容易像 2010 年的拟物按钮）。
+     ❗只改颜色 / 渐变 / 阴影 / 圆角 / transform，**不动任何尺寸**：
+        卡片几何由 --card-w / --port-h / --head-h 驱动，JS 的 portCenter() 依赖它们，
+        这里改尺寸会让连线偏离端口中心（browser-test 有对齐断言）。
+     ======================================================================= */
+  :root{
+    --bg:#070a0f; --bg2:#0f151e; --bg3:#161e29; --line:#26313d; --line2:#35455a;
+    --tx:#e9eff8; --tx2:#94a3b8; --tx3:#6b7a90;
+    --cy2:#22d3ee;
+    --hl:inset 0 1px 0 rgba(255,255,255,.07);
+    --hl-2:inset 0 1px 0 rgba(255,255,255,.12);
+    --sh-1:var(--hl), 0 1px 2px rgba(0,0,0,.5), 0 8px 22px rgba(0,0,0,.42);
+    --sh-1h:var(--hl-2), 0 2px 6px rgba(0,0,0,.5), 0 16px 34px rgba(0,0,0,.5);
+    --sh-2:var(--hl-2), 0 24px 64px rgba(0,0,0,.7);
+    --sh-press:inset 0 2px 6px rgba(0,0,0,.55);
+    --grad-panel:linear-gradient(180deg,#18212d 0,#111823 100%);
+    --grad-accent:linear-gradient(180deg,#3f8efb 0,#2468d4 100%);
+  }
+
+  /* ---------- 背景：一层极淡冷光，避免大面积纯黑 ---------- */
+  body{background-image:radial-gradient(1200px 600px at 12% -8%, rgba(47,129,247,.10), transparent 62%)}
+
+  /* ---------- 顶栏 / 侧栏：面板渐变 + 极淡内高光 ---------- */
+  .topbar{
+    background:var(--grad-panel);
+    box-shadow:inset 0 -1px 0 rgba(255,255,255,.03), 0 6px 20px rgba(0,0,0,.35);
+    position:relative;z-index:3;
+  }
+  .side{background:var(--grad-panel);box-shadow:inset -1px 0 0 rgba(255,255,255,.02)}
+
+  /* ---------- 按钮：三层立体，按下真下沉 ---------- */
+  .btn{
+    border-color:var(--line2);
+    background:linear-gradient(180deg,#1e2836 0,#151d27 100%);
+    box-shadow:var(--hl), 0 1px 2px rgba(0,0,0,.45);
+    transition:border-color .12s, background .12s, box-shadow .12s, transform .08s;
+  }
+  .btn:hover{border-color:#4a5f75;background:linear-gradient(180deg,#26323f 0,#1a2430 100%)}
+  .btn:active{transform:translateY(1px);box-shadow:var(--sh-press)}
+  .btn.primary{
+    background:var(--grad-accent);border-color:#4a90f2;
+    box-shadow:inset 0 1px 0 rgba(255,255,255,.3), 0 2px 8px rgba(47,129,247,.35);
+  }
+  .btn.primary:hover{background:linear-gradient(180deg,#4f9bff 0,#2e77e6 100%);box-shadow:inset 0 1px 0 rgba(255,255,255,.35), 0 3px 12px rgba(47,129,247,.45)}
+  .btn.primary:active{transform:translateY(1px);box-shadow:inset 0 2px 6px rgba(0,0,0,.4)}
+  .btn.on{background:linear-gradient(180deg,#15304f 0,#0f2438 100%);border-color:#3b7bd4;color:#8ec5ff}
+  .btn.on:hover{background:linear-gradient(180deg,#1a3a5e 0,#12293f 100%)}
+
+  /* ---------- 设备库：卡片抬起，图标底座做成"凹槽" ---------- */
+  .pal{
+    border-radius:9px;
+    background:linear-gradient(180deg,#1a2431 0,#131b25 100%);
+    box-shadow:var(--hl), 0 1px 2px rgba(0,0,0,.4);
+    transition:border-color .12s, box-shadow .12s, transform .1s;
+  }
+  .pal:hover{
+    border-color:#3f6ea8;transform:translateY(-1px);
+    background:linear-gradient(180deg,#1f2b3a 0,#161f2b 100%);
+    box-shadow:var(--hl-2), 0 4px 14px rgba(0,0,0,.45), 0 0 0 1px rgba(47,129,247,.18);
+  }
+  .pal:active{transform:translateY(0);box-shadow:var(--sh-press)}
+  .pal .ic{
+    background:linear-gradient(180deg,#0b1017 0,#131a24 100%);
+    border-color:#1f2a37;box-shadow:inset 0 1px 3px rgba(0,0,0,.6);
+  }
+  .pal:hover .ic{color:#79b8ff;border-color:#2a5a9e;box-shadow:inset 0 1px 3px rgba(0,0,0,.6), 0 0 12px rgba(47,129,247,.25)}
+
+  /* ---------- 画布：三团光斑 + 点阵，比纯色更像"工作面" ---------- */
+  .stage{
+    background:
+      radial-gradient(820px 460px at 14% -12%, rgba(47,129,247,.20), transparent 62%),
+      radial-gradient(680px 400px at 92% 4%, rgba(34,211,238,.12), transparent 64%),
+      radial-gradient(620px 420px at 48% 112%, rgba(163,113,247,.10), transparent 62%),
+      radial-gradient(circle at 1px 1px, rgba(120,160,200,.16) 1px, transparent 0) 0 0/22px 22px,
+      #070a0f;
+  }
+
+  /* ---------- 画布上的设备卡片：浮起来 + 顶部类型色条 ---------- */
+  /* ❗卡片不叠 inset 高光：inset 阴影的内圆角比外框半径小 1px（10−1），
+     在左右上角必然差一条缝，看起来就是「高光和边框没对齐」。
+     厚度交给落影 + 顶部类型色条，反而更干净。 */
+  /* ❗hover 也不做 translateY：卡片是连线的锚点，抬起来 1px 线不会跟着走，
+     端口和线头就会错开——拓扑图里「整齐」比「弹一下」重要。 */
+  .card{
+    border-radius:10px;border-color:#2b3846;
+    background:linear-gradient(180deg,#1b2431 0,#121a24 var(--head-h));
+    box-shadow:0 1px 2px rgba(0,0,0,.5), 0 10px 26px rgba(0,0,0,.45);
+    transition:border-color .12s, box-shadow .12s;
+  }
+  .card:hover{
+    border-color:#3b4a5c;
+    box-shadow:0 3px 8px rgba(0,0,0,.5), 0 18px 36px rgba(0,0,0,.5);
+  }
+  .card.sel{
+    border-color:var(--cy);
+    box-shadow:0 0 0 1px rgba(47,129,247,.6),
+               0 0 26px rgba(47,129,247,.28), 0 14px 32px rgba(0,0,0,.5);
+  }
+  /* 顶部类型色条 = 「整块卡片外轮廓」的一条色带，靠 mask 只留顶上 2px。
+     为什么不用 height:2px + border-radius：元素高只有 2px 时，浏览器会把 10px 半径压扁成 1px，
+     两端就变成直角的色块，和外框的圆弧差一截（上一版看起来"不齐"就是这个）。
+     现在轮廓完全复制卡片外框（含 10px 圆角），只在竖直方向裁 2px，弧线自动吻合。 */
+  .card::before{
+    content:'';position:absolute;left:-1px;right:-1px;top:-1px;bottom:-1px;
+    border-radius:10px;background:linear-gradient(90deg,#2f81f7,#22d3ee);
+    -webkit-mask-image:linear-gradient(180deg,#000 0,#000 2px,transparent 2px);
+    mask-image:linear-gradient(180deg,#000 0,#000 2px,transparent 2px);
+    pointer-events:none;
+  }
+  .card[data-type="switch"][data-l2]::before{background:linear-gradient(90deg,#22d3ee,#3fb950)}
+  .card[data-type="router"]::before{background:linear-gradient(90deg,#a371f7,#2f81f7)}
+  .card[data-type="firewall"]::before{background:linear-gradient(90deg,#f85149,#d29922)}
+  .card[data-type="server"]::before{background:linear-gradient(90deg,#3fb950,#22d3ee)}
+  .card[data-type="pc"]::before{background:linear-gradient(90deg,#3d4b5c,#7d8b9c)}
+  /* 头部与端口区之间只留一条暗线（凹下去的感觉），别再叠亮线——两条叠在一起会发灰 */
+  .card .head{box-shadow:inset 0 -1px 0 rgba(0,0,0,.35)}
+  .card .head .tag{background:#1b2532;border-color:#2c3846;color:#9fb0c4}
+  .card .head .x:hover{background:#3a1416}
+  /* 端口区压得更暗一点，端口方块就"托"出来了 */
+  .ports{
+    background:linear-gradient(180deg,rgba(0,0,0,.28),rgba(0,0,0,.16));
+    border-radius:0 0 9px 9px;
+  }
+  /* 端口：每个都是小块立体件 —— 上高光、下落影 */
+  .port{
+    background:linear-gradient(180deg,#3b4655 0,#2a323d 100%);border-color:#4a5766;
+    box-shadow:inset 0 1px 0 rgba(255,255,255,.14), 0 1px 1px rgba(0,0,0,.45);
+  }
+  .port:hover{background:linear-gradient(180deg,#4a95f8,#2f6fd0);border-color:#79b8ff;box-shadow:inset 0 1px 0 rgba(255,255,255,.35), 0 0 10px rgba(47,129,247,.5)}
+  .port.up{
+    background:linear-gradient(180deg,#2ea043 0,#1c6b33 100%);border-color:#3fb950;
+    box-shadow:inset 0 1px 0 rgba(255,255,255,.28), 0 0 7px rgba(63,185,80,.45);
+  }
+  .port.shut{background:linear-gradient(180deg,#8b3a3a 0,#5d2424 100%);border-color:#b04a4a}
+  .port.trunk{background:linear-gradient(180deg,#4b3a75 0,#332652 100%);border-color:var(--pu)}
+  .port.pend{
+    background:linear-gradient(180deg,#f0c674,#d29922);border-color:#f6d98f;
+    box-shadow:inset 0 1px 0 rgba(255,255,255,.4), 0 0 12px rgba(210,153,34,.75);
+  }
+  .port .lab{background:#0b1017;border:1px solid var(--line);box-shadow:0 2px 6px rgba(0,0,0,.5)}
+
+  /* ---------- 连线：靠提亮代替滤镜 ---------- */
+  /* ❗不要给每条线都加 filter:drop-shadow —— 拖动卡片时所有连线每帧重渲染，
+     手机（尤其 24 口满配）会明显掉帧。只给选中那一条加，代价可忽略。 */
+  .wire{opacity:.92}
+  .wire-g.sel .wire{filter:drop-shadow(0 0 6px rgba(47,129,247,.55))}
+
+  /* ---------- 左栏说明面板 ---------- */
+  .howto{
+    background:linear-gradient(180deg,#111925 0,#0c1219 100%);
+    box-shadow:var(--hl), 0 4px 14px rgba(0,0,0,.35);
+  }
+  .howto li i{background:linear-gradient(180deg,#1a2331,#121a25);box-shadow:var(--hl)}
+
+  /* ---------- 缩放条 / 注释按钮：玻璃浮层 ---------- */
+  .zoombar button,.note-btn{
+    border-color:var(--line2);
+    background:linear-gradient(180deg,rgba(30,40,54,.9),rgba(17,24,33,.94));
+    backdrop-filter:blur(8px);box-shadow:var(--hl), 0 4px 14px rgba(0,0,0,.45);
+  }
+  .zoombar button:hover,.note-btn:hover{border-color:#3f6ea8;color:var(--tx)}
+  .zoombar button:active,.note-btn:active{transform:translateY(1px);box-shadow:var(--sh-press)}
+
+  /* ---------- 命令行：更深的地板 + 抬起当前标签 ---------- */
+  .term{background:linear-gradient(180deg,#0e141d 0,#0a0f16 100%);border-top-color:var(--line2)}
+  .tabs{background:linear-gradient(180deg,#141c26 0,#0f1620 100%)}
+  .tab{border-right-color:#1e2833;color:#8b9aad}
+  .tab:hover{background:#18222e;color:var(--tx)}
+  .tab.on{
+    background:linear-gradient(180deg,#101822 0,#0d141c 100%);color:var(--tx);
+    box-shadow:inset 0 2px 0 var(--cy), 0 -1px 0 rgba(255,255,255,.03);
+  }
+  .screen{color:#cdd8e5}
+  .inrow{background:linear-gradient(180deg,#101822 0,#0c121a 100%)}
+
+  /* ---------- 弹窗：玻璃 + 外发光；标题栏一道极淡分隔 ---------- */
+  .modal{
+    border-color:#2e3a49;
+    background:linear-gradient(180deg,rgba(24,33,45,.97) 0,rgba(13,19,27,.98) 100%);
+    backdrop-filter:blur(16px);
+    box-shadow:var(--hl), 0 30px 80px rgba(0,0,0,.75), 0 0 0 1px rgba(255,255,255,.02);
+  }
+  .modal .mh{background:linear-gradient(180deg,rgba(255,255,255,.035),transparent)}
+
+  /* ---------- 实验卡片 / 筛选 chip ---------- */
+  .labcard{
+    background:linear-gradient(180deg,#19222e 0,#121a24 100%);
+    box-shadow:var(--hl), 0 1px 2px rgba(0,0,0,.4);
+  }
+  .labcard:hover{background:linear-gradient(180deg,#1e2a38 0,#15202c 100%);box-shadow:var(--hl-2), 0 6px 16px rgba(0,0,0,.45)}
+  .chip{background:linear-gradient(180deg,#1a2331 0,#131b25 100%);box-shadow:var(--hl)}
+  .chip.on{background:linear-gradient(180deg,#1d3350,#0f2438 100%);border-color:#2f6bb5;color:#8ec5ff}
+  .cand{background:linear-gradient(180deg,#1a2331 0,#131b25 100%);box-shadow:var(--hl)}
+  .cand:active{background:linear-gradient(180deg,#1f2b3a,#16202c)}
+  .inrow input:focus{outline:none}
+  .inrow:focus-within{box-shadow:inset 0 1px 0 rgba(47,129,247,.35)}
+  .labsearch:focus{border-color:var(--cy);box-shadow:0 0 0 3px rgba(47,129,247,.16)}
+
+  /* ---------- 提示条 ---------- */
+  .toast{
+    border:1px solid #2e3a49;
+    background:linear-gradient(180deg,rgba(26,36,49,.98),rgba(14,20,28,.98));
+    box-shadow:var(--hl-2), 0 16px 40px rgba(0,0,0,.6);
+  }
+
+  /* ---------- 滚动条统一成细条 ---------- */
+  ::-webkit-scrollbar{width:8px;height:8px}
+  ::-webkit-scrollbar-thumb{background:#2b3746;border-radius:4px}
+  ::-webkit-scrollbar-thumb:hover{background:#3b4b5e}
+  ::-webkit-scrollbar-track{background:transparent}
+  /* ---------- 画布右下角 HUD：设备 / 连线 / 缩放 + 主题切换 ---------- */
+  /* 刻意做得小、低对比：它只是"看一眼就知道现状"的角标，不能跟拓扑抢注意力 */
+  .hud{position:absolute;right:10px;bottom:10px;z-index:6;display:flex;align-items:center;gap:6px}
+  .hud-stat{
+    display:flex;align-items:center;gap:7px;height:28px;padding:0 10px;border-radius:9px;
+    font-size:11px;color:var(--tx2);font-variant-numeric:tabular-nums;white-space:nowrap;
+    border:1px solid var(--line2);backdrop-filter:blur(8px);
+    background:linear-gradient(180deg,rgba(30,40,54,.86),rgba(17,24,33,.9));
+    box-shadow:var(--hl), 0 4px 14px rgba(0,0,0,.4);
+  }
+  .hud-stat b{color:var(--tx);font-weight:600;font-size:11.5px}
+  .hud-stat .hsep{width:1px;height:10px;background:var(--line2);opacity:.7}
+  .hud-btn{
+    width:28px;height:28px;border-radius:9px;flex:0 0 auto;
+    display:flex;align-items:center;justify-content:center;
+    border:1px solid var(--line2);color:var(--tx2);backdrop-filter:blur(8px);
+    background:linear-gradient(180deg,rgba(30,40,54,.9),rgba(17,24,33,.94));
+    box-shadow:var(--hl), 0 4px 14px rgba(0,0,0,.4);
+    transition:border-color .12s, color .12s, transform .08s;
+  }
+  .hud-btn svg{width:15px;height:15px;fill:none;stroke:currentColor;stroke-width:1.5;stroke-linecap:round}
+  .hud-btn:hover{border-color:#3f6ea8;color:var(--tx)}
+  .hud-btn:active{transform:translateY(1px)}
+  /* 触摸端右下角本来就有缩放按钮：把缩放条抬到 HUD 上面，两者不打架 */
+  .zoombar{bottom:52px}
+
+  /* 连线按状态上色（原来是行内 stroke，改成 class 才能跟着主题变） */
+  .wire.alive{stroke:#3fb950}
+  .wire.dead{stroke:#6e7681}
+  .wire-dot.alive{fill:#3fb950}
+  .wire-dot.dead{fill:#6e7681}
+
+  /* 极窄屏：五个字 + 三个按钮放不下，退回到只留标识（否则会把视口撑宽） */
+  @media (max-width:365px){ .brand .brand-name{display:none} }
+
+  @media (max-width:760px){
+    .hud{right:8px;bottom:8px;gap:5px}
+    .hud-stat{height:26px;padding:0 8px;font-size:10.5px;gap:6px}
+    .hud-stat b{font-size:11px}
+    .hud-btn{width:26px;height:26px;border-radius:8px}
+    .hud-btn svg{width:14px;height:14px}
+    .zoombar{bottom:46px}
+  }
+
+  /* =======================================================================
+     浅色主题（Windows 浅灰调）
+     ----------------------------------------------------------------------
+     只覆盖"颜色/渐变/阴影"，不动尺寸 —— 深色那套几何变量继续生效。
+     用 html[data-theme="light"] 前缀，特异度高于原来的单类选择器，不用 !important。
+     ======================================================================= */
+  html[data-theme="light"]{
+    --bg:#eef1f5; --bg2:#ffffff; --bg3:#f4f7fa; --line:#d5dce5; --line2:#c2ccd9;
+    --tx:#17212b; --tx2:#4c5a6a; --tx3:#788495;
+    --hl:inset 0 1px 0 #fff;
+    --hl-2:inset 0 1px 0 #fff;
+    --sh-1:0 1px 2px rgba(16,24,40,.08), 0 6px 16px rgba(16,24,40,.08);
+    --sh-1h:0 2px 6px rgba(16,24,40,.10), 0 12px 26px rgba(16,24,40,.12);
+    --sh-2:0 18px 48px rgba(16,24,40,.22);
+    --sh-press:inset 0 2px 5px rgba(16,24,40,.14);
+    --grad-panel:linear-gradient(180deg,#ffffff 0,#f1f5f9 100%);
+    --grad-accent:linear-gradient(180deg,#3f8efb 0,#2f76e0 100%);
+  }
+  html[data-theme="light"] body{background-image:radial-gradient(1200px 600px at 12% -8%, rgba(47,129,247,.07), transparent 62%)}
+  html[data-theme="light"] .topbar{box-shadow:inset 0 -1px 0 #fff, 0 2px 10px rgba(16,24,40,.06)}
+  html[data-theme="light"] .side{box-shadow:inset -1px 0 0 #fff}
+
+  /* 按钮 */
+  html[data-theme="light"] .btn{
+    background:linear-gradient(180deg,#ffffff 0,#eef2f7 100%);border-color:#c8d2e0;color:#1b2733;
+    box-shadow:var(--hl), 0 1px 2px rgba(16,24,40,.08);
+  }
+  html[data-theme="light"] .btn:hover{background:linear-gradient(180deg,#f8fbff 0,#e6ecf5 100%);border-color:#9db2cc}
+  html[data-theme="light"] .btn.on{background:linear-gradient(180deg,#e8f1ff 0,#d6e5fb 100%);border-color:#8ab4f0;color:#124a9e}
+  html[data-theme="light"] .btn.danger{color:#b42318;border-color:#eeb2ab}
+  html[data-theme="light"] .btn.danger:hover{background:#fdecea;border-color:#d96a5f;color:#9a1c12}
+
+  /* 设备库 */
+  html[data-theme="light"] .pal{
+    background:linear-gradient(180deg,#ffffff 0,#f5f8fb 100%);border-color:#dbe3ec;
+    box-shadow:var(--hl), 0 1px 2px rgba(16,24,40,.06);
+  }
+  html[data-theme="light"] .pal:hover{
+    background:linear-gradient(180deg,#f8fbff 0,#eef4fb 100%);border-color:#9dc0ea;
+    box-shadow:var(--hl), 0 6px 16px rgba(16,24,40,.12), 0 0 0 1px rgba(47,129,247,.10);
+  }
+  html[data-theme="light"] .pal .ic{
+    background:linear-gradient(180deg,#f8fafc 0,#e9eef5 100%);border-color:#dbe3ec;color:#4c5a6a;
+    box-shadow:inset 0 1px 2px rgba(16,24,40,.08);
+  }
+  html[data-theme="light"] .pal:hover .ic{color:#1f5fbf;border-color:#9dc0ea;box-shadow:inset 0 1px 2px rgba(16,24,40,.08)}
+
+  /* 画布 */
+  html[data-theme="light"] .stage{
+    background:
+      radial-gradient(820px 460px at 14% -12%, rgba(47,129,247,.10), transparent 62%),
+      radial-gradient(680px 400px at 92% 4%, rgba(34,211,238,.08), transparent 64%),
+      radial-gradient(circle at 1px 1px, rgba(90,120,150,.22) 1px, transparent 0) 0 0/22px 22px,
+      #eef1f5;
+  }
+  html[data-theme="light"] .empty b{color:#3b4a5c}
+  html[data-theme="light"] .empty .empty-logo{opacity:.8}
+
+  /* 设备卡片 */
+  /* 浅色同样不叠顶部高光：白底上的 1px 白线既看不出来，又会在圆角处留缝 */
+  html[data-theme="light"] .card{
+    border-color:#d3dce7;
+    background:linear-gradient(180deg,#ffffff 0,#f7fafc var(--head-h));
+    box-shadow:0 1px 2px rgba(16,24,40,.10), 0 8px 20px rgba(16,24,40,.10);
+  }
+  html[data-theme="light"] .card:hover{
+    border-color:#a9bcd2;
+    box-shadow:0 3px 8px rgba(16,24,40,.12), 0 16px 30px rgba(16,24,40,.14);
+  }
+  html[data-theme="light"] .card.sel{
+    border-color:#2f81f7;
+    box-shadow:0 0 0 1px rgba(47,129,247,.55), 0 0 22px rgba(47,129,247,.16),
+               0 12px 28px rgba(16,24,40,.14);
+  }
+  html[data-theme="light"] .card .head{box-shadow:inset 0 -1px 0 rgba(16,24,40,.06)}
+  html[data-theme="light"] .card .head .tag{background:#eef3f9;border-color:#d7e0ea;color:#4c5a6a}
+  html[data-theme="light"] .card .head .x:hover{background:#fdecea;color:#b42318}
+  html[data-theme="light"] .ports{
+    background:linear-gradient(180deg,rgba(16,24,40,.05),rgba(16,24,40,.02));
+  }
+  /* 端口：浅色下"未连通"要明显比"已连通"淡，否则整排绿块糊成一条 */
+  html[data-theme="light"] .port{
+    background:linear-gradient(180deg,#e9eff6 0,#cdd7e3 100%);border-color:#b7c2d0;
+    box-shadow:inset 0 1px 0 #fff, 0 1px 1px rgba(16,24,40,.10);
+  }
+  html[data-theme="light"] .port:hover{
+    background:linear-gradient(180deg,#5aa2ff,#2f81f7);border-color:#2f81f7;
+    box-shadow:inset 0 1px 0 rgba(255,255,255,.5), 0 0 8px rgba(47,129,247,.4);
+  }
+  html[data-theme="light"] .port.up{
+    background:linear-gradient(180deg,#4ec46a 0,#2ea043 100%);border-color:#2ea043;
+    box-shadow:inset 0 1px 0 rgba(255,255,255,.45), 0 0 6px rgba(46,160,67,.35);
+  }
+  html[data-theme="light"] .port.shut{background:linear-gradient(180deg,#e88b84,#d4564c);border-color:#c0453c}
+  html[data-theme="light"] .port.trunk{background:linear-gradient(180deg,#b9a4e8,#8f74cf);border-color:#8f74cf}
+  html[data-theme="light"] .port.pend{
+    background:linear-gradient(180deg,#f6cf7e,#e0a83a);border-color:#d29922;
+    box-shadow:inset 0 1px 0 rgba(255,255,255,.5), 0 0 10px rgba(210,153,34,.45);
+  }
+  html[data-theme="light"] .port .lab{background:#fff;border-color:#d7e0ea;color:#3b4a5c;box-shadow:0 2px 6px rgba(16,24,40,.14)}
+  /* 连线：浅底上原来的亮绿太淡，压深一档 */
+  html[data-theme="light"] .wire.alive{stroke:#2ea043}
+  html[data-theme="light"] .wire.dead{stroke:#9aa7b6}
+  html[data-theme="light"] .wire-dot.alive{fill:#2ea043}
+  html[data-theme="light"] .wire-dot.dead{fill:#9aa7b6}
+
+  /* 浮动按钮 / HUD */
+  html[data-theme="light"] .zoombar button,
+  html[data-theme="light"] .note-btn,
+  html[data-theme="light"] .hud-btn,
+  html[data-theme="light"] .hud-stat{
+    background:linear-gradient(180deg,rgba(255,255,255,.94),rgba(240,245,250,.96));
+    border-color:#c8d2e0;color:#4c5a6a;
+    box-shadow:var(--hl), 0 4px 14px rgba(16,24,40,.14);
+  }
+  html[data-theme="light"] .hud-stat b{color:#17212b}
+  html[data-theme="light"] .hud-stat .hsep{background:#c8d2e0}
+  html[data-theme="light"] .zoombar button:hover,
+  html[data-theme="light"] .note-btn:hover,
+  html[data-theme="light"] .hud-btn:hover{border-color:#9db2cc;color:#17212b}
+
+  /* 命令行 */
+  html[data-theme="light"] .term{background:linear-gradient(180deg,#ffffff 0,#f7fafc 100%);border-top-color:var(--line2)}
+  html[data-theme="light"] .tabs{background:linear-gradient(180deg,#f7fafc 0,#eef2f7 100%)}
+  html[data-theme="light"] .tab{border-right-color:#e3e9f0;color:#5b6a7c}
+  html[data-theme="light"] .tab:hover{background:#eef4fb;color:#17212b}
+  html[data-theme="light"] .tab.on{
+    background:linear-gradient(180deg,#ffffff 0,#fbfdff 100%);color:#17212b;
+    box-shadow:inset 0 2px 0 #2f81f7;
+  }
+  html[data-theme="light"] .screen{color:#26313d;background:#fff}
+  /* ❗所有输出行都带 .ln 这个类，基础色 #c9d1d9 是给深底用的；不覆盖的话浅色下整屏发白 */
+  html[data-theme="light"] .ln{color:#26313d}
+  html[data-theme="light"] .ln.cmd{color:#0f1720}
+  html[data-theme="light"] .ln.hl{color:#1a5fb4}
+  html[data-theme="light"] .ln.dim{color:#788495}
+  html[data-theme="light"] .ln.ok{color:#1f7a33}
+  html[data-theme="light"] .ln.err{color:#b42318}
+  html[data-theme="light"] .ln.warn{color:#8a5a00}
+  html[data-theme="light"] .inrow{background:linear-gradient(180deg,#ffffff 0,#f7fafc 100%)}
+  html[data-theme="light"] .cands{background:#f7fafc;border-top-color:var(--line2)}
+  html[data-theme="light"] .cand{background:linear-gradient(180deg,#fff,#f1f5fa);border-color:#d5dce5;color:#4c5a6a}
+
+  /* 弹窗 / 实验列表 / 输入 */
+  html[data-theme="light"] .mask{background:rgba(16,24,40,.42)}
+  html[data-theme="light"] .modal{
+    border-color:#d3dce7;
+    background:linear-gradient(180deg,rgba(255,255,255,.98),rgba(246,249,252,.99));
+    box-shadow:var(--hl), 0 24px 60px rgba(16,24,40,.22);
+  }
+  html[data-theme="light"] .modal .mh{background:linear-gradient(180deg,rgba(16,24,40,.03),transparent)}
+  html[data-theme="light"] .labcard{
+    background:linear-gradient(180deg,#ffffff 0,#f7fafc 100%);border-color:#dbe3ec;
+    box-shadow:var(--hl), 0 1px 2px rgba(16,24,40,.06);
+  }
+  html[data-theme="light"] .labcard:hover{background:linear-gradient(180deg,#f9fcff 0,#eef4fb 100%);border-color:#9dc0ea}
+  html[data-theme="light"] .chip{background:linear-gradient(180deg,#fff,#f1f5fa);border-color:#d5dce5;color:#4c5a6a}
+  html[data-theme="light"] .chip.on{background:linear-gradient(180deg,#e8f1ff,#d6e5fb);border-color:#8ab4f0;color:#124a9e}
+  html[data-theme="light"] .labsearch{background:#fff;border-color:#d5dce5;color:#17212b}
+  html[data-theme="light"] .labsearch::placeholder{color:#9aa7b6}
+  html[data-theme="light"] .howto{background:linear-gradient(180deg,#f8fafc 0,#eef2f7 100%);box-shadow:var(--hl), 0 4px 14px rgba(16,24,40,.06)}
+  html[data-theme="light"] .howto li i{background:linear-gradient(180deg,#fff,#eef2f7)}
+  html[data-theme="light"] .toast{
+    border-color:#d3dce7;color:#17212b;
+    background:linear-gradient(180deg,rgba(255,255,255,.98),rgba(244,248,252,.98));
+    box-shadow:var(--hl), 0 16px 40px rgba(16,24,40,.18);
+  }
+  html[data-theme="light"] .toast.bad{border-color:#eeb2ab;color:#9a1c12}
+  html[data-theme="light"] .toast.good{border-color:#8fd6a0;color:#18652c}
+
+  /* 滚动条 / 选中 */
+  html[data-theme="light"] .inrow input::placeholder{color:#9aa7b6}
+  html[data-theme="light"] .btn.ghost{background:transparent;border-color:transparent;box-shadow:none}
+  html[data-theme="light"] .zoombar button:active,
+  html[data-theme="light"] .note-btn:active,
+  html[data-theme="light"] .hud-btn:active{background:linear-gradient(180deg,#e9eff6,#dde6f0)}
+  html[data-theme="light"] .screen::-webkit-scrollbar-thumb,
+  html[data-theme="light"] .side::-webkit-scrollbar-thumb{background:#c6d0dc}
+  html[data-theme="light"] ::-webkit-scrollbar-thumb{background:#c6d0dc}
+  html[data-theme="light"] ::-webkit-scrollbar-thumb:hover{background:#a9b6c6}
 </style>
 <script>
 /* 旧浏览器补丁：String.prototype.padStart / padEnd（Chrome 57+ 才有）。
@@ -692,6 +1136,11 @@
      为什么不用 emoji：同一个 emoji 在 Windows / Android / iOS 上画法完全不同（有彩色有平面），
      跟这套冷灰界面不是一个语言；而单文件又不能引外部图标库，所以自己画最省。 -->
 <svg class="ui-icons" width="0" height="0" aria-hidden="true" focusable="false">
+  <!-- 深浅主题切换：一个圆，左半实心右半空心。比"太阳/月亮"更中性，也不占两个图标的位置 -->
+  <symbol id="ic-theme" viewBox="0 0 20 20">
+    <circle cx="10" cy="10" r="7.3" />
+    <path d="M10 2.7a7.3 7.3 0 0 1 0 14.6z" fill="currentColor" stroke="none" />
+  </symbol>
   <symbol id="ic-sw3" viewBox="0 0 16 16">
     <rect x="1.6" y="2.6" width="12.8" height="10.8" rx="1.4" />
     <path d="M4.4 5.4h.01M6.4 5.4h.01M8.4 5.4h.01M10.4 5.4h.01M12.4 5.4h.01" />
@@ -823,6 +1272,20 @@
       <button class="note-btn" id="btnNote" title="添加文字标签（注释）">
         <span class="nt">T</span><span class="nl">文字</span>
       </button>
+      <!-- 画布右下角 HUD：设备数 / 连线数 / 缩放比例 + 主题切换。
+           放在 .stage 内部，命令行弹出时画布变矮，它跟着自动上移，不用额外监听。 -->
+      <div class="hud" id="hud">
+        <div class="hud-stat">
+          <span title="画布上的设备数"><b id="hudDev">0</b> 设备</span>
+          <i class="hsep"></i>
+          <span title="连线数"><b id="hudWire">0</b> 连线</span>
+          <i class="hsep"></i>
+          <span title="画布缩放比例"><b id="hudZoom">100%</b></span>
+        </div>
+        <button class="hud-btn" id="themeBtn" title="切换到浅色主题" aria-label="切换深色 / 浅色主题">
+          <svg viewBox="0 0 20 20" aria-hidden="true"><use href="#ic-theme" /></svg>
+        </button>
+      </div>
     </div>
   </div>
 
@@ -9981,7 +10444,7 @@
   /* ------------------------------ 版本信息 ------------------------------ */
   /* 版本号的唯一来源：改这一处即可。
      build.mjs 会把它读出来写进产物开头的注释，所以交付文件本身也能看出是哪个版本。 */
-  const APP_VERSION = '2.1.1';
+  const APP_VERSION = '2.3.0';
   const APP_INFO = {
     name: '新易网络沙盘',
     tagline: '华为 VRP 命令实训 · 单文件离线版',
@@ -10123,6 +10586,52 @@
 
   function applyTransform() {
     $('stageInner').style.transform = `translate(${UI.panX}px, ${UI.panY}px) scale(${UI.scale})`;
+    updateHud();
+  }
+
+  /* ---------------------- 画布右下角 HUD（统计 + 主题） ---------------------- */
+  /* 设备数 / 连线数 / 缩放比例。DOM 写入前先比一次缓存：平移时 applyTransform 每帧都调，
+     不比对的话等于每次 pointermove 都写三次 textContent。 */
+  let hudKey = '';
+  function updateHud() {
+    const dev = $('hudDev'), wire = $('hudWire'), zoom = $('hudZoom');
+    if (!dev || !wire || !zoom) return;
+    const nDev = E.Net.devices.length;
+    const nWire = E.Net.cables.length;
+    const pct = Math.round((UI.scale || 1) * 100);
+    const key = nDev + '|' + nWire + '|' + pct;
+    if (key === hudKey) return;
+    hudKey = key;
+    dev.textContent = nDev;
+    wire.textContent = nWire;
+    zoom.textContent = pct + '%';
+  }
+
+  /* 主题：只有 dark / light 两档，记在 localStorage，首屏由 index.html 里的内联脚本先定，避免闪一下 */
+  const THEME_KEY = 'ne-hwsim-theme';
+  function currentTheme() {
+    return document.documentElement.getAttribute('data-theme') === 'light' ? 'light' : 'dark';
+  }
+  function applyTheme(t) {
+    if (t === 'light') document.documentElement.setAttribute('data-theme', 'light');
+    else document.documentElement.removeAttribute('data-theme');
+    const b = $('themeBtn');
+    if (b) b.title = t === 'light' ? '切换到深色主题' : '切换到浅色主题';
+  }
+  function setupTheme() {
+    applyTheme(currentTheme());
+    const b = $('themeBtn');
+    if (!b) return;
+    /* ❗HUD 在 .stage 里：不拦 pointerdown 的话，按下这一刻画布就会开始平移（并抢走指针），
+       结果就是「点主题按钮变成拖画布」。拦在容器上，以后往里加按钮也不用逐个记得。 */
+    const hud = $('hud');
+    if (hud) hud.addEventListener('pointerdown', (ev) => ev.stopPropagation());
+    b.onclick = () => {
+      const next = currentTheme() === 'light' ? 'dark' : 'light';
+      applyTheme(next);
+      try { localStorage.setItem(THEME_KEY, next); } catch (e) { /* 隐私模式下存不了，忽略 */ }
+      toast(next === 'light' ? '已切换到浅色主题' : '已切换到深色主题');
+    };
   }
 
   /* ------------------------------ 设备库 ------------------------------ */
@@ -10267,6 +10776,9 @@
       el.style.top = d.y + 'px';
       el.style.width = cardW(d) + 'px';
       el.dataset.id = d.id;
+      // 类型色条用（纯视觉）：卡片顶部那道 2px 渐变的配色靠这两个属性区分
+      el.dataset.type = d.type;
+      if (d.key === 'S3700') el.dataset.l2 = '1';
 
       const tagTxt =
         d.type === 'pc' ? 'PC' :
@@ -10353,6 +10865,7 @@
     renderWires();
     renderNotes();
     $('empty').style.display = E.Net.devices.length ? 'none' : 'flex';
+    updateHud();
   }
 
   function selectDevice(dev) {
@@ -10430,10 +10943,10 @@
       const my = (pa.y + pb.y) / 2;
       const label = `${a.hostname} ${a.ports[ia].name} ↔ ${b.hostname} ${b.ports[ib].name}`;
       html += `<g class="wire-g${sel}" data-cable="${c.id}">
-        <line class="wire" x1="${pa.x}" y1="${pa.y}" x2="${pb.x}" y2="${pb.y}"
-          stroke="${alive ? '#3fb950' : '#6e7681'}" vector-effect="non-scaling-stroke"/>
-        <circle class="wire-dot" cx="${pa.x}" cy="${pa.y}" r="2.4" fill="${alive ? '#3fb950' : '#6e7681'}"/>
-        <circle class="wire-dot" cx="${pb.x}" cy="${pb.y}" r="2.4" fill="${alive ? '#3fb950' : '#6e7681'}"/>
+        <line class="wire ${alive ? 'alive' : 'dead'}" x1="${pa.x}" y1="${pa.y}" x2="${pb.x}" y2="${pb.y}"
+          vector-effect="non-scaling-stroke"/>
+        <circle class="wire-dot ${alive ? 'alive' : 'dead'}" cx="${pa.x}" cy="${pa.y}" r="2.4"/>
+        <circle class="wire-dot ${alive ? 'alive' : 'dead'}" cx="${pb.x}" cy="${pb.y}" r="2.4"/>
         <line class="wire-hit" x1="${pa.x}" y1="${pa.y}" x2="${pb.x}" y2="${pb.y}"
           vector-effect="non-scaling-stroke"><title>${esc(label)} —— 点击选中 / 拖动改接 / 右键删除</title></line>
         <g class="wire-x" data-del="${c.id}" transform="translate(${mx},${my})">
@@ -11459,7 +11972,14 @@
     let mode = null;
     let g = null;
 
-    const blank = (t) => t === stage || t.id === 'stageInner' || (t.tagName && t.tagName.toLowerCase() === 'svg');
+    /* ❗只认「画布自己」的空白：stage / stageInner / stageInner 里的 svg 根。
+       不能写成「只要 tagName 是 svg 就算空白」—— 界面里到处是内联 svg 图标，
+       点在图标上就变成拖画布了（HUD 的主题按钮踩过）。 */
+    const blank = (t) => {
+      if (t === stage || t.id === 'stageInner') return true;
+      if (t.tagName && t.tagName.toLowerCase() === 'svg') return !!t.closest('#stageInner');
+      return false;
+    };
 
     const beginPan = (ev) => {
       const rect = stage.getBoundingClientRect();
@@ -13029,7 +13549,7 @@
           <div class="r"><b>形态</b><span>单个 HTML 文件，双击即用。没有后端、没有账号、<b>不联网、不采集任何数据</b> —— 断网也能正常跑。</span></div>
           <div class="r"><b>内置</b><span>26 个实训实验，按知识域分 6 组（交换与局域网 / 路由与互连 / 网络服务 / 安全与访问控制 / 运维与高可用 / 排错实训）· 6 种设备（S5700-28C-EI / S3700-28TP-EI / AR6121E / USG6000V / Server（Windows·Linux）/ PC）· 华为 VRP 命令行</span></div>
           <div class="r"><b>端口</b><span>按真机型号还原，含<b>光电复用（Combo）口</b> —— 接网线用电口、插光模块用光口，二选一</span></div>
-          <div class="r"><b>体积</b><span>约 621 KB 的单个 HTML 文件，不需要安装任何东西</span></div>
+          <div class="r"><b>体积</b><span>约 650 KB 的单个 HTML 文件，不需要安装任何东西</span></div>
           <div class="r"><b>许可</b><span><b>MIT License</b> —— 可以自由使用、修改、商用，甚至不用告诉我</span></div>
         </div>
 
@@ -13195,6 +13715,7 @@
     renderPalette();
     setupStage();
     setupInput();
+    setupTheme();
 
     const acts = {
       lab: showLabs,
