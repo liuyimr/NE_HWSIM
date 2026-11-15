@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <!--
   NE_HWSIM —— 华为 VRP 网络实训模拟器（单文件版）
-  版本：v2.0.0
+  版本：v2.1.0
 
   Copyright (c) 2026 新易科技工作室 NewE
   作者：Liuyi  <yimr@sohu.com>
@@ -328,6 +328,26 @@
     font-family:var(--mono);font-size:13px;padding:3px 0;
   }
   .inrow input::placeholder{color:#484f58}
+  .inrow .cand-btn{
+    flex:0 0 auto;height:26px;padding:0 10px;border-radius:6px;font-size:11px;
+    border:1px solid var(--line);background:var(--bg3);color:var(--tx2);transition:.12s;
+  }
+  .inrow .cand-btn:hover,.inrow .cand-btn:active{border-color:var(--cy);color:var(--tx)}
+  /* 候选条：一行横滚，不占竖向空间；点一下把命令填进输入框 */
+  .cands{
+    display:none;gap:6px;padding:7px 14px;background:#0f141a;
+    border-top:1px solid var(--line);overflow-x:auto;overflow-y:hidden;
+    -webkit-overflow-scrolling:touch;scrollbar-width:none;
+  }
+  .cands::-webkit-scrollbar{display:none}
+  .cands.on{display:flex}
+  .cand{
+    flex:0 0 auto;font-family:var(--mono);font-size:11px;padding:4px 9px;border-radius:6px;
+    border:1px solid var(--line);background:var(--bg3);color:var(--tx2);
+    white-space:nowrap;transition:.12s;
+  }
+  .cand:hover{border-color:var(--cy);color:var(--tx)}
+  .cand:active{background:#1f2733;border-color:var(--cy);color:var(--tx)}
 
   /* ---------- 弹窗 ---------- */
   .mask{position:fixed;top:0;right:0;bottom:0;left:0;background:rgba(1,4,9,.72);display:none;align-items:center;justify-content:center;z-index:99;padding:24px}
@@ -572,6 +592,9 @@
     .inrow{padding:7px 10px}
     .inrow .pr{font-size:14px}
     .inrow input{font-size:16px;padding:5px 0}
+    .inrow .cand-btn{height:32px;padding:0 12px;font-size:12px}
+    .cands{padding:7px 10px}
+    .cand{font-size:12px;padding:6px 10px}
 
     /* 弹窗铺满，别在窄屏上两边留一堆空 */
     .mask{padding:0;align-items:stretch}
@@ -812,9 +835,12 @@
   <div class="term" id="term">
     <div class="tabs" id="tabs"></div>
     <div class="screen" id="screen"></div>
+    <!-- 命令候选条：手机上一般没有 Tab 键，点一下就填进输入框 -->
+    <div class="cands" id="cands"></div>
     <div class="inrow" id="inrow">
       <span class="pr" id="prompt">&lt;Huawei&gt;</span>
-      <input id="cmd" autocomplete="off" spellcheck="false" placeholder="输入命令，? 查看帮助，Tab 补全" />
+      <input id="cmd" autocomplete="off" spellcheck="false" placeholder="输入命令，? 查看帮助" />
+      <button class="cand-btn" id="candBtn" title="显示 / 收起命令候选">补全</button>
     </div>
   </div>
 </div>
@@ -3098,39 +3124,71 @@
       subnets.set(d.id, list);
     }
 
-    // 5) SPF：对每台 OSPF 设备做 BFS，学习远端网段
+    // 5) SPF：BFS 学习远端网段。
+    //    多区域的关键：链路只存在于同一区域内，**跨区域必须在骨干区域（area 0）上转折**。
+    //    所以这里的 BFS 节点是「设备 × 区域」而不是设备本身：
+    //      · 同区域邻居 → 正常扩散；
+    //      · 同一台设备内部 area0 ↔ areaX 的转折 = ABR 注入区域间路由，只有「有接口在 area 0」才允许；
+    //      · 两个非骨干区域直接互注 → 真实 OSPF 不允许，这里也不允许（软考常考）。
+    const areaKey = (a) => (String(a) === '0' || String(a) === '0.0.0.0' ? '0' : String(a));
+    const areasOf = (d) => [...new Set((d.ospfActiveIfaces || []).map((i) => areaKey(i.area)))];
+    const isAbr = (d) => areasOf(d).indexOf('0') >= 0 && areasOf(d).length > 1;
+
     for (const d of Net.devices) {
       if (!d.ospf.enabled) continue;
-      const visited = new Set([d.id]);
-      const queue = [{ dev: d, nextHop: null, cost: 0, firstIface: null }];
+      const mine = subnets.get(d.id) || [];
+      const visited = new Set();
+      const queue = [];
       const learned = new Map(); // network/mask -> route
+      for (const a of areasOf(d)) {
+        visited.add(d.id + '@' + a);
+        queue.push({ dev: d, area: a, nextHop: null, cost: 0, firstIface: null });
+      }
 
       while (queue.length) {
         const cur = queue.shift();
-        const nbrs = adj.get(cur.dev.id) || [];
-        for (const n of nbrs) {
-          if (visited.has(n.peer.id)) continue;
-          visited.add(n.peer.id);
-          const nextHop = cur.nextHop || n.peerIface.ip;
-          const cost = cur.cost + 1;
-          const firstIface = cur.firstIface || n.myIface;
-          queue.push({ dev: n.peer, nextHop, cost, firstIface });
-
-          for (const s of subnets.get(n.peer.id) || []) {
+        // 学到「当前节点」的直连网段（只学属于这个区域的接口）
+        if (cur.nextHop) {
+          for (const s of subnets.get(cur.dev.id) || []) {
+            if (areaKey(s.area) !== cur.area) continue;
+            if (mine.some((x) => x.network === s.network && x.mask === s.mask)) continue;
             const key = `${s.network}/${s.mask}`;
-            // 跳过本机直连网段
-            if ((subnets.get(d.id) || []).some((x) => x.network === s.network && x.mask === s.mask)) continue;
-            if (learned.has(key) && learned.get(key).cost <= cost) continue;
+            const old = learned.get(key);
+            if (old && old.cost <= cur.cost) continue;
             learned.set(key, {
               dest: s.network,
               mask: s.mask,
-              nextHop,
+              nextHop: cur.nextHop,
               proto: 'OSPF',
               pre: 10,
-              cost,
-              ifaceName: firstIface ? firstIface.name : null,
+              cost: cur.cost,
+              ifaceName: cur.firstIface ? cur.firstIface.name : null,
               area: s.area
             });
+          }
+        }
+        // 同区域邻居
+        for (const n of adj.get(cur.dev.id) || []) {
+          if (areaKey(n.area) !== cur.area) continue;
+          const k = n.peer.id + '@' + cur.area;
+          if (visited.has(k)) continue;
+          visited.add(k);
+          queue.push({
+            dev: n.peer,
+            area: cur.area,
+            nextHop: cur.nextHop || n.peerIface.ip,
+            cost: cur.cost + 1,
+            firstIface: cur.firstIface || n.myIface
+          });
+        }
+        // ABR 转折：同一台设备内部换区域（必须有接口在 area 0）
+        if (isAbr(cur.dev)) {
+          for (const a2 of areasOf(cur.dev)) {
+            if (a2 === cur.area) continue;
+            const k = cur.dev.id + '@' + a2;
+            if (visited.has(k)) continue;
+            visited.add(k);
+            queue.push({ dev: cur.dev, area: a2, nextHop: cur.nextHop, cost: cur.cost, firstIface: cur.firstIface });
           }
         }
       }
@@ -5005,6 +5063,21 @@
     return out;
   }
 
+  /** 多区域提示：本机是不是合法的 ABR（有没有接口在骨干区域 0） */
+  function ospfAreaHint(dev) {
+    const norm = (a) => (String(a) === '0' || String(a) === '0.0.0.0' ? '0' : String(a));
+    const areas = [...new Set((dev.ospfActiveIfaces || []).map((i) => norm(i.area)))];
+    if (areas.length < 2) return [];
+    const list = areas.map((a) => fmtArea(a)).join(' / ');
+    if (areas.indexOf('0') >= 0) {
+      return [`本机是 ABR：接口分属区域 ${list}，区域间路由由本机注入（LSA Type 3）。`];
+    }
+    return [
+      `本机接口跨了区域 ${list}，但没有一个在骨干区域 0 —— 真实 OSPF 不会让两个非骨干区域互相转发，`,
+      '所以别的区域的路由学不到。把其中一个接口划回 area 0（或让它直连骨干区域）再试。'
+    ];
+  }
+
   function cmdDisplayOspfPeer(dev, brief) {
     if (!dev.ospf.enabled) return ['Error: OSPF is not enabled.'];
     E.recomputeOspf();
@@ -5023,6 +5096,7 @@
         out.push('// 为什么没有邻居：');
         for (const l of E.ospfPeerDiag(dev)) out.push('//   ' + l);
       }
+      for (const l of ospfAreaHint(dev)) out.push('// ' + l);
       return out;
     }
     if (!nbrs.length) {
@@ -5030,6 +5104,7 @@
       out.push('');
       out.push('// 为什么没有邻居：');
       for (const l of E.ospfPeerDiag(dev)) out.push('//   ' + l);
+      for (const l of ospfAreaHint(dev)) out.push('// ' + l);
       return out;
     }
     for (const n of nbrs) {
@@ -5040,6 +5115,11 @@
       out.push(` Dead timer due in 37 sec`);
       out.push(` Retrans timer interval: 5 sec`);
       out.push(` Up Time: 00:05:22`);
+    }
+    const areaHint = ospfAreaHint(dev);
+    if (areaHint.length) {
+      out.push('');
+      for (const l of areaHint) out.push('// ' + l);
     }
     return out;
   }
@@ -9908,7 +9988,7 @@
   /* ------------------------------ 版本信息 ------------------------------ */
   /* 版本号的唯一来源：改这一处即可。
      build.mjs 会把它读出来写进产物开头的注释，所以交付文件本身也能看出是哪个版本。 */
-  const APP_VERSION = '2.0.0';
+  const APP_VERSION = '2.1.0';
   const APP_INFO = {
     name: '新易网络沙盘',
     tagline: '华为 VRP 命令实训 · 单文件离线版',
@@ -11033,6 +11113,7 @@
     screen.scrollTop = screen.scrollHeight;
     // 等待 y/n 或文件名输入时，真实 VRP 不显示提示符
     $('prompt').textContent = d.cli.pending ? '' : E.promptOf(d);
+    refreshCands();
   }
 
   function classify(line) {
@@ -11117,6 +11198,18 @@
         sc.scrollTop = sc.scrollHeight;
       }, 260);
     });
+    inp.addEventListener('input', () => {
+      candAll = false;
+      refreshCands();
+    });
+    const candBtn = $('candBtn');
+    if (candBtn) {
+      candBtn.onclick = () => {
+        candAll = !candAll;
+        refreshCands();
+        inp.focus();
+      };
+    }
     inp.addEventListener('keydown', (ev) => {
       const d = activeDev();
       if (!d) return;
@@ -11185,8 +11278,8 @@
     ]
   };
 
-  function autocomplete(d, inp) {
-    const cur = inp.value;
+  /** 当前设备 / 视图下的命令候选：Tab 补全与输入框上方的候选条共用这一份 */
+  function candidatesFor(d) {
     let list = CANDIDATES[d.cli.view] || [];
     if (d.type === 'pc') {
       list = ['ipconfig', 'ipconfig /renew', 'ipconfig /release', 'ip ', 'ipv6 ', 'sysname ', 'dns ', 'dns query ', 'http get ', 'ping ', 'ping ipv6 ', 'tracert ', 'telnet ', 'help'];
@@ -11216,6 +11309,12 @@
         ]);
       }
     }
+    return list;
+  }
+
+  function autocomplete(d, inp) {
+    const cur = inp.value;
+    const list = candidatesFor(d);
 
     if (!cur.trim()) {
       const d2 = activeDev();
@@ -11241,6 +11340,38 @@
         renderConsole();
       }
     }
+  }
+
+  /* ---------------- 输入框上方的命令候选条（手机上多半没有 Tab 键） ---------------- */
+  let candAll = false; // 「补全」按钮是否展开成全部命令
+
+  function refreshCands() {
+    const box = $('cands');
+    const inp = $('cmd');
+    if (!box || !inp) return;
+    const d = activeDev();
+    const hide = () => { box.classList.remove('on'); box.innerHTML = ''; };
+    if (!d) return hide();
+    const kw = String(inp.value || '').trim().toLowerCase();
+    if (!kw && !candAll) return hide();
+    const list = candidatesFor(d);
+    const hits = (kw ? list.filter((c) => c.toLowerCase().indexOf(kw) === 0) : list).slice(0, 40);
+    // 只剩一条且已经填进输入框了 —— 再显示一个同样的按钮只是噪音
+    if (!hits.length || (hits.length === 1 && hits[0].toLowerCase() === kw)) return hide();
+    box.innerHTML = hits.map((c) => `<button class="cand" data-c="${esc(c)}">${esc(c.trim())}</button>`).join('');
+    box.classList.add('on');
+    box.querySelectorAll('.cand').forEach((b) => {
+      // 用 pointerdown 而不是 click：click 触发前输入框已经失焦，手机上键盘会先收起来
+      b.onpointerdown = (ev) => {
+        ev.preventDefault();
+        ev.stopPropagation();
+        inp.value = b.dataset.c;
+        candAll = /\s$/.test(b.dataset.c);
+        inp.focus();
+        try { inp.setSelectionRange(inp.value.length, inp.value.length); } catch (e) { /* 老内核忽略 */ }
+        refreshCands();
+      };
+    });
   }
 
   function commonPrefix(arr) {
@@ -11711,7 +11842,7 @@
       id: 'static',
       group: 'route',
       name: '静态路由实现跨网段互通',
-      level: '进阶',
+      level: '基础',
       desc: '2 台路由器 + 2 台 PC。配置物理接口 IP 与静态路由，实现两个网段互通。',
       build() {
         const r1 = mk('AR6121', 170, 90, 'R1');
@@ -11748,7 +11879,7 @@
       id: 'ospf',
       group: 'route',
       name: 'OSPF 单区域动态路由',
-      level: '进阶',
+      level: '基础',
       desc: '3 台路由器组成三角拓扑，配置 OSPF 单区域，观察邻居建立与动态学习路由。',
       build() {
         const r1 = mk('AR6121', 130, 80, 'R1');
@@ -11779,6 +11910,51 @@
         'area 0 也可以写成 area 0.0.0.0。',
         'router-id 建议用环回口或互联口地址，三台设备不能重复。',
         'OSPF 是三层嵌套视图：<code>[R1-ospf-1]</code> 里敲 <code>area 0</code> 进入 <code>[R1-ospf-1-area-0.0.0.0]</code>，配完 <code>quit</code> 只回到 <code>[R1-ospf-1]</code>，要再 <code>quit</code> 一次才回 <code>[R1]</code>。'
+      ]
+    },
+    {
+      id: 'ospf-multi',
+      group: 'route',
+      name: 'OSPF 多区域（ABR 与骨干区域）',
+      level: '进阶',
+      desc: '3 台路由器 + 2 台 PC。R2 一脚在区域 1、一脚在区域 0，做 ABR。重点是搞清「非骨干区域为什么不能直接互通」。',
+      build() {
+        // 三台路由器摆成折线：R2 往下错开，两条互联线才不会被卡片挡住
+        const r1 = mk('AR6121', 40, 50, 'R1');
+        const r2 = mk('AR6121', 350, 205, 'R2');
+        const r3 = mk('AR6121', 660, 50, 'R3');
+        const p1 = mk('PC', 40, 410, 'PC1');
+        const p2 = mk('PC', 660, 410, 'PC2');
+        // 端口号 3 = GE0/0/2（接 PC）、4 = GE0/0/3（路由器互联），都是 RJ45
+        setPort(r1, 3, { ip: '192.168.10.254', mask: 24 });
+        setPort(r1, 4, { ip: '10.1.12.1', mask: 24 });
+        setPort(r2, 3, { ip: '10.1.12.2', mask: 24 });
+        setPort(r2, 4, { ip: '10.1.23.2', mask: 24 });
+        setPort(r3, 3, { ip: '10.1.23.3', mask: 24 });
+        setPort(r3, 4, { ip: '192.168.20.254', mask: 24 });
+        setPort(p1, 0, { ip: '192.168.10.1', mask: 24, gateway: '192.168.10.254' });
+        setPort(p2, 0, { ip: '192.168.20.1', mask: 24, gateway: '192.168.20.254' });
+        link(p1, 0, r1, 3);
+        link(r1, 4, r2, 3);
+        link(r2, 4, r3, 3);
+        link(r3, 4, p2, 0);
+        return { focus: r2 };
+      },
+      goals: [
+        '三台路由器都进 <code>ospf 1</code> 并配不同的 <code>router-id</code>（用各自的互联口地址即可）',
+        'R1 只属于区域 1：<code>area 1</code> → <code>network 192.168.10.0 0.0.0.255</code> 和 <code>network 10.1.12.0 0.0.0.255</code>',
+        'R2 做 ABR：<code>area 1</code> 通告 10.1.12.0，再 <b><code>area 0</code> 通告 10.1.23.0</b> —— 一边必须是骨干区域',
+        'R3 属于区域 0：<code>area 0</code> → <code>network 10.1.23.0 0.0.0.255</code> 和 <code>network 192.168.20.0 0.0.0.255</code>',
+        '在 R2 上 <code>display ospf peer</code>：应该看到 <b>两个邻居、分属不同区域</b>',
+        'R1 上 <code>display ip routing-table</code>：192.168.20.0 应该是 OSPF 学来的；PC1 ping PC2 要通',
+        '反例（这题的精华）：回 R2 把区域 0 改成区域 2（<code>undo area 0</code> 再 <code>area 2</code>），再看 PC1 ping PC2 —— 不通了，想想为什么'
+      ],
+      tips: [
+        'ABR（区域边界路由器）= 同时连两个以上区域、并且<b>至少有一个接口在骨干区域 0</b>。它把区域 1 的网段以 Type-3 LSA 注入区域 0，反之亦然。',
+        '两个<b>非骨干</b>区域之间不能直接互注 —— 真实 OSPF 要求所有非骨干区域都挂在区域 0 上。所以「区域 1 + 区域 2」的 ABR 是不合法的，路由照样传不过去。',
+        '邻居建立的前提：接口同网段、<b>同区域</b>、都通告了该网段、Hello/Dead 计时器一致。区域号不同，连邻居都建不起来。',
+        '区域 0 可以写 <code>area 0</code>，也可以写 <code>area 0.0.0.0</code>，两者等价。',
+        '视图层级同样要注意：<code>[R2-ospf-1-area-0.0.0.0]</code> 里配完要 <code>quit</code> 回 <code>[R2-ospf-1]</code> 才能敲下一个 <code>area</code>。'
       ]
     },
     {
@@ -11820,7 +11996,7 @@
       id: 'dhcp',
       group: 'svc',
       name: 'DHCP 自动分配地址',
-      level: '进阶',
+      level: '基础',
       desc: '路由器作为 DHCP 服务器，PC 通过 DHCP 自动获取地址，体验 ipconfig /renew。',
       build() {
         const r1 = mk('AR6121', 340, 90, 'R1');
@@ -12738,6 +12914,7 @@
           <li><span class="n">2</span><span>先点一个灰色端口，再点另一个灰色端口，即完成连线。按 Esc 取消当前选择。</span></li>
           <li><span class="n">3</span><span>双击设备打开命令行，输入华为 VRP 命令，例如 <code>system-view</code>。</span></li>
           <li><span class="n">4</span><span>双击 PC 输入 <code>ip 192.168.10.1 24</code> 配地址，再 <code>ping</code> 目标地址验证。</span></li>
+          <li><span class="n">?</span><span>打不全命令？电脑上按 <code>Tab</code>；<b>手机上点输入框右边的「补全」按钮</b>，会把当前视图的命令列成一行，点哪个就填哪个。打字时也会自动冒出候选。</span></li>
         </ul>
         <h4 class="sec">视图是一级一级进入的</h4>
         <p class="hint">和真机一样，命令要先进到对应视图才能敲。提示符会告诉你现在在哪一层：</p>
@@ -12867,9 +13044,9 @@
         <h4 class="sec">这个程序</h4>
         <div class="kv">
           <div class="r"><b>形态</b><span>单个 HTML 文件，双击即用。没有后端、没有账号、<b>不联网、不采集任何数据</b> —— 断网也能正常跑。</span></div>
-          <div class="r"><b>内置</b><span>25 个实训实验，按知识域分 6 组（交换与局域网 / 路由与互连 / 网络服务 / 安全与访问控制 / 运维与高可用 / 排错实训）· 6 种设备（S5700-28C-EI / S3700-28TP-EI / AR6121E / USG6000V / Server（Windows·Linux）/ PC）· 华为 VRP 命令行</span></div>
+          <div class="r"><b>内置</b><span>26 个实训实验，按知识域分 6 组（交换与局域网 / 路由与互连 / 网络服务 / 安全与访问控制 / 运维与高可用 / 排错实训）· 6 种设备（S5700-28C-EI / S3700-28TP-EI / AR6121E / USG6000V / Server（Windows·Linux）/ PC）· 华为 VRP 命令行</span></div>
           <div class="r"><b>端口</b><span>按真机型号还原，含<b>光电复用（Combo）口</b> —— 接网线用电口、插光模块用光口，二选一</span></div>
-          <div class="r"><b>体积</b><span>约 612 KB 的单个 HTML 文件，不需要安装任何东西</span></div>
+          <div class="r"><b>体积</b><span>约 622 KB 的单个 HTML 文件，不需要安装任何东西</span></div>
           <div class="r"><b>许可</b><span><b>MIT License</b> —— 可以自由使用、修改、商用，甚至不用告诉我</span></div>
         </div>
 

@@ -3,7 +3,7 @@
 **一个 HTML 文件，双击就能练华为交换机 / 路由器命令 —— 不用装 eNSP，不用装 GNS3，不联网也能用。**
 
 [![在线试玩](https://img.shields.io/badge/%E5%9C%A8%E7%BA%BF%E8%AF%95%E7%8E%A9-GitHub%20Pages-orange)](https://liuyimr.github.io/NE_HWSIM/NE_HWSIM.html)
-![单文件](https://img.shields.io/badge/%E5%8D%95%E6%96%87%E4%BB%B6-612%20KB-brightgreen)
+![单文件](https://img.shields.io/badge/%E5%8D%95%E6%96%87%E4%BB%B6-622%20KB-brightgreen)
 ![无需安装](https://img.shields.io/badge/%E6%97%A0%E9%9C%80%E5%AE%89%E8%A3%85-%E5%8F%8C%E5%87%BB%E5%8D%B3%E7%94%A8-success)
 ![离线可用](https://img.shields.io/badge/%E7%A6%BB%E7%BA%BF%E5%8F%AF%E7%94%A8-100%25-informational)
 ![许可证](https://img.shields.io/badge/license-MIT-blue)
@@ -36,7 +36,7 @@
 
 给**网络课老师**和**备考华为认证的同学**做的一个练习工具。
 
-eNSP 要装 VirtualBox，GNS3 要配镜像，虚拟机镜像动辄几个 GB，还得看电脑配置。很多学生卡在第一步就放弃了，然后就没有然后。新易网络沙盘的判断是：**先把门槛降到零** —— 一个 612 KB 的 HTML 文件，发过去、双击、开始敲命令，整个过程不需要任何解释。
+eNSP 要装 VirtualBox，GNS3 要配镜像，虚拟机镜像动辄几个 GB，还得看电脑配置。很多学生卡在第一步就放弃了，然后就没有然后。新易网络沙盘的判断是：**先把门槛降到零** —— 一个 622 KB 的 HTML 文件，发过去、双击、开始敲命令，整个过程不需要任何解释。
 
 它**不是**真机的替代品，也跑不了复杂的园区网。它解决的是一个很具体的问题：**让学生能在自己的笔记本上、离线、零安装地，把 VLAN / Trunk / OSPF / ACL / NAT 这些命令反复敲到熟。**
 
@@ -93,14 +93,14 @@ eNSP 要装 VirtualBox，GNS3 要配镜像，虚拟机镜像动辄几个 GB，�
 
 ---
 
-## 内置 25 个实训实验（按知识域分 6 组）
+## 内置 26 个实训实验（按知识域分 6 组）
 
 点顶部 **「实训实验」**，实验按知识域分组，顺序和教材 / 考纲的章节一致：
 
 | 组 | 数 | 解决什么问题 |
 |---|---|---|
 | ① 交换与局域网 | 4 | 一台交换机内部怎么隔离、怎么互通 |
-| ② 路由与互连 | 4 | 跨网段怎么走、动态路由怎么收敛 |
+| ② 路由与互连 | 5 | 跨网段怎么走、动态路由怎么收敛、多区域怎么划 |
 | ③ 网络服务 | 4 | 地址怎么发、域名怎么解析、网页怎么发布 |
 | ④ 安全与访问控制 | 5 | 谁能过、谁能看、跨公网怎么加密 |
 | ⑤ 运维与高可用 | 2 | 远程管设备、网关不中断 |
@@ -122,36 +122,37 @@ eNSP 要装 VirtualBox，GNS3 要配镜像，虚拟机镜像动辄几个 GB，�
 
 | # | 实验 | 主要练什么 | 难度 |
 |---|---|---|---|
-| 05 | 静态路由实现跨网段互通 | `ip route-static` | 进阶 |
-| 06 | OSPF 单区域动态路由 | `ospf 1` · `area 0` · `network` · `display ospf peer` | 进阶 |
-| 07 | RIP 动态路由 | `rip 1` · `version 2` · `network` · `display rip neighbor` | 进阶 |
-| 08 | IPv6 基础 | `ipv6` · `ipv6 address` · `ipv6 route-static` · `ping ipv6` | 进阶 |
+| 05 | 静态路由实现跨网段互通 | `ip route-static` | 基础 |
+| 06 | OSPF 单区域动态路由 | `ospf 1` · `area 0` · `network` · `display ospf peer` | 基础 |
+| 07 | OSPF 多区域（ABR 与骨干区域） | `area 1` + `area 0` · ABR · 非骨干区域不能互注 | 进阶 |
+| 08 | RIP 动态路由 | `rip 1` · `version 2` · `network` · `display rip neighbor` | 进阶 |
+| 09 | IPv6 基础 | `ipv6` · `ipv6 address` · `ipv6 route-static` · `ping ipv6` | 进阶 |
 
 ### ③ 网络服务
 
 | # | 实验 | 主要练什么 | 难度 |
 |---|---|---|---|
-| 09 | DHCP 自动分配地址 | `dhcp enable` · `ip pool` · `dhcp select global` | 进阶 |
-| 10 | DHCP 中继（跨网段分配） | `dhcp select relay` · `dhcp relay server-ip` | 进阶 |
-| 11 | 服务器发布（DNS + NAT Server） | `http/dns server enable` · `dns add` · `nat server` | 进阶 |
-| 12 | Linux 服务器（DNS + Apache） | `systemctl start named\|httpd` · `vi` · `cat` · `ifconfig` | 进阶 |
+| 10 | DHCP 自动分配地址 | `dhcp enable` · `ip pool` · `dhcp select global` | 基础 |
+| 11 | DHCP 中继（跨网段分配） | `dhcp select relay` · `dhcp relay server-ip` | 进阶 |
+| 12 | 服务器发布（DNS + NAT Server） | `http/dns server enable` · `dns add` · `nat server` | 进阶 |
+| 13 | Linux 服务器（DNS + Apache） | `systemctl start named\|httpd` · `vi` · `cat` · `ifconfig` | 进阶 |
 
 ### ④ 安全与访问控制
 
 | # | 实验 | 主要练什么 | 难度 |
 |---|---|---|---|
-| 13 | ACL 访问控制 | `acl number 3000` · `rule deny ip source … destination …` · `traffic-filter inbound` | 进阶 |
-| 14 | NAT 网络地址转换 | `acl number 2000` · `nat outbound` · `nat address-group` | 进阶 |
-| 15 | NAT Server（内网服务器对外发布） | `nat server global … inside …` · `display nat server` | 进阶 |
-| 16 | 防火墙安全策略 | `firewall zone` · `add interface` · `security-policy` · `rule name` | 进阶 |
-| 17 | IPsec VPN 站点互联 | 感兴趣流 ACL · `ipsec proposal` · `ike peer` · `ipsec policy` · `display ipsec sa` | 进阶 |
+| 14 | ACL 访问控制 | `acl number 3000` · `rule deny ip source … destination …` · `traffic-filter inbound` | 进阶 |
+| 15 | NAT 网络地址转换 | `acl number 2000` · `nat outbound` · `nat address-group` | 进阶 |
+| 16 | NAT Server（内网服务器对外发布） | `nat server global … inside …` · `display nat server` | 进阶 |
+| 17 | 防火墙安全策略 | `firewall zone` · `add interface` · `security-policy` · `rule name` | 进阶 |
+| 18 | IPsec VPN 站点互联 | 感兴趣流 ACL · `ipsec proposal` · `ike peer` · `ipsec policy` · `display ipsec sa` | 进阶 |
 
 ### ⑤ 运维与高可用
 
 | # | 实验 | 主要练什么 | 难度 |
 |---|---|---|---|
-| 18 | 设备远程管理（Telnet + AAA） | `telnet server enable` · `aaa` · `local-user` · `user-interface vty` | 进阶 |
-| 19 | VRRP 网关冗余 | `vrrp vrid 1 virtual-ip` · `priority` · `display vrrp brief` | 进阶 |
+| 19 | 设备远程管理（Telnet + AAA） | `telnet server enable` · `aaa` · `local-user` · `user-interface vty` | 进阶 |
+| 20 | VRRP 网关冗余 | `vrrp vrid 1 virtual-ip` · `priority` · `display vrrp brief` | 进阶 |
 
 ### ⑥ 排错实训
 
@@ -159,12 +160,12 @@ eNSP 要装 VirtualBox，GNS3 要配镜像，虚拟机镜像动辄几个 GB，�
 
 | # | 场景 | 现象 | 考什么 |
 |---|---|---|---|
-| 20 | Trunk 没放行 VLAN | 同网段的两台 PC 跨交换机不通 | trunk 放行列表（两端都要放行） |
-| 21 | 单臂路由缺一条命令 | 网关能 ping 通，另一个网段不通 | `arp broadcast enable` 的作用范围 |
-| 22 | ACL 把所有人都拦了 | 本该只拦一台，结果全公司都不能访问 | ACL 规则顺序与匹配范围 |
-| 23 | NAT 不生效 | 能 ping 网关，上不了公网 | NAT 的 ACL 是「选择器」，网段要对 |
-| 24 | 防火墙接口没加区域 | 地址对、策略也 permit，就是不通信 | 区域成员优先于策略 |
-| 25 | OSPF 邻居起不来 | 两边都配了 OSPF，邻居一直 Down | 邻居建立的四个前提 |
+| 21 | Trunk 没放行 VLAN | 同网段的两台 PC 跨交换机不通 | trunk 放行列表（两端都要放行） |
+| 22 | 单臂路由缺一条命令 | 网关能 ping 通，另一个网段不通 | `arp broadcast enable` 的作用范围 |
+| 23 | ACL 把所有人都拦了 | 本该只拦一台，结果全公司都不能访问 | ACL 规则顺序与匹配范围 |
+| 24 | NAT 不生效 | 能 ping 网关，上不了公网 | NAT 的 ACL 是「选择器」，网段要对 |
+| 25 | 防火墙接口没加区域 | 地址对、策略也 permit，就是不通信 | 区域成员优先于策略 |
+| 26 | OSPF 邻居起不来 | 两边都配了 OSPF，邻居一直 Down | 邻居建立的四个前提 |
 
 每个实验加载后都会弹出**实验目标**和**操作提示**，学生照着做即可；做完点「导出配置」把 txt 交上来。
 
@@ -179,7 +180,7 @@ eNSP 要装 VirtualBox，GNS3 要配镜像，虚拟机镜像动辄几个 GB，�
 | | **新易网络沙盘** | eNSP | GNS3 | Cisco Packet Tracer |
 |---|---|---|---|---|
 | 安装 | **双击 HTML，零安装** | 需装 VirtualBox + eNSP | 需装虚拟机 + 导入镜像 | 需注册 Cisco 账号 |
-| 体积 | **612 KB** | 数 GB | 数 GB | 数百 MB |
+| 体积 | **622 KB** | 数 GB | 数 GB | 数百 MB |
 | 联网 | **可完全离线** | 首次需下载镜像 | 需下载镜像 | 需登录 |
 | 命令语法 | 华为 VRP | 华为 VRP | 多厂商 | Cisco IOS |
 | 上手门槛 | **极低** | 中（装环境容易失败） | 高 | 中 |
@@ -269,7 +270,7 @@ A：能。把同一个 HTML 文件传到手机（微信 / QQ / 网盘都行）�
 长按端口看详情 —— 功能一个不少，只是手势不一样（见上面「手机 / 平板也能用」的对照表）。
 
 **Q：我怎么知道手上这个文件是哪个版本？**
-A：点顶栏 **「关于」**，里面写着版本号；用记事本打开文件，**开头的注释里也有**（比如 `版本：v2.0.0`）。下载单个 HTML 文件就能自带版本信息，不用去比对文件大小。
+A：点顶栏 **「关于」**，里面写着版本号；用记事本打开文件，**开头的注释里也有**（比如 `版本：v2.1.0`）。下载单个 HTML 文件就能自带版本信息，不用去比对文件大小。
 
 ---
 
@@ -286,6 +287,18 @@ A：点顶栏 **「关于」**，里面写着版本号；用记事本打开文�
 ---
 
 ## 最近更新
+
+**v2.1.0（OSPF 多区域 + 手机上的命令补全）**
+
+- **新增实验「OSPF 多区域（ABR 与骨干区域）」**：3 台路由器，R1 在区域 1、R3 在区域 0、R2 两脚跨区做 ABR。
+  重点不是「配通」，而是搞清那条最容易记反的规则：**两个非骨干区域之间不能互相注入路由**。
+  实验最后一步就是让你把 R2 的 area 0 改成 area 2，看跨区域 ping 怎么断掉。
+- **引擎补了 ABR 语义**：BFS 的节点从「设备」改成「设备 × 区域」，跨区域必须在骨干区域上转折；
+  `display ospf peer` 会直说「本机是 ABR，区域间路由由本机注入」或者「跨了区域但没有接口在 area 0，路由传不过去」。
+- **手机上能补全命令了**：输入框右边新增「补全」按钮 —— 点一下把当前视图的命令列成**一行可横滑的候选条**，
+  点哪个就填哪个；打字时也会自动冒出候选。用的是 `pointerdown`，点候选不会让输入框失焦、软键盘不会收起来。
+  电脑上 `Tab` 的行为完全没变。
+- **难度调整**：静态路由、DHCP、OSPF 单区域从「进阶」改成「基础」（现在「基础」筛选里有 5 个，不再只有 VLAN 和 Trunk）。
 
 **v2.0.0（实训实验按知识域分组 + 筛选搜索）**
 
@@ -587,7 +600,7 @@ A：点顶栏 **「关于」**，里面写着版本号；用记事本打开文�
 
 做工业自动控制与楼宇智能化的，这个是给网络教学做的小工具。
 
-> 程序里点顶栏 **「关于」** 也能看到版本号、作者与许可信息。当前版本 **v2.0.0**。
+> 程序里点顶栏 **「关于」** 也能看到版本号、作者与许可信息。当前版本 **v2.1.0**。
 
 ---
 
@@ -616,7 +629,7 @@ MIT License —— 随便用，商用也行，改了也不用说。详见 [LICEN
 
 **新易网络沙盘 — a Huawei VRP network lab simulator that fits in one HTML file.**
 
-A single 612 KB HTML file. Double-click it and you get a drag-and-drop network topology builder plus a
+A single 622 KB HTML file. Double-click it and you get a drag-and-drop network topology builder plus a
 faithful Huawei VRP CLI (user view → system view → interface view → VLAN view → port-group view → ACL view
 → NAT address-pool view → OSPF area view → RIP view → sub-interface view), with authentic `^` error markers and `save` interaction.
 
