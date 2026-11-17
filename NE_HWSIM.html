@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <!--
   NE_HWSIM —— 华为 VRP 网络实训模拟器（单文件版）
-  版本：v2.3.2
+  版本：v2.3.3
 
   Copyright (c) 2026 新易科技工作室 NewE
   作者：Liuyi  <yimr@sohu.com>
@@ -10444,7 +10444,7 @@
   /* ------------------------------ 版本信息 ------------------------------ */
   /* 版本号的唯一来源：改这一处即可。
      build.mjs 会把它读出来写进产物开头的注释，所以交付文件本身也能看出是哪个版本。 */
-  const APP_VERSION = '2.3.2';
+  const APP_VERSION = '2.3.3';
   const APP_INFO = {
     name: '新易网络沙盘',
     tagline: '华为 VRP 命令实训 · 单文件离线版',
@@ -12149,7 +12149,11 @@
       const wx = (mx - UI.panX) / UI.scale;
       const wy = (my - UI.panY) / UI.scale;
       mode = 'pinch';
-      g = { dist: Math.max(1, Math.hypot(p2.x - p1.x, p2.y - p1.y)), wx, wy, rect };
+      /* ❗scale0 是手势**开始时**的缩放，必须单独记。
+         原来这里没记，move 里写的是 UI.scale * (dist / g.dist) —— 而 UI.scale 每一帧都被改过，
+         等于「当前倍率 × 相对于起始距离的比例」反复相乘，是**指数累积**：
+         手指只张开 30%，画面可能放大 70%，稍微一缩又缩过头。改成以 scale0 为基准的线性关系。 */
+      g = { dist: Math.max(1, Math.hypot(p2.x - p1.x, p2.y - p1.y)), wx, wy, rect, scale0: UI.scale };
     };
 
     stage.addEventListener('pointerdown', (ev) => {
@@ -12192,7 +12196,7 @@
         const dist = Math.hypot(p2.x - p1.x, p2.y - p1.y);
         const mx = (p1.x + p2.x) / 2 - g.rect.left;
         const my = (p1.y + p2.y) / 2 - g.rect.top;
-        const next = Math.min(MAX_SCALE, Math.max(MIN_SCALE, UI.scale * (dist / g.dist)));
+        const next = Math.min(MAX_SCALE, Math.max(MIN_SCALE, g.scale0 * (dist / g.dist)));
         UI.scale = next;
         // 锚在世界坐标 (wx,wy) 上，同时跟随中点移动（等于双指平移 + 缩放）
         UI.panX = mx - g.wx * next;
