@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <!--
   NE_HWSIM —— 华为 VRP 网络实训模拟器（单文件版）
-  版本：v2.3.1
+  版本：v2.3.2
 
   Copyright (c) 2026 新易科技工作室 NewE
   作者：Liuyi  <yimr@sohu.com>
@@ -10444,7 +10444,7 @@
   /* ------------------------------ 版本信息 ------------------------------ */
   /* 版本号的唯一来源：改这一处即可。
      build.mjs 会把它读出来写进产物开头的注释，所以交付文件本身也能看出是哪个版本。 */
-  const APP_VERSION = '2.3.1';
+  const APP_VERSION = '2.3.2';
   const APP_INFO = {
     name: '新易网络沙盘',
     tagline: '华为 VRP 命令实训 · 单文件离线版',
@@ -11553,15 +11553,27 @@
    * 展开 / 收起下方命令行面板。
    * 收起时不清掉标签页，所以再点一次「命令行」能回到原来的会话。
    */
-  /** 面板开合 / 视口变化后，拓扑可能被挤出可视区。
-      最典型的场景：收起面板时加载实验 → fitView 按大画布算好；展开面板后画布矮了 336px，
-      底部那排设备就跑到面板后面去了，看起来像「设备不见了」。
-      只在「确实被裁到」时重新适配 —— 用户自己缩放、平移过的视图不会被无端重置。 */
-  function refitIfClipped() {
+  /* ---------------- 面板开合时的视角处理 ----------------
+     面板一展开，画布矮掉三分之一，底部那排设备会跑到面板后面去。
+
+     原来是「过半设备被裁就 fitView()」，有两个问题：
+       ① fitView 会改**缩放级别**，用户正在放大看某台设备时被打断，而且缩得挺明显；
+       ② 面板收起来后画布变高、不再有裁切，refit 自然也不会触发 ——
+          于是缩放就永远停在缩小后的那一档，回不来了（这就是「收起来不会变回来」）。
+     现在的做法：**只平移、绝不动缩放**；开面板前记下视角，收起时还原
+     （若期间用户自己拖过 / 缩放过，就尊重用户的，不再还原）。 */
+  let termView = null; // { panX, panY, scale, applied:{panX,panY,scale,epoch} }
+  /* 视角代次：fitView 每调一次 +1。收起面板时要还原视角，但如果这期间又发生了
+     一次 fitView（典型：在面板开着的时候加载了新实验），那"展开前的视角"早就失效了，
+     再去还原只会把刚摆好的新拓扑顶歪 —— 用代次把这种情况挡掉。 */
+  let viewEpoch = 0;
+
+  function revealClipped() {
     const devs = E.Net.devices;
     if (!devs.length) return;
     const rect = $('stage').getBoundingClientRect();
     if (rect.width < 10 || rect.height < 10) return;
+    if (!Number.isFinite(UI.scale) || !Number.isFinite(UI.panX) || !Number.isFinite(UI.panY)) return;
     const s = UI.scale;
     let clipped = 0;
     for (const d of devs) {
@@ -11573,7 +11585,62 @@
     }
     /* 阈值取「过半」：用户放大看某一台设备时，其余几台本来就在屏外，
        那种情况不该被强行拉回全景；而展开面板把底部一整排挤出去时，过半数都会超标。 */
-    if (clipped >= Math.ceil(devs.length / 2)) fitView();
+    if (clipped < Math.ceil(devs.length / 2)) return;
+
+    /* 这里是关键取舍：**只平移，不改缩放**。
+       fitView() 会重新算 scale，用户正在放大看某台设备时会被硬拽回全景；
+       而且面板收起后画布变高、不再有裁切，旧代码于是永远不会调回来（「收起来不还原」）。
+       现在：拓扑整体装得下这块画布，就只是把它往上挪；装不下（拓扑本身比画布高）就不动，
+       由用户自己决定缩不缩 —— 绝不替用户改缩放级别。 */
+    const sNow = UI.scale;
+    const top = Math.min(...devs.map((d) => d.y * sNow + UI.panY));
+    const bottom = Math.max(...devs.map((d) => (d.y + cardHeight(d)) * sNow + UI.panY));
+
+    /* 装不下（拓扑本身比剩下的画布还高）：这时候只平移是救不回来的，只能重排 ——
+       但阈值仍是「过半被裁」，避免用户放大看某一台时被硬拽回全景。
+       重排后记下视角，收起面板时还原。 */
+    if (bottom - top > rect.height - 20) {
+      if (clipped >= Math.ceil(devs.length / 2)) {
+        fitView();
+        if (termView) termView.applied = { panX: UI.panX, panY: UI.panY, scale: UI.scale, epoch: viewEpoch };
+      }
+      return;
+    }
+    let dy = 0;
+    if (bottom > rect.height - 10) dy = rect.height - 10 - bottom;
+    if (top + dy < 10) dy = 10 - top;
+    if (Math.abs(dy) < 1) return;
+    UI.panY += dy;
+    applyTransform();
+    if (termView) termView.applied = { panX: UI.panX, panY: UI.panY, scale: UI.scale, epoch: viewEpoch };
+  }
+
+  /** 面板收起后把视角还给用户（前提：这期间他没自己动过）。 */
+  function restoreTermView() {
+    const v = termView;
+    termView = null;
+    if (!v || !v.applied) return;
+    if (!Number.isFinite(UI.panX) || !Number.isFinite(UI.panY) || !Number.isFinite(UI.scale)) return;
+    const same =
+      v.applied.epoch === viewEpoch && // 期间没发生新的 fitView（比如加载了别的实验）
+      Math.abs(UI.panX - v.applied.panX) < 0.6 &&
+      Math.abs(UI.panY - v.applied.panY) < 0.6 &&
+      Math.abs(UI.scale - v.applied.scale) < 1e-6;
+    if (!same) return; // 用户自己调过视角、或换了拓扑，别抢
+    UI.panX = v.panX;
+    UI.panY = v.panY;
+    UI.scale = v.scale;
+    applyTransform();
+  }
+
+  /** 面板高度变了（开 / 收 / 最大化）：打开时记快照并让位，收起时还原。 */
+  function syncTermView() {
+    if (termIsOpen()) {
+      if (!termView) termView = { panX: UI.panX, panY: UI.panY, scale: UI.scale, applied: null };
+      setTimeout(revealClipped, 240);
+    } else {
+      setTimeout(restoreTermView, 260);
+    }
   }
 
   function setTermOpen(on) {
@@ -11581,7 +11648,7 @@
     if (!on) $('term').classList.remove('max');
     syncTermBtn();
     // 面板高度变化有 .18s 过渡，等它落定再判断拓扑有没有被挤出去
-    setTimeout(refitIfClipped, 240);
+    syncTermView();
     if (on) setTimeout(() => $('cmd').focus(), 60);
   }
 
@@ -11615,6 +11682,7 @@
     if (!UI.tabs.length) {
       $('term').classList.remove('open');
       $('term').classList.remove('max');
+      syncTermView();
     }
     syncTermBtn();
     renderConsole();
@@ -11672,7 +11740,7 @@
     };
     tabsEl.querySelector('#btnMax').onclick = () => {
       $('term').classList.toggle('max');
-      setTimeout(refitIfClipped, 240);
+      setTimeout(revealClipped, 240);
     };
     tabsEl.querySelector('#btnFold').onclick = () => setTermOpen(false);
 
@@ -11999,6 +12067,7 @@
     UI.scale = Math.min(1.1, Math.max(narrow() ? 0.45 : 0.35, s));
     UI.panX = (rect.width - (maxX - minX) * UI.scale) / 2 - minX * UI.scale;
     UI.panY = (rect.height - (maxY - minY) * UI.scale) / 2 - minY * UI.scale;
+    viewEpoch++;
     applyTransform();
   }
 
@@ -13634,7 +13703,7 @@
           <div class="r"><b>形态</b><span>单个 HTML 文件，双击即用。没有后端、没有账号、<b>不联网、不采集任何数据</b> —— 断网也能正常跑。</span></div>
           <div class="r"><b>内置</b><span>26 个实训实验，按知识域分 6 组（交换与局域网 / 路由与互连 / 网络服务 / 安全与访问控制 / 运维与高可用 / 排错实训）· 6 种设备（S5700-28C-EI / S3700-28TP-EI / AR6121E / USG6000V / Server（Windows·Linux）/ PC）· 华为 VRP 命令行</span></div>
           <div class="r"><b>端口</b><span>按真机型号还原，含<b>光电复用（Combo）口</b> —— 接网线用电口、插光模块用光口，二选一</span></div>
-          <div class="r"><b>体积</b><span>约 653 KB 的单个 HTML 文件，不需要安装任何东西</span></div>
+          <div class="r"><b>体积</b><span>约 657 KB 的单个 HTML 文件，不需要安装任何东西</span></div>
           <div class="r"><b>许可</b><span><b>MIT License</b> —— 可以自由使用、修改、商用，甚至不用告诉我</span></div>
         </div>
 
